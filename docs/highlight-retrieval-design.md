@@ -1,8 +1,8 @@
-# Stage 1 粗召回设计
+# 高光候选召回设计
 
 ## 目标与边界
 
-Stage 1 是候选高光粗召回，不是最终剪辑器。优化方向是 Recall 优先，允许把不确定但可能有价值的事件交给后续 Stage C 精修和过滤。
+高光候选召回不是最终剪辑器。优化方向是 Recall 优先，允许把不确定但可能有价值的事件交给后续边界精修和过滤。
 
 ## 数据流
 
@@ -16,7 +16,7 @@ Video
   -> chunk-local seconds + chunk.start_sec
   -> global HighlightSegment list
   -> Temporal-IoU deduplication
-  -> internal Stage1Result
+  -> internal HighlightRetrievalResult
 ```
 
 模型必须返回当前 chunk 内的相对秒数。Pipeline 独占局部到全局的转换：
@@ -38,7 +38,7 @@ global_end   = chunk.start_sec + local_end
 
 ## 指标声明
 
-Stage 1 仅提供区间集合去重后的持续时间交集、并集、Temporal IoU、duration-based temporal precision、recall 与 F1。这些不是官方最终比赛分数。官方指标仍需逐帧精确匹配、bbox IoU 与 IoU-weighted F。
+高光候选召回仅提供区间集合去重后的持续时间交集、并集、Temporal IoU、duration-based temporal precision、recall 与 F1。这些不是官方最终比赛分数。官方指标仍需逐帧精确匹配、bbox IoU 与 IoU-weighted F。
 
 ## 尚待 AutoDL 实测
 

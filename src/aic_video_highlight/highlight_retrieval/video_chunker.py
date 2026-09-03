@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .models import VideoChunk
+from .schemas import VideoChunk
 
 
 def build_chunks(

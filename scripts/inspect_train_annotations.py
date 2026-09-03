@@ -165,7 +165,7 @@ def inspect_jsonl(source: Path) -> str:
             "- 字段名本身不能证明某字段是赛事最终人工 Ground Truth。",
             "- 即使存在 `candidate_segments`，也不能仅凭名称把它作为唯一 GT。",
             "- `seed_model`、`prompt_fingerprint`、`provenance` 等字段若存在，只能确认记录包含生成/来源元数据；不能据此确定标签由人工、模型或混合流程产生。",
-            "- 在获得赛事数据说明、字段定义或可靠样例解释前，`gt_reader.py` 不会默认选择任何 GT 字段。",
+            "- 在获得赛事数据说明、字段定义或可靠样例解释前，`annotation_reader.py` 不会默认选择任何 GT 字段。",
             "- 本报告不包含训练标注原文、摘要内容、轨迹值或候选区间值。",
             "",
         ]
@@ -175,7 +175,9 @@ def inspect_jsonl(source: Path) -> str:
 
 def main() -> int:
     project_root = Path(__file__).resolve().parents[1]
-    parser = argparse.ArgumentParser(description="Inspect train.jsonl structure without modifying it")
+    parser = argparse.ArgumentParser(
+        description="Inspect train.jsonl annotation structure without modifying it"
+    )
     parser.add_argument("--input", type=Path, default=Path.home() / "Downloads" / "train.jsonl")
     parser.add_argument("--output", type=Path, default=project_root / "docs" / "train-schema-notes.md")
     args = parser.parse_args()
@@ -194,7 +196,7 @@ def main() -> int:
                 "## 暂时无法确认的标注语义",
                 "",
                 "- 当前没有本地文件可供检查，所有字段语义均待赛事说明或数据文件确认。",
-                "- `gt_reader.py` 不会默认选择任何 GT 字段。",
+                "- `annotation_reader.py` 不会默认选择任何 GT 字段。",
                 "",
             ]
         )

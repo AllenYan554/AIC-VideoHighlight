@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from .metrics import temporal_iou
-from .models import HighlightSegment
+from .schemas import HighlightSegment
+from .temporal_metrics import temporal_iou
 
 
 def _merge_pair(left: HighlightSegment, right: HighlightSegment) -> HighlightSegment:

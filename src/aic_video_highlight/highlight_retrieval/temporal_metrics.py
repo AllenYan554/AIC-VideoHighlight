@@ -1,4 +1,4 @@
-"""Stage 1 duration metrics; these are not official competition metrics."""
+"""Highlight retrieval duration metrics; these are not official competition metrics."""
 
 from __future__ import annotations
 
@@ -86,18 +86,18 @@ def _set_intersection_duration(
 
 def duration_based_metrics(
     predicted: Iterable[TemporalInterval | Sequence[float]],
-    ground_truth: Iterable[TemporalInterval | Sequence[float]],
+    reference_segments: Iterable[TemporalInterval | Sequence[float]],
 ) -> dict[str, float]:
     """Compute union-aware duration precision, recall, F1, and Temporal IoU."""
     predicted_union = _merge_interval_union(predicted)
-    ground_truth_union = _merge_interval_union(ground_truth)
+    reference_union = _merge_interval_union(reference_segments)
     predicted_sec = _total_duration(predicted_union)
-    ground_truth_sec = _total_duration(ground_truth_union)
-    intersection_sec = _set_intersection_duration(predicted_union, ground_truth_union)
-    union_sec = predicted_sec + ground_truth_sec - intersection_sec
+    reference_sec = _total_duration(reference_union)
+    intersection_sec = _set_intersection_duration(predicted_union, reference_union)
+    union_sec = predicted_sec + reference_sec - intersection_sec
 
-    precision = intersection_sec / predicted_sec if predicted_sec else float(not ground_truth_sec)
-    recall = intersection_sec / ground_truth_sec if ground_truth_sec else float(not predicted_sec)
+    precision = intersection_sec / predicted_sec if predicted_sec else float(not reference_sec)
+    recall = intersection_sec / reference_sec if reference_sec else float(not predicted_sec)
     f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
     tiou = intersection_sec / union_sec if union_sec else 1.0
     return {

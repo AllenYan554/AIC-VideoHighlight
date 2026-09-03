@@ -1,4 +1,4 @@
-"""Conservative JSONL reader that makes no implicit ground-truth assumptions."""
+"""Conservative JSONL reader that makes no implicit annotation assumptions."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 
-class GroundTruthSchemaError(ValueError):
+class AnnotationSchemaError(ValueError):
     pass
 
 
@@ -22,21 +22,21 @@ def iter_jsonl_records(path: str | Path) -> Iterator[dict[str, Any]]:
             try:
                 record = json.loads(line)
             except json.JSONDecodeError as exc:
-                raise GroundTruthSchemaError(f"invalid JSON on line {line_number}: {exc.msg}") from exc
+                raise AnnotationSchemaError(f"invalid JSON on line {line_number}: {exc.msg}") from exc
             if not isinstance(record, dict):
-                raise GroundTruthSchemaError(f"line {line_number} is not a JSON object")
+                raise AnnotationSchemaError(f"line {line_number} is not a JSON object")
             yield record
 
 
 def read_explicit_field(record: dict[str, Any], field_path: str | None) -> Any:
-    """Read only a caller-confirmed field path; never guess a GT field by name."""
+    """Read only a caller-confirmed field path; never guess annotation semantics."""
     if not field_path:
-        raise GroundTruthSchemaError(
-            "ground-truth field is not configured; confirm annotation semantics before evaluation"
+        raise AnnotationSchemaError(
+            "annotation field is not configured; confirm annotation semantics before evaluation"
         )
     value: Any = record
     for part in field_path.split("."):
         if not isinstance(value, dict) or part not in value:
-            raise GroundTruthSchemaError(f"configured field does not exist: {field_path}")
+            raise AnnotationSchemaError(f"configured annotation field does not exist: {field_path}")
         value = value[part]
     return value

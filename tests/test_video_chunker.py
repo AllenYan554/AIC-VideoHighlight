@@ -1,6 +1,6 @@
 import pytest
 
-from aic_video_highlight.stage1.chunker import build_chunks
+from aic_video_highlight.highlight_retrieval.video_chunker import build_chunks
 
 
 def test_build_chunks_covers_long_video_with_overlap_without_overflow() -> None:

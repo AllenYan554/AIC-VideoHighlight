@@ -1,6 +1,9 @@
 import pytest
 
-from aic_video_highlight.stage1.parser import ResponseParseError, parse_highlight_response
+from aic_video_highlight.highlight_retrieval.response_parser import (
+    ResponseParseError,
+    parse_highlight_response,
+)
 
 
 def test_parse_valid_highlight_json() -> None:

@@ -4,7 +4,7 @@
 
 1. 通过 Git 把仓库放到 `/root/autodl-tmp/AIC-VideoHighlight`。
 2. 执行 `bash remote/bootstrap_autodl.sh` 创建 `.venv`、安装项目依赖和未锁版本的 vLLM。
-3. 执行 `bash remote/serve_qwen.sh`，模型缓存写入 `/root/autodl-tmp/hf-cache`。
+3. 执行 `bash remote/serve_qwen_vllm.sh`，模型缓存写入 `/root/autodl-tmp/hf-cache`。
 4. 依次运行文本与视频 Smoke Test。
 5. Smoke Test 成功后记录 Python、PyTorch、CUDA、vLLM 与模型 revision，再固定兼容版本。
 

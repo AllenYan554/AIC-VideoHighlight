@@ -1,4 +1,4 @@
-"""Strict parsing for model-produced Stage 1 JSON."""
+"""Strict parsing for model-produced highlight retrieval JSON."""
 
 from __future__ import annotations
 
@@ -7,11 +7,11 @@ import math
 import re
 from typing import Any
 
-from .models import HighlightSegment
+from .schemas import HighlightSegment
 
 
 class ResponseParseError(ValueError):
-    """Raised when a model response violates the Stage 1 response contract."""
+    """Raised when a model response violates the highlight retrieval contract."""
 
 
 _JSON_FENCE = re.compile(r"\A```(?:json)?\s*(\{.*\})\s*```\Z", re.DOTALL | re.IGNORECASE)

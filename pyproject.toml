@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "aic-video-highlight"
 version = "0.1.0"
-description = "Stage 1 coarse-recall baseline for general video highlight detection"
+description = "High-recall candidate retrieval baseline for general video highlight detection"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

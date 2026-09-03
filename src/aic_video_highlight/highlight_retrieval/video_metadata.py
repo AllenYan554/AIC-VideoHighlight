@@ -8,7 +8,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from .models import VideoMeta
+from .schemas import VideoMeta
 
 
 class VideoProbeError(RuntimeError):

@@ -1,4 +1,4 @@
-"""Internal data structures for the Stage 1 coarse-recall pipeline."""
+"""Internal data structures for highlight candidate retrieval."""
 
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ class HighlightSegment:
 
 
 @dataclass(slots=True)
-class Stage1Result:
+class HighlightRetrievalResult:
     """Internal intermediate result; not the competition prediction schema."""
 
     video_id: str

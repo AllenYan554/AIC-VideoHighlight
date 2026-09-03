@@ -7,7 +7,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from aic_video_highlight.stage1.qwen_client import QwenVLLMClient
+from aic_video_highlight.highlight_retrieval.qwen_vllm_client import QwenVLLMClient
 
 
 def main() -> int:

@@ -1,5 +1,5 @@
-from aic_video_highlight.stage1.merge import merge_segments
-from aic_video_highlight.stage1.models import HighlightSegment
+from aic_video_highlight.highlight_retrieval.candidate_merger import merge_segments
+from aic_video_highlight.highlight_retrieval.schemas import HighlightSegment
 
 
 def test_merge_combines_cross_chunk_duplicates_deterministically() -> None:

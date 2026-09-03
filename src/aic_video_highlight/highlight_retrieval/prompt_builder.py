@@ -1,12 +1,12 @@
-"""Versioned prompts for Stage 1 coarse highlight recall."""
+"""Versioned prompts for high-recall highlight candidate retrieval."""
 
 from __future__ import annotations
 
 
-PROMPT_VERSION = "stage1_coarse_v0"
+PROMPT_VERSION = "high_recall_retrieval_v0"
 
 
-def build_stage1_prompt(chunk_duration_sec: float, max_segments: int = 5) -> str:
+def build_high_recall_prompt(chunk_duration_sec: float, max_segments: int = 5) -> str:
     if chunk_duration_sec <= 0:
         raise ValueError("chunk_duration_sec must be greater than zero")
     if max_segments <= 0:

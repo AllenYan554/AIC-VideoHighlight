@@ -1,4 +1,4 @@
-"""End-to-end Stage 1 coarse-recall orchestration."""
+"""End-to-end highlight candidate retrieval orchestration."""
 
 from __future__ import annotations
 
@@ -10,21 +10,21 @@ from pathlib import Path
 
 import yaml
 
-from .chunker import build_chunks
-from .merge import merge_segments
-from .models import HighlightSegment, Stage1Result, VideoChunk
-from .parser import parse_highlight_response
-from .prompt import build_stage1_prompt
-from .qwen_client import QwenVLLMClient
-from .video_meta import probe_video
+from .candidate_merger import merge_segments
+from .prompt_builder import build_high_recall_prompt
+from .qwen_vllm_client import QwenVLLMClient
+from .response_parser import parse_highlight_response
+from .schemas import HighlightRetrievalResult, HighlightSegment, VideoChunk
+from .video_chunker import build_chunks
+from .video_metadata import probe_video
 
 
-class Stage1PipelineError(RuntimeError):
+class HighlightRetrievalPipelineError(RuntimeError):
     pass
 
 
 @dataclass(frozen=True, slots=True)
-class Stage1Config:
+class HighlightRetrievalConfig:
     model: str = "Qwen/Qwen3.5-4B"
     chunk_seconds: float = 30.0
     overlap_seconds: float = 5.0
@@ -50,19 +50,19 @@ class Stage1Config:
             raise ValueError("request_timeout_sec must be greater than zero")
 
 
-def load_stage1_config(path: str | Path) -> Stage1Config:
+def load_highlight_retrieval_config(path: str | Path) -> HighlightRetrievalConfig:
     config_path = Path(path)
     if not config_path.is_file():
         raise FileNotFoundError(f"config file does not exist: {config_path}")
     with config_path.open("r", encoding="utf-8") as handle:
         payload = yaml.safe_load(handle) or {}
     if not isinstance(payload, dict):
-        raise ValueError("Stage 1 config must be a YAML mapping")
-    allowed = {item.name for item in fields(Stage1Config)}
+        raise ValueError("highlight retrieval config must be a YAML mapping")
+    allowed = {item.name for item in fields(HighlightRetrievalConfig)}
     unknown = sorted(set(payload) - allowed)
     if unknown:
-        raise ValueError(f"unknown Stage 1 config keys: {', '.join(unknown)}")
-    return Stage1Config(**payload)
+        raise ValueError(f"unknown highlight retrieval config keys: {', '.join(unknown)}")
+    return HighlightRetrievalConfig(**payload)
 
 
 def _render_chunk(
@@ -97,17 +97,19 @@ def _render_chunk(
     try:
         completed = subprocess.run(command, capture_output=True, text=True, check=False)
     except FileNotFoundError as exc:
-        raise Stage1PipelineError(f"ffmpeg executable not found: {ffmpeg_bin}") from exc
+        raise HighlightRetrievalPipelineError(f"ffmpeg executable not found: {ffmpeg_bin}") from exc
     if completed.returncode != 0:
         detail = completed.stderr.strip() or "unknown ffmpeg error"
-        raise Stage1PipelineError(f"failed to create temporary chunk {chunk.index}: {detail}")
+        raise HighlightRetrievalPipelineError(
+            f"failed to create temporary chunk {chunk.index}: {detail}"
+        )
 
 
-class Stage1Pipeline:
+class HighlightRetrievalPipeline:
     def __init__(
         self,
         client: QwenVLLMClient,
-        config: Stage1Config,
+        config: HighlightRetrievalConfig,
         *,
         ffprobe_bin: str = "ffprobe",
         ffmpeg_bin: str = "ffmpeg",
@@ -118,7 +120,7 @@ class Stage1Pipeline:
         self.ffmpeg_bin = ffmpeg_bin
 
     def _analyze_chunk(self, media: Path, chunk: VideoChunk) -> tuple[list[HighlightSegment], str]:
-        prompt = build_stage1_prompt(chunk.duration_sec, self.config.max_segments_per_chunk)
+        prompt = build_high_recall_prompt(chunk.duration_sec, self.config.max_segments_per_chunk)
         raw_response = self.client.analyze_video(
             media,
             prompt,
@@ -143,7 +145,7 @@ class Stage1Pipeline:
         ]
         return global_segments, raw_response
 
-    def run(self, video_path: str | Path) -> Stage1Result:
+    def run(self, video_path: str | Path) -> HighlightRetrievalResult:
         started_at = time.perf_counter()
         meta = probe_video(video_path, ffprobe_bin=self.ffprobe_bin)
         chunks = build_chunks(
@@ -161,7 +163,9 @@ class Stage1Pipeline:
         else:
             # The temporary directory is adjacent to the source video so it stays
             # inside vLLM's configured --allowed-local-media-path tree.
-            with tempfile.TemporaryDirectory(prefix=".aic-stage1-", dir=meta.path.parent) as temp_dir:
+            with tempfile.TemporaryDirectory(
+                prefix=".aic-highlight-retrieval-", dir=meta.path.parent
+            ) as temp_dir:
                 for chunk in chunks:
                     chunk_path = Path(temp_dir) / f"chunk-{chunk.index:05d}.mp4"
                     _render_chunk(meta.path, chunk, chunk_path, ffmpeg_bin=self.ffmpeg_bin)
@@ -170,7 +174,7 @@ class Stage1Pipeline:
                     raw_responses.append(response)
 
         merged = merge_segments(candidates, tiou_threshold=self.config.merge_tiou_threshold)
-        return Stage1Result(
+        return HighlightRetrievalResult(
             video_id=meta.video_id,
             duration_sec=meta.duration_sec,
             segments=merged,

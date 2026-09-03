@@ -1,14 +1,14 @@
 # AIC-VideoHighlight
 
-全球校园人工智能算法精英大赛“基于视频大模型的通用视频高光剪辑”项目。本仓库当前只实现 **Stage 1：高光候选粗召回** 的 Zero-shot baseline 框架。
+全球校园人工智能算法精英大赛“基于视频大模型的通用视频高光剪辑”项目。本仓库当前只实现**高光候选召回**的 Zero-shot baseline 框架。
 
 ## 当前范围
 
-Stage 1 负责：读取视频元数据、按重叠时间窗临时切分长视频、调用由 vLLM 托管的 Qwen3.5-4B 视频理解接口、解析秒级局部候选、映射到全局时间、按 Temporal IoU 合并重复候选，并提供粗召回评估工具。
+高光候选召回负责：读取视频元数据、按重叠时间窗临时切分长视频、调用由 vLLM 托管的 Qwen3.5-4B 视频理解接口、解析秒级局部候选、映射到全局时间、按 Temporal IoU 合并重复候选，并提供粗召回评估工具。
 
-Stage 1 不负责最终成片决策，也不实现 Stage C 边界精修、SAM、Tracking、逐帧 bbox、构图优化、时序框平滑、SFT、LoRA 或 GRPO/RL。`Stage1Result` 是内部中间产物，不是比赛最终 `predictions.jsonl` 格式。
+高光候选召回不负责最终成片决策，也不实现边界精修、SAM、Tracking、逐帧 bbox、构图优化、时序框平滑、SFT、LoRA 或 GRPO/RL。`HighlightRetrievalResult` 是内部中间产物，不是比赛最终 `predictions.jsonl` 格式。
 
-> **Stage 1 metric != Official Competition Metric**
+> **Highlight retrieval metric != Official Competition Metric**
 >
 > 当前仅计算秒级区间的 duration-based temporal precision、recall、F1 与 Temporal IoU。官方最终指标仍需 frame exact match、bbox IoU 与 IoU-weighted F 等空间/逐帧信息。
 
@@ -54,7 +54,7 @@ python -m pytest
 cd /root/autodl-tmp/AIC-VideoHighlight
 bash remote/bootstrap_autodl.sh
 source .venv/bin/activate
-bash remote/serve_qwen.sh
+bash remote/serve_qwen_vllm.sh
 ```
 
 另开一个终端执行：
@@ -63,10 +63,10 @@ bash remote/serve_qwen.sh
 source .venv/bin/activate
 python scripts/smoke_text.py
 python scripts/smoke_video.py --video /root/autodl-tmp/datasets/sample.mp4
-python scripts/run_stage1.py \
+python scripts/run_highlight_retrieval.py \
   --video /root/autodl-tmp/datasets/sample.mp4 \
-  --config configs/stage1.yaml \
-  --output outputs/stage1_result.json \
+  --config configs/highlight_retrieval.yaml \
+  --output outputs/highlight_retrieval_result.json \
   --base-url http://127.0.0.1:8000/v1
 ```
 
@@ -74,10 +74,10 @@ python scripts/run_stage1.py \
 
 ## 配置与兼容性说明
 
-默认参数位于 `configs/stage1.yaml`：30 秒窗口、5 秒重叠、2 FPS 粗采样、每块最多 5 个候选、256 个输出 token、temperature 0、合并阈值 0.5。
+默认参数位于 `configs/highlight_retrieval.yaml`：30 秒窗口、5 秒重叠、2 FPS 粗采样、每块最多 5 个候选、256 个输出 token、temperature 0、合并阈值 0.5。
 
 客户端按当前 vLLM OpenAI-compatible 多模态格式发送 `video_url`，本地文件使用 `file://` URL；服务端通过 `--allowed-local-media-path` 限定读取目录。`coarse_fps` 通过 `media_io_kwargs.video.fps` 传入。vLLM 尚未锁版本：必须先在 AutoDL 实机核对 Qwen3.5-4B、`video_url`、`--allowed-local-media-path`、`--media-io-kwargs` 和显存参数，Smoke Test 成功后再固定版本。当前没有声称 GPU 推理已验证。
 
 ## 当前下一步
 
-在 AutoDL RTX 4090D 环境依次完成：Qwen3.5-4B 与 vLLM 首次兼容性验证、文本 Smoke Test、视频 Smoke Test，然后对单个样例运行 Stage 1，并在确认 `train.jsonl` 的真实标注语义后才接入评估。
+在 AutoDL RTX 4090D 环境依次完成：Qwen3.5-4B 与 vLLM 首次兼容性验证、文本 Smoke Test、视频 Smoke Test，然后对单个样例运行高光候选召回，并在确认 `train.jsonl` 的真实标注语义后才接入评估。

@@ -157,5 +157,5 @@
 - 字段名本身不能证明某字段是赛事最终人工 Ground Truth。
 - 即使存在 `candidate_segments`，也不能仅凭名称把它作为唯一 GT。
 - `seed_model`、`prompt_fingerprint`、`provenance` 等字段若存在，只能确认记录包含生成/来源元数据；不能据此确定标签由人工、模型或混合流程产生。
-- 在获得赛事数据说明、字段定义或可靠样例解释前，`gt_reader.py` 不会默认选择任何 GT 字段。
+- 在获得赛事数据说明、字段定义或可靠样例解释前，`annotation_reader.py` 不会默认选择任何 GT 字段。
 - 本报告不包含训练标注原文、摘要内容、轨迹值或候选区间值。
