@@ -11,6 +11,9 @@ class TemporalInterval(Protocol):
     end_sec: float
 
 
+ZERO_DURATION_EPSILON_SEC = 1e-3
+
+
 def _bounds(interval: TemporalInterval | Sequence[float]) -> tuple[float, float]:
     if hasattr(interval, "start_sec") and hasattr(interval, "end_sec"):
         start_sec = float(interval.start_sec)
@@ -87,10 +90,37 @@ def _set_intersection_duration(
 def duration_based_metrics(
     predicted: Iterable[TemporalInterval | Sequence[float]],
     reference_segments: Iterable[TemporalInterval | Sequence[float]],
-) -> dict[str, float]:
-    """Compute union-aware duration precision, recall, F1, and Temporal IoU."""
+    *,
+    zero_duration_epsilon_sec: float = ZERO_DURATION_EPSILON_SEC,
+) -> dict[str, float | int]:
+    """Compute union-aware duration metrics against non-degenerate references.
+
+    Reference intervals whose duration is at most ``zero_duration_epsilon_sec``
+    are counted and excluded from duration denominators. Predictions remain
+    strict positive-duration intervals.
+    """
+    if zero_duration_epsilon_sec < 0:
+        raise ValueError("zero_duration_epsilon_sec must be non-negative")
+
     predicted_union = _merge_interval_union(predicted)
-    reference_union = _merge_interval_union(reference_segments)
+    valid_references: list[tuple[float, float]] = []
+    zero_duration_reference_count = 0
+    for interval in reference_segments:
+        if hasattr(interval, "start_sec") and hasattr(interval, "end_sec"):
+            start_sec = float(interval.start_sec)
+            end_sec = float(interval.end_sec)
+        else:
+            if len(interval) != 2:
+                raise ValueError("an interval sequence must contain exactly two values")
+            start_sec, end_sec = map(float, interval)
+        if start_sec < 0 or end_sec < start_sec:
+            raise ValueError("reference intervals require 0 <= start_sec <= end_sec")
+        if end_sec - start_sec <= zero_duration_epsilon_sec:
+            zero_duration_reference_count += 1
+        else:
+            valid_references.append((start_sec, end_sec))
+
+    reference_union = _merge_interval_union(valid_references)
     predicted_sec = _total_duration(predicted_union)
     reference_sec = _total_duration(reference_union)
     intersection_sec = _set_intersection_duration(predicted_union, reference_union)
@@ -101,10 +131,13 @@ def duration_based_metrics(
     f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
     tiou = intersection_sec / union_sec if union_sec else 1.0
     return {
+        "predicted_sec": predicted_sec,
+        "reference_sec": reference_sec,
         "intersection_sec": intersection_sec,
         "union_sec": union_sec,
         "temporal_iou": tiou,
         "precision": precision,
         "recall": recall,
         "f1": f1,
+        "zero_duration_reference_count": zero_duration_reference_count,
     }

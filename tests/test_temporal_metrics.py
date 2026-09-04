@@ -43,3 +43,17 @@ def test_duration_metrics_handle_both_sets_empty() -> None:
     assert metrics["recall"] == 1.0
     assert metrics["f1"] == 1.0
     assert metrics["temporal_iou"] == 1.0
+
+
+def test_duration_metrics_exclude_zero_duration_weak_references() -> None:
+    metrics = duration_based_metrics(
+        [segment(2.0, 4.0)],
+        [(0.0, 0.0), (2.0, 5.0)],
+        zero_duration_epsilon_sec=1e-3,
+    )
+
+    assert metrics["zero_duration_reference_count"] == 1
+    assert metrics["reference_sec"] == 3.0
+    assert metrics["precision"] == 1.0
+    assert metrics["recall"] == pytest.approx(2 / 3)
+    assert metrics["f1"] == pytest.approx(0.8)

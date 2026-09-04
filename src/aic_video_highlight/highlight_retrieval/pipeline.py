@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import subprocess
 import tempfile
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, fields
 from pathlib import Path
 
@@ -16,11 +16,71 @@ from .qwen_vllm_client import QwenVLLMClient
 from .response_parser import parse_highlight_response
 from .schemas import HighlightRetrievalResult, HighlightSegment, VideoChunk
 from .video_chunker import build_chunks
+from .video_clip import extract_video_clip
 from .video_metadata import probe_video
 
 
 class HighlightRetrievalPipelineError(RuntimeError):
     pass
+
+
+def parse_saved_raw_outputs(
+    raw_chunk_outputs: list[dict],
+    *,
+    tiou_threshold: float,
+) -> tuple[list[HighlightSegment], list[HighlightSegment], list[dict], dict[str, float]]:
+    """Re-run parser and merge stages from persisted responses without model calls."""
+    candidates: list[HighlightSegment] = []
+    normalized_outputs: list[dict] = []
+    parsing_started_at = time.perf_counter()
+    for saved in sorted(raw_chunk_outputs, key=lambda item: item["chunk_index"]):
+        record = dict(saved)
+        chunk_start = float(record["chunk_start_sec"])
+        chunk_end = float(record["chunk_end_sec"])
+        try:
+            local_segments = parse_highlight_response(
+                str(record["raw_response"]),
+                chunk_duration_sec=chunk_end - chunk_start,
+                source_chunk=int(record["chunk_index"]),
+            )
+        except Exception as exc:
+            record["parse_success"] = False
+            record["parse_error"] = f"{type(exc).__name__}: {exc}"
+            normalized_outputs.append(record)
+            raise
+        record["parse_success"] = True
+        record["parse_error"] = None
+        record["parsed_segments"] = [
+            {
+                "start_sec": item.start_sec,
+                "end_sec": item.end_sec,
+                "score": item.score,
+                "reason": item.reason,
+                "source_chunk": item.source_chunk,
+            }
+            for item in local_segments
+        ]
+        normalized_outputs.append(record)
+        candidates.extend(
+            HighlightSegment(
+                start_sec=chunk_start + item.start_sec,
+                end_sec=chunk_start + item.end_sec,
+                score=item.score,
+                reason=item.reason,
+                source_chunk=item.source_chunk,
+            )
+            for item in local_segments
+        )
+    parsing_time_sec = time.perf_counter() - parsing_started_at
+    merging_started_at = time.perf_counter()
+    merged = merge_segments(candidates, tiou_threshold=tiou_threshold)
+    merging_time_sec = time.perf_counter() - merging_started_at
+    return (
+        candidates,
+        merged,
+        normalized_outputs,
+        {"parsing_sec": parsing_time_sec, "merging_sec": merging_time_sec},
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +94,7 @@ class HighlightRetrievalConfig:
     temperature: float = 0.0
     merge_tiou_threshold: float = 0.5
     request_timeout_sec: float = 120.0
+    enable_thinking: bool = False
 
     def __post_init__(self) -> None:
         if self.chunk_seconds <= 0:
@@ -73,36 +134,18 @@ def _render_chunk(
     ffmpeg_bin: str,
 ) -> None:
     """Create one temporary MP4 clip; no persistent frame images are generated."""
-    command = [
-        ffmpeg_bin,
-        "-v",
-        "error",
-        "-y",
-        "-ss",
-        f"{chunk.start_sec:.6f}",
-        "-i",
-        str(source),
-        "-t",
-        f"{chunk.duration_sec:.6f}",
-        "-map",
-        "0:v:0",
-        "-map",
-        "0:a?",
-        "-c",
-        "copy",
-        "-avoid_negative_ts",
-        "make_zero",
-        str(output),
-    ]
     try:
-        completed = subprocess.run(command, capture_output=True, text=True, check=False)
-    except FileNotFoundError as exc:
-        raise HighlightRetrievalPipelineError(f"ffmpeg executable not found: {ffmpeg_bin}") from exc
-    if completed.returncode != 0:
-        detail = completed.stderr.strip() or "unknown ffmpeg error"
-        raise HighlightRetrievalPipelineError(
-            f"failed to create temporary chunk {chunk.index}: {detail}"
+        extract_video_clip(
+            source,
+            output,
+            start_sec=chunk.start_sec,
+            end_sec=chunk.end_sec,
+            ffmpeg_bin=ffmpeg_bin,
         )
+    except Exception as exc:
+        raise HighlightRetrievalPipelineError(
+            f"failed to create temporary chunk {chunk.index}: {exc}"
+        ) from exc
 
 
 class HighlightRetrievalPipeline:
@@ -119,20 +162,63 @@ class HighlightRetrievalPipeline:
         self.ffprobe_bin = ffprobe_bin
         self.ffmpeg_bin = ffmpeg_bin
 
-    def _analyze_chunk(self, media: Path, chunk: VideoChunk) -> tuple[list[HighlightSegment], str]:
+    def _analyze_chunk(
+        self,
+        media: Path,
+        chunk: VideoChunk,
+        raw_output_sink: Callable[[dict], None] | None = None,
+    ) -> tuple[list[HighlightSegment], dict, float]:
         prompt = build_high_recall_prompt(chunk.duration_sec, self.config.max_segments_per_chunk)
+        request_started_at = time.perf_counter()
         raw_response = self.client.analyze_video(
             media,
             prompt,
             max_new_tokens=self.config.max_new_tokens,
             temperature=self.config.temperature,
             coarse_fps=self.config.coarse_fps,
+            enable_thinking=self.config.enable_thinking,
         )
-        local_segments = parse_highlight_response(
-            raw_response,
-            chunk_duration_sec=chunk.duration_sec,
-            source_chunk=chunk.index,
-        )
+        request_latency_sec = time.perf_counter() - request_started_at
+        raw_record = {
+            "chunk_index": chunk.index,
+            "chunk_start_sec": chunk.start_sec,
+            "chunk_end_sec": chunk.end_sec,
+            "raw_response": raw_response,
+            "request_latency_sec": request_latency_sec,
+            "parse_success": None,
+            "parse_error": None,
+            "parsed_segments": [],
+        }
+        if raw_output_sink is not None:
+            raw_output_sink(raw_record)
+
+        parse_started_at = time.perf_counter()
+        try:
+            local_segments = parse_highlight_response(
+                raw_response,
+                chunk_duration_sec=chunk.duration_sec,
+                source_chunk=chunk.index,
+            )
+        except Exception as exc:
+            raw_record["parse_success"] = False
+            raw_record["parse_error"] = f"{type(exc).__name__}: {exc}"
+            if raw_output_sink is not None:
+                raw_output_sink(raw_record)
+            raise
+        parse_time_sec = time.perf_counter() - parse_started_at
+        raw_record["parse_success"] = True
+        raw_record["parsed_segments"] = [
+            {
+                "start_sec": item.start_sec,
+                "end_sec": item.end_sec,
+                "score": item.score,
+                "reason": item.reason,
+                "source_chunk": item.source_chunk,
+            }
+            for item in local_segments
+        ]
+        if raw_output_sink is not None:
+            raw_output_sink(raw_record)
         global_segments = [
             HighlightSegment(
                 start_sec=chunk.start_sec + item.start_sec,
@@ -143,11 +229,18 @@ class HighlightRetrievalPipeline:
             )
             for item in local_segments
         ]
-        return global_segments, raw_response
+        return global_segments, raw_record, parse_time_sec
 
-    def run(self, video_path: str | Path) -> HighlightRetrievalResult:
+    def run(
+        self,
+        video_path: str | Path,
+        *,
+        raw_output_sink: Callable[[dict], None] | None = None,
+    ) -> HighlightRetrievalResult:
         started_at = time.perf_counter()
+        probe_started_at = time.perf_counter()
         meta = probe_video(video_path, ffprobe_bin=self.ffprobe_bin)
+        probe_time_sec = time.perf_counter() - probe_started_at
         chunks = build_chunks(
             meta.duration_sec,
             chunk_seconds=self.config.chunk_seconds,
@@ -155,11 +248,20 @@ class HighlightRetrievalPipeline:
         )
         candidates: list[HighlightSegment] = []
         raw_responses: list[str] = []
+        raw_chunk_outputs: list[dict] = []
+        parsing_time_sec = 0.0
+        model_inference_time_sec = 0.0
+        chunk_extraction_time_sec = 0.0
 
         if len(chunks) == 1:
-            segments, response = self._analyze_chunk(meta.path, chunks[0])
+            segments, raw_record, parse_time_sec = self._analyze_chunk(
+                meta.path, chunks[0], raw_output_sink
+            )
             candidates.extend(segments)
-            raw_responses.append(response)
+            raw_responses.append(raw_record["raw_response"])
+            raw_chunk_outputs.append(raw_record)
+            parsing_time_sec += parse_time_sec
+            model_inference_time_sec += raw_record["request_latency_sec"]
         else:
             # The temporary directory is adjacent to the source video so it stays
             # inside vLLM's configured --allowed-local-media-path tree.
@@ -168,16 +270,36 @@ class HighlightRetrievalPipeline:
             ) as temp_dir:
                 for chunk in chunks:
                     chunk_path = Path(temp_dir) / f"chunk-{chunk.index:05d}.mp4"
+                    extraction_started_at = time.perf_counter()
                     _render_chunk(meta.path, chunk, chunk_path, ffmpeg_bin=self.ffmpeg_bin)
-                    segments, response = self._analyze_chunk(chunk_path, chunk)
+                    chunk_extraction_time_sec += time.perf_counter() - extraction_started_at
+                    segments, raw_record, parse_time_sec = self._analyze_chunk(
+                        chunk_path, chunk, raw_output_sink
+                    )
                     candidates.extend(segments)
-                    raw_responses.append(response)
+                    raw_responses.append(raw_record["raw_response"])
+                    raw_chunk_outputs.append(raw_record)
+                    parsing_time_sec += parse_time_sec
+                    model_inference_time_sec += raw_record["request_latency_sec"]
 
+        merge_started_at = time.perf_counter()
         merged = merge_segments(candidates, tiou_threshold=self.config.merge_tiou_threshold)
+        merging_time_sec = time.perf_counter() - merge_started_at
+        total_time_sec = time.perf_counter() - started_at
         return HighlightRetrievalResult(
             video_id=meta.video_id,
             duration_sec=meta.duration_sec,
             segments=merged,
             raw_responses=raw_responses,
-            inference_time_sec=time.perf_counter() - started_at,
+            inference_time_sec=model_inference_time_sec,
+            candidate_segments=candidates,
+            raw_chunk_outputs=raw_chunk_outputs,
+            timing={
+                "probe_sec": probe_time_sec,
+                "chunk_extraction_sec": chunk_extraction_time_sec,
+                "model_inference_sec": model_inference_time_sec,
+                "parsing_sec": parsing_time_sec,
+                "merging_sec": merging_time_sec,
+                "total_sec": total_time_sec,
+            },
         )

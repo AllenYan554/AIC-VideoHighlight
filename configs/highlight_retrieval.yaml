@@ -7,3 +7,4 @@ max_new_tokens: 256
 temperature: 0
 merge_tiou_threshold: 0.5
 request_timeout_sec: 120
+enable_thinking: false

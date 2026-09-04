@@ -15,6 +15,34 @@ class VideoProbeError(RuntimeError):
     """Raised when FFprobe cannot provide usable video metadata."""
 
 
+def _probe_with_opencv(path: Path) -> VideoMeta:
+    try:
+        import cv2
+    except ImportError as exc:
+        raise VideoProbeError("ffprobe is unavailable and OpenCV is not installed") from exc
+    capture = cv2.VideoCapture(str(path), cv2.CAP_FFMPEG)
+    if not capture.isOpened():
+        raise VideoProbeError(f"OpenCV could not decode video: {path}")
+    try:
+        fps = _positive_float(capture.get(cv2.CAP_PROP_FPS))
+        width = int(round(capture.get(cv2.CAP_PROP_FRAME_WIDTH)))
+        height = int(round(capture.get(cv2.CAP_PROP_FRAME_HEIGHT)))
+        frame_count = int(round(capture.get(cv2.CAP_PROP_FRAME_COUNT)))
+    finally:
+        capture.release()
+    if fps is None or width <= 0 or height <= 0 or frame_count <= 0:
+        raise VideoProbeError(f"OpenCV returned invalid video metadata: {path}")
+    return VideoMeta(
+        video_id=path.stem,
+        path=path,
+        duration_sec=frame_count / fps,
+        fps=fps,
+        width=width,
+        height=height,
+        frame_count=frame_count,
+    )
+
+
 def _positive_float(value: Any) -> float | None:
     try:
         result = float(value)
@@ -65,8 +93,8 @@ def probe_video(
             timeout=timeout_sec,
             check=False,
         )
-    except FileNotFoundError as exc:
-        raise VideoProbeError(f"ffprobe executable not found: {ffprobe_bin}") from exc
+    except FileNotFoundError:
+        return _probe_with_opencv(path)
     except subprocess.TimeoutExpired as exc:
         raise VideoProbeError(f"ffprobe timed out after {timeout_sec:g}s: {path}") from exc
     if completed.returncode != 0:

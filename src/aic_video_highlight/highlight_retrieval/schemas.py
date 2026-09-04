@@ -51,6 +51,9 @@ class HighlightRetrievalResult:
     segments: list[HighlightSegment] = field(default_factory=list)
     raw_responses: list[str] = field(default_factory=list)
     inference_time_sec: float = 0.0
+    candidate_segments: list[HighlightSegment] = field(default_factory=list)
+    raw_chunk_outputs: list[dict[str, Any]] = field(default_factory=list)
+    timing: dict[str, float] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -59,4 +62,7 @@ class HighlightRetrievalResult:
             "segments": [asdict(segment) for segment in self.segments],
             "raw_responses": self.raw_responses,
             "inference_time_sec": self.inference_time_sec,
+            "candidate_segments": [asdict(segment) for segment in self.candidate_segments],
+            "raw_chunk_outputs": self.raw_chunk_outputs,
+            "timing": self.timing,
         }
