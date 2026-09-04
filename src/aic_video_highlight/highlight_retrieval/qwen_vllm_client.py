@@ -36,12 +36,17 @@ class QwenVLLMClient:
         *,
         max_new_tokens: int = 256,
         temperature: float = 0.0,
+        enable_thinking: bool | None = None,
     ) -> str:
+        extra_body: dict[str, Any] = {}
+        if enable_thinking is not None:
+            extra_body["chat_template_kwargs"] = {"enable_thinking": enable_thinking}
         response = self._client.chat.completions.create(
             model=self.model,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=max_new_tokens,
             temperature=temperature,
+            extra_body=extra_body or None,
         )
         return response.choices[0].message.content or ""
 
@@ -53,6 +58,7 @@ class QwenVLLMClient:
         max_new_tokens: int = 256,
         temperature: float = 0.0,
         coarse_fps: float | None = None,
+        enable_thinking: bool | None = None,
     ) -> str:
         """Analyze one local video or HTTP(S) URL using a ``video_url`` content part.
 
@@ -88,5 +94,9 @@ class QwenVLLMClient:
             if coarse_fps <= 0:
                 raise ValueError("coarse_fps must be greater than zero")
             request["extra_body"] = {"media_io_kwargs": {"video": {"fps": coarse_fps}}}
+        if enable_thinking is not None:
+            request.setdefault("extra_body", {})["chat_template_kwargs"] = {
+                "enable_thinking": enable_thinking
+            }
         response = self._client.chat.completions.create(**request)
         return response.choices[0].message.content or ""

@@ -26,6 +26,7 @@ def main() -> int:
                 "请简要说明这段视频中发生了什么。",
                 max_new_tokens=128,
                 coarse_fps=2.0,
+                enable_thinking=False,
             )
         )
     except Exception as exc:

@@ -14,7 +14,7 @@ if [[ ! -d "${DATASET_DIR}" ]]; then
 fi
 
 cd "${PROJECT_DIR}"
-source .venv/bin/activate
+source /root/miniconda3/bin/activate aic-video-highlight
 
 # TODO: verify these flags against the first working AutoDL vLLM version, then pin it.
 exec vllm serve "${MODEL_ID}" \
