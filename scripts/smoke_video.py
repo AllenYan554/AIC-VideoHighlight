@@ -20,15 +20,15 @@ def main() -> int:
         client = QwenVLLMClient(base_url=args.base_url, model=args.model)
         if not client.health_check():
             raise RuntimeError(f"model is not listed by vLLM: {args.model}")
-        print(
-            client.analyze_video(
-                args.video,
-                "请简要说明这段视频中发生了什么。",
-                max_new_tokens=128,
-                coarse_fps=2.0,
-                enable_thinking=False,
-            )
+        result = client.analyze_video(
+            args.video,
+            "请简要说明这段视频中发生了什么。",
+            max_new_tokens=128,
+            coarse_fps=2.0,
+            enable_thinking=False,
         )
+        print(result.content)
+        print(f"[finish_reason={result.finish_reason}]", file=sys.stderr)
     except Exception as exc:
         print(f"Video smoke test failed: {exc}", file=sys.stderr)
         return 1

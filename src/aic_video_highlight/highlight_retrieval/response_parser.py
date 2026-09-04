@@ -14,7 +14,22 @@ class ResponseParseError(ValueError):
     """Raised when a model response violates the highlight retrieval contract."""
 
 
+class TruncatedResponseError(ResponseParseError):
+    """Raised when a model response appears cut off before JSON completion.
+
+    Truncated responses must never be treated as successful formal results.
+    """
+
+
 _JSON_FENCE = re.compile(r"\A```(?:json)?\s*(\{.*\})\s*```\Z", re.DOTALL | re.IGNORECASE)
+
+_TRUNCATION_HINTS = (
+    "Unterminated string",
+    "Expecting value",
+    "Expecting property name",
+    "Expecting ',' delimiter",
+    "Expecting ':' delimiter",
+)
 
 
 def _load_json_object(raw_response: str) -> dict[str, Any]:
@@ -22,10 +37,28 @@ def _load_json_object(raw_response: str) -> dict[str, Any]:
     fence_match = _JSON_FENCE.fullmatch(text)
     if fence_match:
         text = fence_match.group(1)
+    elif text.startswith("```") and not text.endswith("```"):
+        raise TruncatedResponseError(
+            "response is fenced with ``` but the closing fence is missing; "
+            "the response was likely truncated by the token limit"
+        )
     try:
         payload = json.loads(text)
     except json.JSONDecodeError as exc:
-        raise ResponseParseError(f"response is not strict JSON: {exc.msg}") from exc
+        if exc.msg.startswith(_TRUNCATION_HINTS) and exc.pos >= len(text.rstrip()) - 1:
+            raise TruncatedResponseError(
+                f"response appears truncated before valid JSON completion: "
+                f"{exc.msg} at position {exc.pos}"
+            ) from exc
+        if text.endswith("```"):
+            # A complete JSON object followed by a stray closing fence is a
+            # formatting drift, not truncation: strip the fence and retry once.
+            try:
+                payload = json.loads(text[:-3].rstrip())
+            except json.JSONDecodeError:
+                raise ResponseParseError(f"response is not strict JSON: {exc.msg}") from exc
+        else:
+            raise ResponseParseError(f"response is not strict JSON: {exc.msg}") from exc
     if not isinstance(payload, dict):
         raise ResponseParseError("top-level JSON value must be an object")
     return payload
