@@ -73,6 +73,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--base-url", default="http://127.0.0.1:8000/v1")
     parser.add_argument("--model-revision", default=DEFAULT_MODEL_REVISION)
+    parser.add_argument("--dataset-name", default=None, help="Frozen dataset name for run_config traceability")
+    parser.add_argument("--dataset-version", default=None, help="Frozen dataset version for run_config traceability")
     parser.add_argument("--ffmpeg-bin", default="ffmpeg")
     parser.add_argument("--ffprobe-bin", default="ffprobe")
     return parser.parse_args()
@@ -302,6 +304,8 @@ def main() -> int:
         args.video_root,
         video_id=args.video_id,
         limit=args.limit,
+        dataset_name=args.dataset_name,
+        dataset_version=args.dataset_version,
     )
     run_config = {
         "experiment_name": output_dir.name,
@@ -319,7 +323,14 @@ def main() -> int:
         "merge_strategy": "sorted adjacent temporal-IoU union; maximum score",
         "manifest_path": str(args.manifest.expanduser().resolve()),
         "video_root": str(args.video_root.expanduser().resolve()),
-        "reference_type": "weak_reference_segments",
+        "dataset_name": args.dataset_name,
+        "dataset_version": args.dataset_version,
+        "split": samples[0].get("split") if samples else None,
+        "reference_type": "teacher_seed_weak_reference",
+        "reference_identity": (
+            "Project-generated teacher/seed-derived weak-reference from QVHighlights "
+            "public source windows; NOT official competition Ground Truth."
+        ),
         "metric_policy": "union-aware duration overlap; not an official competition metric",
         "zero_duration_policy": {
             "epsilon_sec": ZERO_DURATION_EPSILON_SEC,

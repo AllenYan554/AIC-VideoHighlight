@@ -45,20 +45,189 @@ def persist_run_config(
     return payload
 
 
+def _read_manifest_items(manifest_file: Path) -> tuple[list[dict[str, Any]], str]:
+    text = manifest_file.read_text(encoding="utf-8")
+    if text.lstrip().startswith("["):
+        payload = json.loads(text)
+        if not isinstance(payload, list):
+            raise ValueError("baseline manifest must be a JSON array")
+        return payload, "json_array"
+    items: list[dict[str, Any]] = []
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"manifest line {line_number} is not valid JSON: {exc.msg}") from exc
+        if not isinstance(item, dict):
+            raise ValueError(f"manifest line {line_number} must be a JSON object")
+        items.append(item)
+    if not items:
+        raise ValueError("jsonl manifest contains no items")
+    return items, "jsonl"
+
+
+def _load_reference_entry(
+    reference_path: str,
+    video_id: str,
+    root: Path,
+    manifest_file: Path,
+    cache: dict[Path, dict[str, dict[str, Any]]],
+) -> dict[str, Any]:
+    locator = reference_path.split("#", 1)
+    relative = locator[0].strip()
+    expected_video_id = locator[1].strip() if len(locator) > 1 else video_id
+    if not relative:
+        raise ValueError(f"reference_path has no file component for {video_id}")
+    candidates = [root / relative, manifest_file.parent / relative]
+    reference_file = next((path for path in candidates if path.is_file()), None)
+    if reference_file is None:
+        raise FileNotFoundError(f"reference file does not exist for {video_id}: {relative}")
+    if reference_file not in cache:
+        entries: dict[str, dict[str, Any]] = {}
+        for line_number, line in enumerate(reference_file.read_text(encoding="utf-8").splitlines(), start=1):
+            if not line.strip():
+                continue
+            entry = json.loads(line)
+            if not isinstance(entry, dict) or not isinstance(entry.get("video_id"), str):
+                raise ValueError(f"reference line {line_number} in {reference_file} is invalid")
+            if entry["video_id"] in entries:
+                raise ValueError(f"reference file has duplicate video_id: {entry['video_id']}")
+            entries[entry["video_id"]] = entry
+        cache[reference_file] = entries
+    entry = cache[reference_file].get(expected_video_id)
+    if entry is None:
+        raise KeyError(f"reference entry is missing for {expected_video_id} in {reference_file}")
+    if entry.get("coordinate_system") != "clip-local seconds":
+        raise ValueError(f"reference coordinate system is not clip-local for {expected_video_id}")
+    return entry
+
+
+def _validate_clip_reference_segments(
+    references: list[dict[str, Any]],
+    clip_duration: float,
+    video_id: str,
+) -> None:
+    for segment in references:
+        start = float(segment["start_sec"])
+        end = float(segment["end_sec"])
+        if start < 0 or end < start or end > clip_duration + ZERO_DURATION_EPSILON_SEC:
+            raise ValueError(f"weak reference is outside clip-local bounds for {video_id}")
+
+
+def _select_jsonl_samples(
+    payload: list[dict[str, Any]],
+    root: Path,
+    manifest_file: Path,
+    *,
+    video_id: str | None,
+    limit: int | None,
+    dataset_name: str | None,
+    dataset_version: str | None,
+) -> list[dict[str, Any]]:
+    reference_cache: dict[Path, dict[str, dict[str, Any]]] = {}
+    selected: list[dict[str, Any]] = []
+    seen_video_ids: set[str] = set()
+    seen_video_paths: set[str] = set()
+    for index, raw_item in enumerate(payload, start=1):
+        if not isinstance(raw_item, dict):
+            raise ValueError(f"manifest item {index} must be an object")
+        item = dict(raw_item)
+        item_video_id = item.get("video_id")
+        relative_video_path = item.get("relative_video_path")
+        if not isinstance(item_video_id, str) or not item_video_id:
+            raise ValueError(f"manifest item {index} has an invalid video_id")
+        if (
+            not isinstance(relative_video_path, str)
+            or not relative_video_path
+            or Path(relative_video_path).is_absolute()
+            or ".." in Path(relative_video_path).parts
+        ):
+            raise ValueError(f"manifest item {index} has an invalid relative_video_path")
+        if not isinstance(item.get("split"), str) or not item["split"]:
+            raise ValueError(f"manifest item {index} has an invalid split")
+        if item_video_id in seen_video_ids or relative_video_path in seen_video_paths:
+            raise ValueError(f"manifest contains a duplicate item: {item_video_id}")
+        seen_video_ids.add(item_video_id)
+        seen_video_paths.add(relative_video_path)
+        if video_id is not None and item_video_id != video_id:
+            continue
+
+        clip_start = float(item["clip_start_sec"])
+        clip_end = float(item["clip_end_sec"])
+        if clip_start < 0 or clip_end <= clip_start:
+            raise ValueError(f"invalid clip bounds for {item_video_id}")
+        clip_duration = clip_end - clip_start
+
+        references = item.get("weak_reference_segments")
+        reference_origin = item.get("annotation_source") or item.get("origin")
+        if references is None:
+            reference_path = item.get("reference_path")
+            if not isinstance(reference_path, str) or not reference_path:
+                raise ValueError(f"manifest item {index} has no weak reference locator")
+            entry = _load_reference_entry(reference_path, item_video_id, root, manifest_file, reference_cache)
+            if float(entry.get("clip_start_sec", clip_start)) != clip_start or float(
+                entry.get("clip_end_sec", clip_end)
+            ) != clip_end:
+                raise ValueError(f"reference clip bounds disagree with manifest for {item_video_id}")
+            references = entry.get("segments")
+            reference_origin = entry.get("origin", reference_origin)
+        if not isinstance(references, list):
+            raise ValueError(f"weak_reference_segments must be an array for {item_video_id}")
+        references = [
+            {"start_sec": float(segment["start_sec"]), "end_sec": float(segment["end_sec"])}
+            for segment in references
+        ]
+        _validate_clip_reference_segments(references, clip_duration, item_video_id)
+        expected_segments = item.get("reference_segment_count")
+        if expected_segments is not None and int(expected_segments) != len(references):
+            raise ValueError(f"reference_segment_count disagrees with references for {item_video_id}")
+
+        if dataset_name is not None:
+            item["dataset_name"] = dataset_name
+        if dataset_version is not None:
+            item["dataset_version"] = dataset_version
+        item["weak_reference_segments"] = references
+        item["reference_origin"] = reference_origin
+        item.setdefault("group", f"refseg_{len(references)}")
+        item.setdefault("sample_index", index)
+        item["source_video_path"] = str((root / relative_video_path).resolve())
+        item["clip_duration_sec"] = clip_duration
+        selected.append(item)
+        if limit is not None and len(selected) >= limit:
+            break
+
+    if video_id is not None and not selected:
+        raise ValueError(f"video_id is not present in manifest: {video_id}")
+    return selected
+
+
 def load_baseline_samples(
     manifest_path: str | Path,
     video_root: str | Path,
     *,
     video_id: str | None = None,
     limit: int | None = None,
+    dataset_name: str | None = None,
+    dataset_version: str | None = None,
 ) -> list[dict[str, Any]]:
     manifest_file = Path(manifest_path).expanduser().resolve()
     root = Path(video_root).expanduser().resolve()
-    payload = json.loads(manifest_file.read_text(encoding="utf-8"))
-    if not isinstance(payload, list):
-        raise ValueError("baseline manifest must be a JSON array")
+    payload, manifest_format = _read_manifest_items(manifest_file)
     if limit is not None and limit <= 0:
         raise ValueError("limit must be greater than zero")
+
+    if manifest_format == "jsonl":
+        return _select_jsonl_samples(
+            payload,
+            root,
+            manifest_file,
+            video_id=video_id,
+            limit=limit,
+            dataset_name=dataset_name,
+            dataset_version=dataset_version,
+        )
 
     selected: list[dict[str, Any]] = []
     seen_video_ids: set[str] = set()
@@ -90,11 +259,7 @@ def load_baseline_samples(
         if not isinstance(references, list):
             raise ValueError(f"weak_reference_segments must be an array for {item_video_id}")
         clip_duration = clip_end - clip_start
-        for segment in references:
-            start = float(segment["start_sec"])
-            end = float(segment["end_sec"])
-            if start < 0 or end < start or end > clip_duration + ZERO_DURATION_EPSILON_SEC:
-                raise ValueError(f"weak reference is outside clip-local bounds for {item_video_id}")
+        _validate_clip_reference_segments(references, clip_duration, item_video_id)
 
         item["source_video_path"] = str((root / filename).resolve())
         item["clip_duration_sec"] = clip_duration
