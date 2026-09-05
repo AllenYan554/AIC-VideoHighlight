@@ -1,0 +1,11 @@
+model: Qwen/Qwen3.5-4B
+chunk_seconds: 30
+overlap_seconds: 5
+coarse_fps: 2.0
+max_segments_per_chunk: 5
+max_new_tokens: 512
+temperature: 0
+merge_tiou_threshold: 0.5
+request_timeout_sec: 120
+enable_thinking: false
+prompt_version: high_recall_retrieval_v2

@@ -11,7 +11,7 @@ from pathlib import Path
 import yaml
 
 from .candidate_merger import merge_segments
-from .prompt_builder import build_high_recall_prompt
+from .prompt_builder import SUPPORTED_PROMPT_VERSIONS, build_prompt
 from .qwen_vllm_client import QwenVLLMClient
 from .response_parser import TruncatedResponseError, parse_highlight_response
 from .schemas import HighlightRetrievalResult, HighlightSegment, VideoChunk
@@ -103,6 +103,7 @@ class HighlightRetrievalConfig:
     merge_tiou_threshold: float = 0.5
     request_timeout_sec: float = 120.0
     enable_thinking: bool = False
+    prompt_version: str = "high_recall_retrieval_v0"
 
     def __post_init__(self) -> None:
         if self.chunk_seconds <= 0:
@@ -117,6 +118,10 @@ class HighlightRetrievalConfig:
             raise ValueError("merge_tiou_threshold must be in [0, 1]")
         if self.request_timeout_sec <= 0:
             raise ValueError("request_timeout_sec must be greater than zero")
+        if self.prompt_version not in SUPPORTED_PROMPT_VERSIONS:
+            raise ValueError(
+                f"prompt_version must be one of {', '.join(SUPPORTED_PROMPT_VERSIONS)}"
+            )
 
 
 def load_highlight_retrieval_config(path: str | Path) -> HighlightRetrievalConfig:
@@ -176,7 +181,11 @@ class HighlightRetrievalPipeline:
         chunk: VideoChunk,
         raw_output_sink: Callable[[dict], None] | None = None,
     ) -> tuple[list[HighlightSegment], dict, float]:
-        prompt = build_high_recall_prompt(chunk.duration_sec, self.config.max_segments_per_chunk)
+        prompt = build_prompt(
+            self.config.prompt_version,
+            chunk.duration_sec,
+            self.config.max_segments_per_chunk,
+        )
         request_started_at = time.perf_counter()
         model_response = self.client.analyze_video(
             media,

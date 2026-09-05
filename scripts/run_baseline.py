@@ -33,7 +33,6 @@ from aic_video_highlight.highlight_retrieval.pipeline import (
     load_highlight_retrieval_config,
     parse_saved_raw_outputs,
 )
-from aic_video_highlight.highlight_retrieval.prompt_builder import PROMPT_VERSION
 from aic_video_highlight.highlight_retrieval.qwen_vllm_client import QwenVLLMClient
 from aic_video_highlight.highlight_retrieval.temporal_metrics import (
     ZERO_DURATION_EPSILON_SEC,
@@ -312,7 +311,7 @@ def main() -> int:
         "vllm_version": _package_version("vllm"),
         "python_version": sys.version.split()[0],
         "torch_version": _package_version("torch"),
-        "prompt_version": PROMPT_VERSION,
+        "prompt_version": config.prompt_version,
         "sampling_fps": config.coarse_fps,
         "chunk_seconds": config.chunk_seconds,
         "chunk_overlap_seconds": config.overlap_seconds,
