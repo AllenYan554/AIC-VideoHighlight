@@ -1,0 +1,402 @@
+{
+  "labels": [
+    "SALVAGED",
+    "TEMPORAL_ONLY",
+    "NON_OFFICIAL_PIPELINE_RESULT"
+  ],
+  "policy": {
+    "metric": "project duration_based_metrics (union-aware)",
+    "normalization": "formal parser temporal rules only; clip end above chunk duration",
+    "full_video_coverage_threshold": 0.999,
+    "official_outputs_modified": false,
+    "score_imputed": false,
+    "segments_removed_or_limited": false
+  },
+  "official_9b": {
+    "processed": 20,
+    "success": 18,
+    "failed": 2,
+    "schema_success_rate": 0.9,
+    "failed_video_ids": [
+      "qvh_000008_9x16",
+      "qvh_000574_9x16"
+    ]
+  },
+  "aggregates": {
+    "4b_official_20": {
+      "sample_count": 20,
+      "mean_precision": 0.42948866271964037,
+      "mean_recall": 0.9730008378118425,
+      "mean_f1": 0.5505904881815333,
+      "mean_temporal_iou": 0.4215479115965831,
+      "mean_coverage": 0.8978552698636685,
+      "full_video_coverage_count": 14,
+      "coverage_gte_90_count": 15,
+      "cumulative_over_prediction_sec": 238.26343070537203,
+      "cumulative_missed_reference_sec": 3.131297847847851,
+      "raw_candidate_count": 78,
+      "temporal_segment_count": 74,
+      "mean_inference_time_sec": 3.2156815065070985
+    },
+    "4b_matched_18": {
+      "sample_count": 18,
+      "mean_precision": 0.40333122652871806,
+      "mean_recall": 0.9708091217928828,
+      "mean_f1": 0.5283589987158855,
+      "mean_temporal_iou": 0.3946033354311894,
+      "mean_coverage": 0.9045412634824347,
+      "full_video_coverage_count": 13,
+      "coverage_gte_90_count": 14,
+      "cumulative_over_prediction_sec": 228.3066573720387,
+      "cumulative_missed_reference_sec": 3.0578811811811843,
+      "raw_candidate_count": 68,
+      "temporal_segment_count": 64,
+      "mean_inference_time_sec": 3.1122014988213778
+    },
+    "9b_official_matched_18": {
+      "sample_count": 18,
+      "mean_precision": 0.4163437405675391,
+      "mean_recall": 0.9722911986127402,
+      "mean_f1": 0.5432691302843825,
+      "mean_temporal_iou": 0.40700628156163227,
+      "mean_coverage": 0.8628954015939416,
+      "full_video_coverage_count": 10,
+      "coverage_gte_90_count": 12,
+      "cumulative_over_prediction_sec": 204.6601588735402,
+      "cumulative_missed_reference_sec": 3.6653826826826843,
+      "raw_candidate_count": 52,
+      "temporal_segment_count": 50,
+      "mean_inference_time_sec": 3.908034303742978
+    },
+    "9b_salvaged_temporal_20": {
+      "sample_count": 20,
+      "mean_precision": 0.4364116072317733,
+      "mean_recall": 0.9734008367676436,
+      "mean_f1": 0.5570632302651107,
+      "mean_temporal_iou": 0.4263466521426345,
+      "mean_coverage": 0.8743789734175607,
+      "full_video_coverage_count": 11,
+      "coverage_gte_90_count": 14,
+      "cumulative_over_prediction_sec": 221.17645054020687,
+      "cumulative_missed_reference_sec": 4.6963826826826836,
+      "raw_candidate_count": 65,
+      "temporal_segment_count": 63,
+      "mean_inference_time_sec": 3.956213163584471
+    }
+  },
+  "salvaged_samples": {
+    "qvh_000008_9x16": {
+      "status_labels": [
+        "SALVAGED",
+        "TEMPORAL_ONLY",
+        "NON_OFFICIAL_PIPELINE_RESULT"
+      ],
+      "raw_response": [
+        "```json\n{\"has_highlight\":true,\"segments\":[{\"start_sec\":0.0,\"end_sec\":3.0,\"reason\":\"水下自拍镜头，人物动作明显，气泡上升，视觉表现突出\"},{\"start_sec\":3.0,\"end_sec\":4.0,\"reason\":\"场景切换至水面，展示船只和人物，信息量提升\"},{\"start_sec\":4.0,\"end_sec\":10.0,\"reason\":\"水下探索场景，展示沉船结构和鱼群，视觉表现突出\"},{\"start_sec\":10.0,\"end_sec\":12.0,\"reason\":\"人物在水下游泳，动作流畅，视觉表现突出\"},{\"start_sec\":12.0,\"end_sec\":17.0,\"reason\":\"展示水下珊瑚礁和沉船细节，信息量提升，视觉表现突出\"},{\"start_sec\":17.0,\"end_sec\":21.563,\"reason\":\"人物在水下游泳，动作流畅，视觉表现突出\"}]}\n```"
+      ],
+      "raw_vs_normalized": {
+        "raw_segments": [
+          {
+            "chunk_index": 0,
+            "start_sec": 0.0,
+            "end_sec": 3.0,
+            "reason": "水下自拍镜头，人物动作明显，气泡上升，视觉表现突出",
+            "has_start_sec": true,
+            "has_end_sec": true,
+            "has_score": false,
+            "has_reason": true
+          },
+          {
+            "chunk_index": 0,
+            "start_sec": 3.0,
+            "end_sec": 4.0,
+            "reason": "场景切换至水面，展示船只和人物，信息量提升",
+            "has_start_sec": true,
+            "has_end_sec": true,
+            "has_score": false,
+            "has_reason": true
+          },
+          {
+            "chunk_index": 0,
+            "start_sec": 4.0,
+            "end_sec": 10.0,
+            "reason": "水下探索场景，展示沉船结构和鱼群，视觉表现突出",
+            "has_start_sec": true,
+            "has_end_sec": true,
+            "has_score": false,
+            "has_reason": true
+          },
+          {
+            "chunk_index": 0,
+            "start_sec": 10.0,
+            "end_sec": 12.0,
+            "reason": "人物在水下游泳，动作流畅，视觉表现突出",
+            "has_start_sec": true,
+            "has_end_sec": true,
+            "has_score": false,
+            "has_reason": true
+          },
+          {
+            "chunk_index": 0,
+            "start_sec": 12.0,
+            "end_sec": 17.0,
+            "reason": "展示水下珊瑚礁和沉船细节，信息量提升，视觉表现突出",
+            "has_start_sec": true,
+            "has_end_sec": true,
+            "has_score": false,
+            "has_reason": true
+          },
+          {
+            "chunk_index": 0,
+            "start_sec": 17.0,
+            "end_sec": 21.563,
+            "reason": "人物在水下游泳，动作流畅，视觉表现突出",
+            "has_start_sec": true,
+            "has_end_sec": true,
+            "has_score": false,
+            "has_reason": true
+          }
+        ],
+        "normalized_segments": [
+          {
+            "chunk_index": 0,
+            "start_sec": 0.0,
+            "end_sec": 3.0,
+            "reason": "水下自拍镜头，人物动作明显，气泡上升，视觉表现突出",
+            "end_was_clipped": false
+          },
+          {
+            "chunk_index": 0,
+            "start_sec": 3.0,
+            "end_sec": 4.0,
+            "reason": "场景切换至水面，展示船只和人物，信息量提升",
+            "end_was_clipped": false
+          },
+          {
+            "chunk_index": 0,
+            "start_sec": 4.0,
+            "end_sec": 10.0,
+            "reason": "水下探索场景，展示沉船结构和鱼群，视觉表现突出",
+            "end_was_clipped": false
+          },
+          {
+            "chunk_index": 0,
+            "start_sec": 10.0,
+            "end_sec": 12.0,
+            "reason": "人物在水下游泳，动作流畅，视觉表现突出",
+            "end_was_clipped": false
+          },
+          {
+            "chunk_index": 0,
+            "start_sec": 12.0,
+            "end_sec": 17.0,
+            "reason": "展示水下珊瑚礁和沉船细节，信息量提升，视觉表现突出",
+            "end_was_clipped": false
+          },
+          {
+            "chunk_index": 0,
+            "start_sec": 17.0,
+            "end_sec": 21.563,
+            "reason": "人物在水下游泳，动作流畅，视觉表现突出",
+            "end_was_clipped": false
+          }
+        ],
+        "chunk_facts": [
+          {
+            "chunk_index": 0,
+            "finish_reason": "stop",
+            "parse_success": false,
+            "parse_error": "ResponseParseError: segments[0].score must be a number",
+            "json_syntax_valid": true,
+            "segment_count": 6
+          }
+        ]
+      },
+      "schema_violations": [
+        "missing score on every segment",
+        "segment_count=6 exceeds max_segments_per_chunk=5"
+      ],
+      "metrics": {
+        "precision": 0.23404481441976216,
+        "recall": 1.0,
+        "f1": 0.3793133145327597,
+        "temporal_iou": 0.23404481441976216,
+        "prediction_duration_sec": 21.563,
+        "reference_duration_sec": 5.046708333333331,
+        "intersection_sec": 5.046708333333331,
+        "duration_union_sec": 21.563,
+        "coverage": 0.9999893384912958,
+        "over_prediction_sec": 16.516291666666667,
+        "missed_reference_sec": 0.0,
+        "raw_candidate_count": 6,
+        "temporal_segment_count": 6,
+        "inference_time_sec": 3.9865694995969534
+      }
+    },
+    "qvh_000574_9x16": {
+      "status_labels": [
+        "SALVAGED",
+        "TEMPORAL_ONLY",
+        "NON_OFFICIAL_PIPELINE_RESULT"
+      ],
+      "raw_response": [
+        "```json\n{\"has_highlight\":true,\"segments\":[{\"start_sec\":0.0,\"end_sec\":3.0,\"reason\":\"左侧女孩举起食物展示并做出夸张表情，吸引注意力\"}, {\"start_sec\":3.0,\"end_sec\":6.0,\"reason\":\"左侧女孩伸手去拿右侧女孩盘子里的食物，产生互动\"}, {\"start_sec\":6.0,\"end_sec\":10.0,\"reason\":\"左侧女孩成功拿到食物并吃下，右侧女孩继续专注进食\"}, {\"start_sec\":10.0,\"end_sec\":15.0,\"reason\":\"左侧女孩再次伸手去拿右侧女孩盘子里的食物，互动持续\"}, {\"start_sec\":15.0,\"end_sec\":20.0,\"reason\":\"左侧女孩再次伸手去拿右侧女孩盘子里的食物，互动持续\"}, {\"start_sec\":20.0,\"end_sec\":25.0,\"reason\":\"左侧女孩再次伸手去拿右侧女孩盘子里的食物，互动持续\"}, {\"start_sec\":25.0,\"end_sec\":30.0,\"reason\":\"左侧女孩再次伸手去拿右侧女孩盘子里的食物，互动持续\"}]}\n```"
+      ],
+      "raw_vs_normalized": {
+        "raw_segments": [
+          {
+            "chunk_index": 0,
+            "start_sec": 0.0,
+            "end_sec": 3.0,
+            "reason": "左侧女孩举起食物展示并做出夸张表情，吸引注意力",
+            "has_start_sec": true,
+            "has_end_sec": true,
+            "has_score": false,
+            "has_reason": true
+          },
+          {
+            "chunk_index": 0,
+            "start_sec": 3.0,
+            "end_sec": 6.0,
+            "reason": "左侧女孩伸手去拿右侧女孩盘子里的食物，产生互动",
+            "has_start_sec": true,
+            "has_end_sec": true,
+            "has_score": false,
+            "has_reason": true
+          },
+          {
+            "chunk_index": 0,
+            "start_sec": 6.0,
+            "end_sec": 10.0,
+            "reason": "左侧女孩成功拿到食物并吃下，右侧女孩继续专注进食",
+            "has_start_sec": true,
+            "has_end_sec": true,
+            "has_score": false,
+            "has_reason": true
+          },
+          {
+            "chunk_index": 0,
+            "start_sec": 10.0,
+            "end_sec": 15.0,
+            "reason": "左侧女孩再次伸手去拿右侧女孩盘子里的食物，互动持续",
+            "has_start_sec": true,
+            "has_end_sec": true,
+            "has_score": false,
+            "has_reason": true
+          },
+          {
+            "chunk_index": 0,
+            "start_sec": 15.0,
+            "end_sec": 20.0,
+            "reason": "左侧女孩再次伸手去拿右侧女孩盘子里的食物，互动持续",
+            "has_start_sec": true,
+            "has_end_sec": true,
+            "has_score": false,
+            "has_reason": true
+          },
+          {
+            "chunk_index": 0,
+            "start_sec": 20.0,
+            "end_sec": 25.0,
+            "reason": "左侧女孩再次伸手去拿右侧女孩盘子里的食物，互动持续",
+            "has_start_sec": true,
+            "has_end_sec": true,
+            "has_score": false,
+            "has_reason": true
+          },
+          {
+            "chunk_index": 0,
+            "start_sec": 25.0,
+            "end_sec": 30.0,
+            "reason": "左侧女孩再次伸手去拿右侧女孩盘子里的食物，互动持续",
+            "has_start_sec": true,
+            "has_end_sec": true,
+            "has_score": false,
+            "has_reason": true
+          }
+        ],
+        "normalized_segments": [
+          {
+            "chunk_index": 0,
+            "start_sec": 0.0,
+            "end_sec": 3.0,
+            "reason": "左侧女孩举起食物展示并做出夸张表情，吸引注意力",
+            "end_was_clipped": false
+          },
+          {
+            "chunk_index": 0,
+            "start_sec": 3.0,
+            "end_sec": 6.0,
+            "reason": "左侧女孩伸手去拿右侧女孩盘子里的食物，产生互动",
+            "end_was_clipped": false
+          },
+          {
+            "chunk_index": 0,
+            "start_sec": 6.0,
+            "end_sec": 10.0,
+            "reason": "左侧女孩成功拿到食物并吃下，右侧女孩继续专注进食",
+            "end_was_clipped": false
+          },
+          {
+            "chunk_index": 0,
+            "start_sec": 10.0,
+            "end_sec": 15.0,
+            "reason": "左侧女孩再次伸手去拿右侧女孩盘子里的食物，互动持续",
+            "end_was_clipped": false
+          },
+          {
+            "chunk_index": 0,
+            "start_sec": 15.0,
+            "end_sec": 20.0,
+            "reason": "左侧女孩再次伸手去拿右侧女孩盘子里的食物，互动持续",
+            "end_was_clipped": false
+          },
+          {
+            "chunk_index": 0,
+            "start_sec": 20.0,
+            "end_sec": 25.0,
+            "reason": "左侧女孩再次伸手去拿右侧女孩盘子里的食物，互动持续",
+            "end_was_clipped": false
+          },
+          {
+            "chunk_index": 0,
+            "start_sec": 25.0,
+            "end_sec": 30.0,
+            "reason": "左侧女孩再次伸手去拿右侧女孩盘子里的食物，互动持续",
+            "end_was_clipped": false
+          }
+        ],
+        "chunk_facts": [
+          {
+            "chunk_index": 0,
+            "finish_reason": "stop",
+            "parse_success": false,
+            "parse_error": "ResponseParseError: segments[0].score must be a number",
+            "json_syntax_valid": true,
+            "segment_count": 7
+          }
+        ]
+      },
+      "schema_violations": [
+        "missing score on every segment",
+        "segment_count=7 exceeds max_segments_per_chunk=5"
+      ],
+      "metrics": {
+        "precision": 1.0,
+        "recall": 0.9667751603235475,
+        "f1": 0.9831069456505711,
+        "temporal_iou": 0.9667751603235475,
+        "prediction_duration_sec": 30.0,
+        "reference_duration_sec": 31.031,
+        "intersection_sec": 30.0,
+        "duration_union_sec": 31.031,
+        "coverage": 0.9554729011689692,
+        "over_prediction_sec": 0.0,
+        "missed_reference_sec": 1.0309999999999988,
+        "raw_candidate_count": 7,
+        "temporal_segment_count": 7,
+        "inference_time_sec": 4.793076304718852
+      }
+    }
+  }
+}
