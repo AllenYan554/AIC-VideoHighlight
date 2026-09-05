@@ -48,6 +48,162 @@ def test_manifest_maps_source_video_to_clip_local_reference(tmp_path) -> None:
     assert samples[0]["weak_reference_segments"] == [{"start_sec": 1.0, "end_sec": 3.0}]
 
 
+def test_jsonl_manifest_resolves_reference_path_to_clip_local(tmp_path) -> None:
+    video_root = tmp_path / "dataset"
+    (video_root / "videos" / "dev").mkdir(parents=True)
+    source = video_root / "videos" / "dev" / "abc_60.0_210.0.mp4"
+    source.write_bytes(b"video")
+    references = video_root / "references" / "dev.jsonl"
+    references.parent.mkdir(parents=True)
+    references.write_text(
+        json.dumps(
+            {
+                "video_id": "qvh_000001_9x16",
+                "split": "dev",
+                "clip_start_sec": 81.61,
+                "clip_end_sec": 87.53,
+                "coordinate_system": "clip-local seconds",
+                "segments": [{"start_sec": 0.0, "end_sec": 5.03}],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    manifest = tmp_path / "smoke.jsonl"
+    manifest.write_text(
+        json.dumps(
+            {
+                "video_id": "qvh_000001_9x16",
+                "split": "dev",
+                "relative_video_path": "videos/dev/abc_60.0_210.0.mp4",
+                "clip_start_sec": 81.61,
+                "clip_end_sec": 87.53,
+                "reference_segment_count": 1,
+                "reference_coverage": 0.85,
+                "reference_path": "references/dev.jsonl#qvh_000001_9x16",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    samples = load_baseline_samples(
+        manifest,
+        video_root,
+        dataset_name="aic_highlight_dev",
+        dataset_version="aic_highlight_dev_v1.1",
+    )
+
+    assert len(samples) == 1
+    sample = samples[0]
+    assert sample["source_video_path"] == str(source.resolve())
+    assert sample["clip_duration_sec"] == pytest.approx(5.92)
+    assert sample["clip_start_sec"] == pytest.approx(81.61)
+    assert sample["weak_reference_segments"] == [{"start_sec": 0.0, "end_sec": 5.03}]
+    assert sample["dataset_name"] == "aic_highlight_dev"
+    assert sample["dataset_version"] == "aic_highlight_dev_v1.1"
+    assert sample["split"] == "dev"
+    assert sample["group"] == "refseg_1"
+
+
+def test_jsonl_manifest_accepts_embedded_weak_references(tmp_path) -> None:
+    video_root = tmp_path / "dataset"
+    video_root.mkdir()
+    source = video_root / "abc_60.0_210.0.mp4"
+    source.write_bytes(b"video")
+    manifest = tmp_path / "smoke.jsonl"
+    manifest.write_text(
+        json.dumps(
+            {
+                "video_id": "qvh_000002_9x16",
+                "split": "dev",
+                "relative_video_path": "abc_60.0_210.0.mp4",
+                "clip_start_sec": 130.194,
+                "clip_end_sec": 141.794,
+                "reference_segment_count": 2,
+                "weak_reference_segments": [
+                    {"start_sec": 1.83, "end_sec": 4.26},
+                    {"start_sec": 5.46, "end_sec": 11.03},
+                ],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    samples = load_baseline_samples(manifest, video_root)
+
+    assert samples[0]["clip_duration_sec"] == pytest.approx(11.6)
+    assert len(samples[0]["weak_reference_segments"]) == 2
+    assert samples[0]["group"] == "refseg_2"
+
+
+def test_jsonl_manifest_rejects_reference_outside_clip_bounds(tmp_path) -> None:
+    video_root = tmp_path / "dataset"
+    video_root.mkdir()
+    source = video_root / "abc_60.0_210.0.mp4"
+    source.write_bytes(b"video")
+    manifest = tmp_path / "smoke.jsonl"
+    manifest.write_text(
+        json.dumps(
+            {
+                "video_id": "qvh_000003_9x16",
+                "split": "dev",
+                "relative_video_path": "abc_60.0_210.0.mp4",
+                "clip_start_sec": 10.0,
+                "clip_end_sec": 15.0,
+                "weak_reference_segments": [{"start_sec": 3.0, "end_sec": 6.0}],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="outside clip-local bounds"):
+        load_baseline_samples(manifest, video_root)
+
+
+def test_jsonl_manifest_rejects_disagreeing_reference_clip_bounds(tmp_path) -> None:
+    video_root = tmp_path / "dataset"
+    (video_root / "videos").mkdir(parents=True)
+    source = video_root / "videos" / "abc.mp4"
+    source.write_bytes(b"video")
+    references = video_root / "references" / "dev.jsonl"
+    references.parent.mkdir(parents=True)
+    references.write_text(
+        json.dumps(
+            {
+                "video_id": "qvh_000004_9x16",
+                "split": "dev",
+                "clip_start_sec": 99.0,
+                "clip_end_sec": 105.0,
+                "coordinate_system": "clip-local seconds",
+                "segments": [{"start_sec": 0.0, "end_sec": 2.0}],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    manifest = tmp_path / "smoke.jsonl"
+    manifest.write_text(
+        json.dumps(
+            {
+                "video_id": "qvh_000004_9x16",
+                "split": "dev",
+                "relative_video_path": "videos/abc.mp4",
+                "clip_start_sec": 10.0,
+                "clip_end_sec": 15.0,
+                "reference_path": "references/dev.jsonl#qvh_000004_9x16",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="disagree"):
+        load_baseline_samples(manifest, video_root)
+
+
 def test_resume_skips_complete_success_without_overwrite(tmp_path) -> None:
     result_path = tmp_path / "sample.json"
     result_path.write_text(json.dumps({"video_id": "sample", "success": True}), encoding="utf-8")
