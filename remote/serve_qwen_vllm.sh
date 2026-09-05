@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROJECT_DIR="/root/autodl-tmp/AIC-VideoHighlight"
+PROJECT_DIR="/root/autodl-tmp/AIC-VideoHighlight-run"
 DATASET_DIR="${DATASET_DIR:-/root/autodl-tmp/datasets}"
 MODEL_ID="${MODEL_ID:-Qwen/Qwen3.5-4B}"
 GPU_MEMORY_UTILIZATION="${GPU_MEMORY_UTILIZATION:-0.85}"
