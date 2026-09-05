@@ -30,7 +30,7 @@ def load_manifest(path: Path) -> list[dict[str, Any]]:
             raise ValueError(f"manifest item {index} has an invalid filename")
         if Path(filename).name != filename:
             raise ValueError(f"manifest item {index} filename must not contain a path")
-        expected_hf_path = f"{filename[0]}/{filename}"
+        expected_hf_path = f"{filename[0].lower()}/{filename}"
         if hf_path != expected_hf_path:
             raise ValueError(
                 f"manifest item {index} hf_path must be {expected_hf_path!r}"

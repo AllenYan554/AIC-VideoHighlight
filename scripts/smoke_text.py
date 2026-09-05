@@ -18,7 +18,11 @@ def main() -> int:
         client = QwenVLLMClient(base_url=args.base_url, model=args.model)
         if not client.health_check():
             raise RuntimeError(f"model is not listed by vLLM: {args.model}")
-        print(client.chat_text("请用一句话回答：你可以正常接收文本请求吗？", max_new_tokens=64, enable_thinking=False))
+        result = client.chat_text(
+            "请用一句话回答：你可以正常接收文本请求吗？", max_new_tokens=64, enable_thinking=False
+        )
+        print(result.content)
+        print(f"[finish_reason={result.finish_reason}]", file=sys.stderr)
     except Exception as exc:
         print(f"Text smoke test failed: {exc}", file=sys.stderr)
         return 1

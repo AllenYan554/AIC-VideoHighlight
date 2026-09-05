@@ -11,9 +11,9 @@ from pathlib import Path
 import yaml
 
 from .candidate_merger import merge_segments
-from .prompt_builder import build_high_recall_prompt
+from .prompt_builder import SUPPORTED_PROMPT_VERSIONS, build_prompt
 from .qwen_vllm_client import QwenVLLMClient
-from .response_parser import parse_highlight_response
+from .response_parser import TruncatedResponseError, parse_highlight_response
 from .schemas import HighlightRetrievalResult, HighlightSegment, VideoChunk
 from .video_chunker import build_chunks
 from .video_clip import extract_video_clip
@@ -37,6 +37,14 @@ def parse_saved_raw_outputs(
         record = dict(saved)
         chunk_start = float(record["chunk_start_sec"])
         chunk_end = float(record["chunk_end_sec"])
+        if record.get("finish_reason") == "length":
+            record["parse_success"] = False
+            record["parse_error"] = (
+                "TruncatedResponseError: model output was truncated "
+                "(finish_reason=length); refusing to treat partial JSON as a result"
+            )
+            normalized_outputs.append(record)
+            raise TruncatedResponseError(record["parse_error"])
         try:
             local_segments = parse_highlight_response(
                 str(record["raw_response"]),
@@ -95,6 +103,7 @@ class HighlightRetrievalConfig:
     merge_tiou_threshold: float = 0.5
     request_timeout_sec: float = 120.0
     enable_thinking: bool = False
+    prompt_version: str = "high_recall_retrieval_v0"
 
     def __post_init__(self) -> None:
         if self.chunk_seconds <= 0:
@@ -109,6 +118,10 @@ class HighlightRetrievalConfig:
             raise ValueError("merge_tiou_threshold must be in [0, 1]")
         if self.request_timeout_sec <= 0:
             raise ValueError("request_timeout_sec must be greater than zero")
+        if self.prompt_version not in SUPPORTED_PROMPT_VERSIONS:
+            raise ValueError(
+                f"prompt_version must be one of {', '.join(SUPPORTED_PROMPT_VERSIONS)}"
+            )
 
 
 def load_highlight_retrieval_config(path: str | Path) -> HighlightRetrievalConfig:
@@ -168,9 +181,13 @@ class HighlightRetrievalPipeline:
         chunk: VideoChunk,
         raw_output_sink: Callable[[dict], None] | None = None,
     ) -> tuple[list[HighlightSegment], dict, float]:
-        prompt = build_high_recall_prompt(chunk.duration_sec, self.config.max_segments_per_chunk)
+        prompt = build_prompt(
+            self.config.prompt_version,
+            chunk.duration_sec,
+            self.config.max_segments_per_chunk,
+        )
         request_started_at = time.perf_counter()
-        raw_response = self.client.analyze_video(
+        model_response = self.client.analyze_video(
             media,
             prompt,
             max_new_tokens=self.config.max_new_tokens,
@@ -179,11 +196,14 @@ class HighlightRetrievalPipeline:
             enable_thinking=self.config.enable_thinking,
         )
         request_latency_sec = time.perf_counter() - request_started_at
+        raw_response = model_response.content
+        finish_reason = model_response.finish_reason
         raw_record = {
             "chunk_index": chunk.index,
             "chunk_start_sec": chunk.start_sec,
             "chunk_end_sec": chunk.end_sec,
             "raw_response": raw_response,
+            "finish_reason": finish_reason,
             "request_latency_sec": request_latency_sec,
             "parse_success": None,
             "parse_error": None,
@@ -191,6 +211,17 @@ class HighlightRetrievalPipeline:
         }
         if raw_output_sink is not None:
             raw_output_sink(raw_record)
+
+        if finish_reason == "length":
+            truncation_error = TruncatedResponseError(
+                "model output was truncated (finish_reason=length); "
+                "refusing to treat partial JSON as a formal result"
+            )
+            raw_record["parse_success"] = False
+            raw_record["parse_error"] = f"{type(truncation_error).__name__}: {truncation_error}"
+            if raw_output_sink is not None:
+                raw_output_sink(raw_record)
+            raise truncation_error
 
         parse_started_at = time.perf_counter()
         try:

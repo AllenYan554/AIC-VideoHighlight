@@ -2,8 +2,17 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+
+@dataclass(frozen=True, slots=True)
+class ModelResponse:
+    """A single completion including the server-reported stop reason."""
+
+    content: str
+    finish_reason: str | None = None
 
 
 class QwenVLLMClient:
@@ -37,7 +46,7 @@ class QwenVLLMClient:
         max_new_tokens: int = 256,
         temperature: float = 0.0,
         enable_thinking: bool | None = None,
-    ) -> str:
+    ) -> ModelResponse:
         extra_body: dict[str, Any] = {}
         if enable_thinking is not None:
             extra_body["chat_template_kwargs"] = {"enable_thinking": enable_thinking}
@@ -48,7 +57,11 @@ class QwenVLLMClient:
             temperature=temperature,
             extra_body=extra_body or None,
         )
-        return response.choices[0].message.content or ""
+        choice = response.choices[0]
+        return ModelResponse(
+            content=choice.message.content or "",
+            finish_reason=choice.finish_reason,
+        )
 
     def analyze_video(
         self,
@@ -59,7 +72,7 @@ class QwenVLLMClient:
         temperature: float = 0.0,
         coarse_fps: float | None = None,
         enable_thinking: bool | None = None,
-    ) -> str:
+    ) -> ModelResponse:
         """Analyze one local video or HTTP(S) URL using a ``video_url`` content part.
 
         Local paths become ``file://`` URLs and therefore require the server's
@@ -99,4 +112,8 @@ class QwenVLLMClient:
                 "enable_thinking": enable_thinking
             }
         response = self._client.chat.completions.create(**request)
-        return response.choices[0].message.content or ""
+        choice = response.choices[0]
+        return ModelResponse(
+            content=choice.message.content or "",
+            finish_reason=choice.finish_reason,
+        )
