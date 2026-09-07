@@ -269,7 +269,7 @@ def test_event_identity_guard_rejects_drift():
         min_parent_temporal_iou=0.5,
     )
     assert not drift["pass"]
-    assert "parent_temporal_iou" in drift["failed_checks"]
+    assert "parent_tiou" in drift["failed_checks"]
     outside = assess_event_identity(
         original_start_sec=10.0,
         original_end_sec=20.0,

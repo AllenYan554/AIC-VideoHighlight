@@ -279,7 +279,7 @@ def assess_event_identity(
             "observed": [refined_start, refined_end],
             "window": [float(window["start_sec"]), float(window["end_sec"])],
         },
-        "parent_temporal_iou": {
+        "parent_tiou": {
             "pass": parent_ok,
             "observed": parent_iou,
             "threshold": float(min_parent_temporal_iou),
@@ -320,7 +320,9 @@ def parse_boundary_response(
     decision = payload["decision"]
     if decision not in RESPONSE_DECISIONS:
         raise BoundaryResponseError("decision must be REFINE or IDENTITY_FALLBACK")
-    confidence = _unit_interval(payload["confidence"], "confidence")
+    confidence = _finite_number(payload["confidence"], "confidence")
+    if not 0.0 <= confidence <= 1.0:
+        raise BoundaryResponseError("confidence must be in [0, 1]")
     reason = payload["boundary_reason"]
     if not isinstance(reason, str):
         raise BoundaryResponseError("boundary_reason must be a string")
@@ -364,6 +366,16 @@ def _check_forbidden_keys(payload: Any, path: str = "$") -> None:
     elif isinstance(payload, list):
         for index, value in enumerate(payload):
             _check_forbidden_keys(value, f"{path}[{index}]")
+
+
+def _check_result_leakage(result: Mapping[str, Any]) -> None:
+    """Leakage scan over generated content; the frozen refiner_config echo is
+    covered by its own protocol hash and may contain metric-like parameter
+    names such as ``min_parent_temporal_iou``."""
+    for key, value in result.items():
+        if key == "refiner_config":
+            continue
+        _check_forbidden_keys(value, f"$.{key}")
 
 
 def _identity_decision(candidate: Mapping[str, Any]) -> dict[str, Any]:
@@ -587,7 +599,7 @@ def create_boundary_refinement_result(
         "decision_counts": decision_counts,
         "records": records,
     }
-    _check_forbidden_keys(result)
+    _check_result_leakage(result)
     result["boundary_refinement_semantic_hash"] = semantic_sha256(result)
     return result
 
@@ -599,7 +611,7 @@ def validate_boundary_refinement_payload(
     cache_records_by_id: Mapping[str, Mapping[str, Any]],
 ) -> dict[str, Any]:
     """Validate schema, hashes, candidate identity, and every guard decision."""
-    _check_forbidden_keys(result)
+    _check_result_leakage(result)
     if result.get("boundary_result_schema_version") != BOUNDARY_RESULT_SCHEMA_VERSION:
         raise BoundaryRefinementError("unsupported boundary refinement result schema")
     claimed = _require_sha256(
