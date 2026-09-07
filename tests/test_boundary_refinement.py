@@ -228,6 +228,18 @@ def test_parse_boundary_response_maps_to_absolute_time():
     assert parsed["decision"] == "REFINE"
 
 
+def test_parse_boundary_response_accepts_markdown_fence():
+    fenced = (
+        "```json\n"
+        '{"refined_start_sec": 1.0, "refined_end_sec": 3.5, "decision": "REFINE",'
+        ' "confidence": 0.9, "boundary_reason": "trim"}\n'
+        "```"
+    )
+    parsed = parse_boundary_response(fenced, context_start_sec=0.0, context_end_sec=10.0)
+    assert parsed["refined_start_sec"] == 1.0
+    assert parsed["refined_end_sec"] == 3.5
+
+
 @pytest.mark.parametrize(
     "payload",
     [

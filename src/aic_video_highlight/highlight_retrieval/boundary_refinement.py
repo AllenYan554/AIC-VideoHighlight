@@ -31,6 +31,11 @@ from .candidate_selection import (
     validate_role_manifest,
     validate_role_manifest_directory,
 )
+from .response_parser import (
+    ResponseParseError,
+    TruncatedResponseError,
+    _load_json_object,
+)
 from .temporal_metrics import temporal_iou
 
 
@@ -296,9 +301,9 @@ def parse_boundary_response(
     context_start = _finite_number(context_start_sec, "context_start_sec")
     context_end = _finite_number(context_end_sec, "context_end_sec")
     try:
-        payload = json.loads(str(text))
-    except json.JSONDecodeError as exc:
-        raise BoundaryResponseError("response is not valid JSON") from exc
+        payload = _load_json_object(str(text))
+    except (ResponseParseError, TruncatedResponseError) as exc:
+        raise BoundaryResponseError(f"response is not valid JSON: {exc}") from exc
     if not isinstance(payload, Mapping):
         raise BoundaryResponseError("response must be a JSON object")
     required = {
