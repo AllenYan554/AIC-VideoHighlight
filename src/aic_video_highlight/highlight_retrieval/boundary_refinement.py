@@ -6,15 +6,17 @@ are structurally immutable: the replay layer always projects those fields from
 the frozen cache, and the refinement result never carries replacements for
 them.  BR-0 is a pure identity control; BR-1 asks an injected model callable
 for the same event's refined boundaries inside a frozen local context window
-and falls back to identity on any parse, schema, or event-identity-guard
+and falls back to identity on any parse, schema, or temporal-parent-consistency
 failure.  This module never reads references, metrics, audit labels, or
 Heldout data.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
+import subprocess
 from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 from typing import Any
@@ -48,9 +50,40 @@ BR1_PARAMETERS = ("context_padding_sec", "max_context_duration_sec", "min_parent
 BR0_DECISION = "IDENTITY"
 BR1_DECISIONS = ("REFINE", "IDENTITY_FALLBACK")
 RESPONSE_DECISIONS = BR1_DECISIONS
-_WINDOW_TOLERANCE_SEC = 1e-9
+FROZEN_SOURCE_TIME_TOLERANCE_SEC = 1e-6
+_WINDOW_TOLERANCE_SEC = 1e-6
 _IDENTITY_TOLERANCE_SEC = 1e-9
 _BOUNDARY_PROMPT_VERSION = "boundary_local_context_v0_draft"
+_BOUNDARY_PROMPT_TEMPLATE = """你是视频高光系统中的时间边界精修模块。你不是在重新寻找高光。
+系统已经给你一个候选事件区间，你的职责只有一个：判断同一事件的有效起止边界，并做局部修正。
+
+给你观看的是一个局部视频片段，时长 {context_duration_sec:.3f} 秒。
+候选事件区间（相对本片段开头的秒数）：start_sec = {candidate_start_sec:.3f}，end_sec = {candidate_end_sec:.3f}。
+该候选的检索理由：{candidate_reason}
+
+规则：
+1. 保持事件身份：修正后的区间必须仍然是这同一个事件，不许移到旁边其他事件上。
+2. 去掉明显的前置铺垫（setup）和事件结束后的无关拖尾（tail）。
+3. 保留核心动作、事件高潮或结果，以及理解该事件所必需的最少上下文。
+4. 不要为了追求更短而过度裁剪；宁可略微放宽，也不要切断事件核心。
+5. 如果边界轻微不确定，或你无法确认事件边界，返回原边界并把 decision 设为 IDENTITY_FALLBACK。
+6. 时间数值都是相对本片段开头的秒数，范围 0 到 {context_duration_sec:.3f}，不要输出帧号或原视频全局时间。
+
+仅输出一个 JSON 对象，不要输出 Markdown 或解释，格式为：
+{{"refined_start_sec": 4.2, "refined_end_sec": 8.6, "decision": "REFINE", "confidence": 0.8, "boundary_reason": "简短理由"}}
+
+decision 只允许 "REFINE"（已按同一事件修正边界）或 "IDENTITY_FALLBACK"（不确定，保持原边界）。
+不允许出现 DROP、CREATE、NEW_EVENT 或第二个事件。
+
+Prompt 版本：{prompt_version}
+"""
+_BOUNDARY_PROMPT_SEMANTIC_SHA256 = semantic_sha256(
+    {
+        "prompt_identifier": "aic.stage4.4.temporal-boundary-local-context",
+        "prompt_version": _BOUNDARY_PROMPT_VERSION,
+        "template": _BOUNDARY_PROMPT_TEMPLATE,
+    }
+)
 _MAX_BOUNDARY_REASON_CHARS = 400
 _MAX_RAW_RESPONSE_CHARS = 2000
 
@@ -64,6 +97,16 @@ class BoundaryResponseError(ValueError):
 
 
 ModelFn = Callable[..., tuple[str, str | None]]
+PrepareContextFn = Callable[..., Mapping[str, Any]]
+
+BR1_RULES = (
+    "br1.model_refine",
+    "br1.model_identity",
+    "br1.fallback_transport_error",
+    "br1.fallback_empty_response",
+    "br1.fallback_parse_error",
+    "br1.fallback_parent_consistency_guard",
+)
 
 
 def _finite_number(value: Any, field: str) -> float:
@@ -160,7 +203,71 @@ def load_boundary_protocol(
     refiners = protocol.get("refiners")
     if not isinstance(refiners, Mapping) or set(refiners) != {"BR-0", "BR-1"}:
         raise BoundaryRefinementError("protocol refiner registry is incomplete")
+    br1 = refiners.get("BR-1")
+    if not isinstance(br1, Mapping) or br1.get("prompt_version") != _BOUNDARY_PROMPT_VERSION:
+        raise BoundaryRefinementError("protocol prompt version does not match implementation")
     return protocol
+
+
+def resolve_git_head(path: Path) -> str:
+    """Resolve the repository HEAD recorded in every refinement artifact."""
+    completed = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=path.expanduser().resolve().parent,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    head = completed.stdout.strip().lower()
+    if completed.returncode != 0 or len(head) != 40 or any(c not in "0123456789abcdef" for c in head):
+        raise BoundaryRefinementError("could not resolve a valid Git HEAD for protocol binding")
+    return head
+
+
+def build_protocol_binding(
+    protocol: Mapping[str, Any],
+    *,
+    protocol_bytes_sha256: str,
+    refiner_name: str,
+    role_manifest_hash: str,
+    git_head: str,
+) -> dict[str, Any]:
+    """Build the exact Protocol/runtime identity embedded in an artifact."""
+    _require_sha256(protocol_bytes_sha256, "protocol bytes hash")
+    _require_sha256(role_manifest_hash, "role manifest hash")
+    if len(git_head) != 40 or any(c not in "0123456789abcdef" for c in git_head.lower()):
+        raise BoundaryRefinementError("git_head must be a 40-character hexadecimal commit")
+    config = refiner_config_from_protocol(protocol, refiner_name)
+    definition = protocol["refiners"][refiner_name]
+    model = definition.get("model") if refiner_name == "BR-1" else None
+    if model is not None and not isinstance(model, Mapping):
+        raise BoundaryRefinementError("protocol model runtime must be an object")
+    runtime = {
+        "refiner_name": refiner_name,
+        "refiner_version": REFINER_VERSION,
+        "parameters": _canonical_copy(config["parameters"]),
+        "model": _canonical_copy(model),
+        "clip_coordinate_contract": "source_sec = actual_source_origin_sec + local_sec",
+        "clip_extraction_version": "aic.frame-accurate-local-clip/v1",
+    }
+    return {
+        "protocol_status": protocol["protocol_status"],
+        "protocol_bytes_sha256": protocol_bytes_sha256,
+        "protocol_semantic_sha256": protocol["protocol_semantic_sha256"],
+        "model_identifier": None if model is None else model.get("model_name"),
+        "model_revision": None if model is None else model.get("model_revision"),
+        "prompt_identifier": (
+            None if refiner_name == "BR-0" else "aic.stage4.4.temporal-boundary-local-context"
+        ),
+        "prompt_version": None if refiner_name == "BR-0" else definition.get("prompt_version"),
+        "prompt_semantic_sha256": (
+            None if refiner_name == "BR-0" else _BOUNDARY_PROMPT_SEMANTIC_SHA256
+        ),
+        "refiner_runtime_config": runtime,
+        "source_cache_global_hash": protocol["source_cache_global_hash"],
+        "role_manifest_hash": role_manifest_hash,
+        "git_head": git_head.lower(),
+    }
 
 
 def build_boundary_prompt(
@@ -178,29 +285,13 @@ def build_boundary_prompt(
     reason = str(candidate_reason).strip()
     if not reason:
         reason = "（无附加说明）"
-    return f"""你是视频高光系统中的时间边界精修模块。你不是在重新寻找高光。
-系统已经给你一个候选事件区间，你的职责只有一个：判断同一事件的有效起止边界，并做局部修正。
-
-给你观看的是一个局部视频片段，时长 {context_duration_sec:.3f} 秒。
-候选事件区间（相对本片段开头的秒数）：start_sec = {candidate_start_sec:.3f}，end_sec = {candidate_end_sec:.3f}。
-该候选的检索理由：{reason}
-
-规则：
-1. 保持事件身份：修正后的区间必须仍然是这同一个事件，不许移到旁边其他事件上。
-2. 去掉明显的前置铺垫（setup）和事件结束后的无关拖尾（tail）。
-3. 保留核心动作、事件高潮或结果，以及理解该事件所必需的最少上下文。
-4. 不要为了追求更短而过度裁剪；宁可略微放宽，也不要切断事件核心。
-5. 如果边界轻微不确定，或你无法确认事件边界，返回原边界并把 decision 设为 IDENTITY_FALLBACK。
-6. 时间数值都是相对本片段开头的秒数，范围 0 到 {context_duration_sec:.3f}，不要输出帧号或原视频全局时间。
-
-仅输出一个 JSON 对象，不要输出 Markdown 或解释，格式为：
-{{"refined_start_sec": 4.2, "refined_end_sec": 8.6, "decision": "REFINE", "confidence": 0.8, "boundary_reason": "简短理由"}}
-
-decision 只允许 "REFINE"（已按同一事件修正边界）或 "IDENTITY_FALLBACK"（不确定，保持原边界）。
-不允许出现 DROP、CREATE、NEW_EVENT 或第二个事件。
-
-Prompt 版本：{_BOUNDARY_PROMPT_VERSION}
-"""
+    return _BOUNDARY_PROMPT_TEMPLATE.format(
+        context_duration_sec=context_duration_sec,
+        candidate_start_sec=candidate_start_sec,
+        candidate_end_sec=candidate_end_sec,
+        candidate_reason=reason,
+        prompt_version=_BOUNDARY_PROMPT_VERSION,
+    )
 
 
 def compute_local_context_window(
@@ -219,14 +310,17 @@ def compute_local_context_window(
     max_context = _positive_number(max_context_duration_sec, "max_context_duration_sec")
     if duration <= 0:
         raise BoundaryRefinementError("duration_sec must be greater than zero")
-    if not 0.0 <= start < end <= duration:
+    if not 0.0 <= start < end <= duration + FROZEN_SOURCE_TIME_TOLERANCE_SEC:
         raise BoundaryRefinementError("candidate interval must satisfy 0 <= start < end <= duration")
+    # The frozen logical endpoint remains untouched in artifacts.  Only the
+    # operational media interval is clamped to the decodable source duration.
+    operational_end = min(end, duration)
     window_start = max(0.0, start - padding)
-    window_end = min(duration, end + padding)
+    window_end = min(duration, operational_end + padding)
     excess = (window_end - window_start) - max_context
     if excess > 0:
         available_before = start - window_start
-        available_after = window_end - end
+        available_after = window_end - operational_end
         if available_before >= available_after:
             trim_before = min(excess, available_before)
             excess -= trim_before
@@ -238,7 +332,7 @@ def compute_local_context_window(
         window_start += trim_before
         window_end -= trim_after
         if not (
-            window_start <= start < end <= window_end
+            window_start <= start < operational_end <= window_end + FROZEN_SOURCE_TIME_TOLERANCE_SEC
         ):  # pragma: no cover - arithmetic safeguard
             raise BoundaryRefinementError("window trimming broke candidate containment")
     return {"start_sec": window_start, "end_sec": window_end}
@@ -254,7 +348,10 @@ def assess_event_identity(
     duration_sec: float,
     min_parent_temporal_iou: float,
 ) -> dict[str, Any]:
-    """Re-checkable event identity guard for one refinement proposal."""
+    """Re-checkable temporal parent-consistency guard for one proposal.
+
+    This numeric tIoU check does not establish semantic event identity.
+    """
     refined_start = _finite_number(refined_start_sec, "refined_start_sec")
     refined_end = _finite_number(refined_end_sec, "refined_end_sec")
     interval_valid = (
@@ -378,7 +475,7 @@ def _check_result_leakage(result: Mapping[str, Any]) -> None:
     covered by its own protocol hash and may contain metric-like parameter
     names such as ``min_parent_temporal_iou``."""
     for key, value in result.items():
-        if key == "refiner_config":
+        if key in {"refiner_config", "protocol_binding"}:
             continue
         normalized = str(key).lower()
         if any(fragment in normalized for fragment in _FORBIDDEN_KEY_FRAGMENTS):
@@ -398,8 +495,108 @@ def _identity_decision(candidate: Mapping[str, Any]) -> dict[str, Any]:
         "confidence": 1.0,
         "boundary_reason": "",
         "local_context_window": None,
-        "identity_guard": None,
+        "clip_timing": None,
+        "parent_consistency_guard": None,
         "model_response": None,
+    }
+
+
+def _default_clip_timing(window: Mapping[str, float]) -> dict[str, Any]:
+    start = float(window["start_sec"])
+    end = float(window["end_sec"])
+    return {
+        "coordinate_contract": "source_sec = actual_source_origin_sec + local_sec",
+        "extraction_backend": "injected_model_context",
+        "requested_source_start_sec": start,
+        "requested_source_end_sec": end,
+        "actual_source_origin_sec": start,
+        "clip_duration_sec": end - start,
+        "actual_source_frame_index": None,
+        "source_fps": None,
+        "first_source_frame_checksum": None,
+    }
+
+
+def _validate_clip_timing(
+    timing: Mapping[str, Any], window: Mapping[str, float]
+) -> dict[str, Any]:
+    required = {
+        "coordinate_contract",
+        "extraction_backend",
+        "requested_source_start_sec",
+        "requested_source_end_sec",
+        "actual_source_origin_sec",
+        "clip_duration_sec",
+        "actual_source_frame_index",
+        "source_fps",
+        "first_source_frame_checksum",
+    }
+    if set(timing) != required:
+        raise BoundaryRefinementError("clip timing has unexpected or missing fields")
+    if timing.get("coordinate_contract") != "source_sec = actual_source_origin_sec + local_sec":
+        raise BoundaryRefinementError("unsupported clip coordinate contract")
+    backend = timing.get("extraction_backend")
+    if backend not in {"ffmpeg_reencode", "opencv_reencode", "injected_model_context"}:
+        raise BoundaryRefinementError("unsupported clip extraction backend")
+    requested_start = _finite_number(
+        timing.get("requested_source_start_sec"), "requested_source_start_sec"
+    )
+    requested_end = _finite_number(
+        timing.get("requested_source_end_sec"), "requested_source_end_sec"
+    )
+    origin = _finite_number(timing.get("actual_source_origin_sec"), "actual_source_origin_sec")
+    clip_duration = _positive_number(timing.get("clip_duration_sec"), "clip_duration_sec")
+    if (
+        abs(requested_start - float(window["start_sec"])) > _WINDOW_TOLERANCE_SEC
+        or abs(requested_end - float(window["end_sec"])) > _WINDOW_TOLERANCE_SEC
+    ):
+        raise BoundaryRefinementError("clip timing does not match requested local window")
+    if origin < requested_start - _WINDOW_TOLERANCE_SEC or origin >= requested_end:
+        raise BoundaryRefinementError("clip actual source origin is outside the requested window")
+    allowed_overrun = 0.0
+    checksum = timing.get("first_source_frame_checksum")
+    if backend == "opencv_reencode":
+        fps = _positive_number(timing.get("source_fps"), "source_fps")
+        frame_index = timing.get("actual_source_frame_index")
+        if not isinstance(frame_index, int) or frame_index < 0:
+            raise BoundaryRefinementError("OpenCV clip frame index is invalid")
+        if abs(origin - frame_index / fps) > _WINDOW_TOLERANCE_SEC:
+            raise BoundaryRefinementError("OpenCV clip origin/frame identity mismatch")
+        if not isinstance(checksum, str) or len(checksum) != 64:
+            raise BoundaryRefinementError("OpenCV first-frame checksum is invalid")
+        allowed_overrun = 1.0 / fps
+    elif backend == "ffmpeg_reencode":
+        if timing.get("actual_source_frame_index") is not None or timing.get("source_fps") is not None:
+            raise BoundaryRefinementError("ffmpeg clip must not invent a frame index or FPS")
+        if not isinstance(checksum, str) or not checksum or any(
+            character not in "0123456789abcdefABCDEF" for character in checksum
+        ):
+            raise BoundaryRefinementError("ffmpeg first-frame checksum is invalid")
+    if origin + clip_duration > requested_end + allowed_overrun + _WINDOW_TOLERANCE_SEC:
+        raise BoundaryRefinementError("clip duration extends beyond the requested window")
+    return _canonical_copy(timing)
+
+
+def _fallback_decision(
+    base: Mapping[str, Any],
+    *,
+    candidate: Mapping[str, Any],
+    rule: str,
+    reason: str,
+    confidence: float = 0.0,
+    model_response: Mapping[str, Any] | None = None,
+    guard: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    return {
+        **base,
+        "model_response": model_response,
+        "decision": "IDENTITY_FALLBACK",
+        "decision_rule": rule,
+        "refined_start_sec": float(candidate["start_sec"]),
+        "refined_end_sec": float(candidate["end_sec"]),
+        "confidence": confidence,
+        "boundary_reason": reason,
+        "parent_consistency_guard": guard,
     }
 
 
@@ -410,6 +607,7 @@ def refine_candidates(
     duration_sec: float,
     video_id: str,
     model_fn: ModelFn | None = None,
+    prepare_context_fn: PrepareContextFn | None = None,
 ) -> list[dict[str, Any]]:
     """Return one deterministic boundary decision per input candidate."""
     name, parameters = _validate_refiner_config(refiner_config)
@@ -420,7 +618,12 @@ def refine_candidates(
             raise BoundaryRefinementError("candidate is missing merged_candidate_id")
         original_start = float(candidate["start_sec"])
         original_end = float(candidate["end_sec"])
-        if not 0.0 <= original_start < original_end <= float(duration_sec):
+        if not (
+            0.0
+            <= original_start
+            < original_end
+            <= float(duration_sec) + FROZEN_SOURCE_TIME_TOLERANCE_SEC
+        ):
             raise BoundaryRefinementError(
                 f"candidate interval violates duration for {candidate['merged_candidate_id']}"
             )
@@ -437,51 +640,81 @@ def refine_candidates(
             context_padding_sec=parameters["context_padding_sec"],
             max_context_duration_sec=parameters["max_context_duration_sec"],
         )
-        clip_length = float(window["end_sec"]) - float(window["start_sec"])
-        local_start = original_start - float(window["start_sec"])
-        local_end = original_end - float(window["start_sec"])
+        timing = _validate_clip_timing(
+            prepare_context_fn(video_id=video_id, candidate_id=candidate_id, window=window)
+            if prepare_context_fn is not None
+            else _default_clip_timing(window),
+            window,
+        )
+        actual_origin = float(timing["actual_source_origin_sec"])
+        clip_length = float(timing["clip_duration_sec"])
+        local_start = max(0.0, original_start - actual_origin)
+        local_end = min(float(duration_sec), original_end) - actual_origin
         prompt = build_boundary_prompt(
             context_duration_sec=clip_length,
             candidate_start_sec=local_start,
             candidate_end_sec=local_end,
             candidate_reason=str(candidate.get("reason", "")),
         )
-        raw_text, finish_reason = model_fn(
-            prompt,
-            video_id=video_id,
-            candidate_id=candidate_id,
-            window=window,
-        )
-        raw_record = {
-            "text_sha256": semantic_sha256(str(raw_text)),
-            "text_preview": str(raw_text)[:_MAX_RAW_RESPONSE_CHARS],
-            "finish_reason": None if finish_reason is None else str(finish_reason),
-        }
         base = {
             "merged_candidate_id": candidate_id,
             "original_start_sec": original_start,
             "original_end_sec": original_end,
             "local_context_window": window,
-            "model_response": raw_record,
+            "clip_timing": timing,
         }
+        try:
+            raw_text, finish_reason = model_fn(
+                prompt,
+                video_id=video_id,
+                candidate_id=candidate_id,
+                window=window,
+            )
+        except (ConnectionError, TimeoutError) as exc:
+            decisions.append(
+                _fallback_decision(
+                    base,
+                    candidate=candidate,
+                    rule="br1.fallback_transport_error",
+                    reason=f"transport error: {type(exc).__name__}",
+                    model_response={
+                        "transport_error_type": type(exc).__name__,
+                        "finish_reason": None,
+                    },
+                )
+            )
+            continue
+        raw_record = {
+            "text_sha256": semantic_sha256(str(raw_text)),
+            "text_preview": str(raw_text)[:_MAX_RAW_RESPONSE_CHARS],
+            "finish_reason": None if finish_reason is None else str(finish_reason),
+        }
+        if not str(raw_text).strip():
+            decisions.append(
+                _fallback_decision(
+                    base,
+                    candidate=candidate,
+                    rule="br1.fallback_empty_response",
+                    reason="empty model response",
+                    model_response=raw_record,
+                )
+            )
+            continue
         try:
             parsed = parse_boundary_response(
                 raw_text,
-                context_start_sec=float(window["start_sec"]),
-                context_end_sec=float(window["end_sec"]),
+                context_start_sec=actual_origin,
+                context_end_sec=actual_origin + clip_length,
             )
         except BoundaryResponseError as exc:
             decisions.append(
-                {
-                    **base,
-                    "decision": "IDENTITY_FALLBACK",
-                    "decision_rule": "br1.fallback_parse_error",
-                    "refined_start_sec": original_start,
-                    "refined_end_sec": original_end,
-                    "confidence": 0.0,
-                    "boundary_reason": f"parse error: {exc}",
-                    "identity_guard": None,
-                }
+                _fallback_decision(
+                    base,
+                    candidate=candidate,
+                    rule="br1.fallback_parse_error",
+                    reason=f"parse error: {exc}",
+                    model_response=raw_record,
+                )
             )
             continue
         if parsed["decision"] == "IDENTITY_FALLBACK":
@@ -489,12 +722,14 @@ def refine_candidates(
                 {
                     **base,
                     "decision": "IDENTITY_FALLBACK",
-                    "decision_rule": "br1.fallback_model_identity",
+                    "decision_rule": "br1.model_identity",
                     "refined_start_sec": original_start,
                     "refined_end_sec": original_end,
                     "confidence": float(parsed["confidence"]),
                     "boundary_reason": parsed["boundary_reason"],
-                    "identity_guard": None,
+                    "parent_consistency_guard": None,
+                    "clip_timing": timing,
+                    "model_response": raw_record,
                 }
             )
             continue
@@ -512,12 +747,14 @@ def refine_candidates(
                 {
                     **base,
                     "decision": "IDENTITY_FALLBACK",
-                    "decision_rule": "br1.fallback_event_identity_guard",
+                    "decision_rule": "br1.fallback_parent_consistency_guard",
                     "refined_start_sec": original_start,
                     "refined_end_sec": original_end,
                     "confidence": float(parsed["confidence"]),
                     "boundary_reason": parsed["boundary_reason"],
-                    "identity_guard": guard,
+                    "parent_consistency_guard": guard,
+                    "clip_timing": timing,
+                    "model_response": raw_record,
                 }
             )
             continue
@@ -530,7 +767,9 @@ def refine_candidates(
                 "refined_end_sec": float(parsed["refined_end_sec"]),
                 "confidence": float(parsed["confidence"]),
                 "boundary_reason": parsed["boundary_reason"],
-                "identity_guard": guard,
+                "parent_consistency_guard": guard,
+                "clip_timing": timing,
+                "model_response": raw_record,
             }
         )
     return decisions
@@ -543,6 +782,8 @@ def create_boundary_refinement_result(
     refiner_config: Mapping[str, Any],
     *,
     model_fn: ModelFn | None = None,
+    prepare_context_fn: PrepareContextFn | None = None,
+    protocol_binding: Mapping[str, Any],
 ) -> dict[str, Any]:
     """Create a deterministic boundary refinement result without references."""
     validate_role_manifest(
@@ -554,6 +795,16 @@ def create_boundary_refinement_result(
     name, _ = _validate_refiner_config(refiner_config)
     config_payload = _canonical_copy(refiner_config)
     config_hash = semantic_sha256(config_payload)
+    binding = _canonical_copy(protocol_binding)
+    runtime = binding.get("refiner_runtime_config")
+    if (
+        binding.get("source_cache_global_hash") != cache_hash
+        or binding.get("role_manifest_hash") != role_manifest.get("semantic_sha256")
+        or not isinstance(runtime, Mapping)
+        or runtime.get("refiner_name") != name
+        or runtime.get("parameters") != config_payload["parameters"]
+    ):
+        raise BoundaryRefinementError("protocol binding does not match refinement inputs")
     records: list[dict[str, Any]] = []
     candidate_total = 0
     decision_counts = {BR0_DECISION: 0, "REFINE": 0, "IDENTITY_FALLBACK": 0}
@@ -565,7 +816,7 @@ def create_boundary_refinement_result(
         if record.get("split") != identity["split"]:
             raise BoundaryRefinementError(f"role/cache split mismatch for {video_id}")
         candidates = record.get("merged_candidates")
-        if not isinstance(candidates, list) or not candidates:
+        if not isinstance(candidates, list):
             raise BoundaryRefinementError(f"cache merged_candidates missing for {video_id}")
         refinements = refine_candidates(
             candidates,
@@ -573,6 +824,7 @@ def create_boundary_refinement_result(
             duration_sec=float(record["duration_sec"]),
             video_id=video_id,
             model_fn=model_fn,
+            prepare_context_fn=prepare_context_fn,
         )
         for candidate, refinement in zip(candidates, refinements, strict=True):
             refinement["parent_candidate_semantic_sha256"] = semantic_sha256(
@@ -602,9 +854,18 @@ def create_boundary_refinement_result(
         "refiner_version": REFINER_VERSION,
         "refiner_config": config_payload,
         "refiner_config_hash": config_hash,
+        "protocol_binding": binding,
         "record_count": len(records),
         "input_candidate_count": candidate_total,
         "decision_counts": decision_counts,
+        "decision_rule_counts": {
+            rule: sum(
+                item["decision_rule"] == rule
+                for record in records
+                for item in record["candidate_refinements"]
+            )
+            for rule in (("br0.identity",) if name == "BR-0" else BR1_RULES)
+        },
         "records": records,
     }
     _check_result_leakage(result)
@@ -617,6 +878,10 @@ def validate_boundary_refinement_payload(
     cache_manifest: Mapping[str, Any],
     role_manifest: Mapping[str, Any],
     cache_records_by_id: Mapping[str, Mapping[str, Any]],
+    *,
+    protocol: Mapping[str, Any],
+    protocol_bytes_sha256: str,
+    expected_git_head: str,
 ) -> dict[str, Any]:
     """Validate schema, hashes, candidate identity, and every guard decision."""
     _check_result_leakage(result)
@@ -642,6 +907,15 @@ def validate_boundary_refinement_payload(
         raise BoundaryRefinementError("boundary result config hash mismatch")
     if result.get("refiner_version") != REFINER_VERSION:
         raise BoundaryRefinementError("boundary result refiner version mismatch")
+    expected_binding = build_protocol_binding(
+        protocol,
+        protocol_bytes_sha256=protocol_bytes_sha256,
+        refiner_name=name,
+        role_manifest_hash=str(role_manifest.get("semantic_sha256")),
+        git_head=expected_git_head,
+    )
+    if result.get("protocol_binding") != expected_binding:
+        raise BoundaryRefinementError("boundary result Protocol/runtime binding mismatch")
     result_records = result.get("records")
     if not isinstance(result_records, list) or result.get("record_count") != len(
         result_records
@@ -653,6 +927,9 @@ def validate_boundary_refinement_payload(
         raise BoundaryRefinementError("boundary result role coverage mismatch")
     decision_counts = {BR0_DECISION: 0, "REFINE": 0, "IDENTITY_FALLBACK": 0}
     candidate_total = 0
+    rule_counts = {
+        rule: 0 for rule in (("br0.identity",) if name == "BR-0" else BR1_RULES)
+    }
     for result_record, role_identity in zip(
         result_records, role_manifest.get("records", []), strict=True
     ):
@@ -699,6 +976,15 @@ def validate_boundary_refinement_payload(
                 raise BoundaryRefinementError(f"parent candidate hash mismatch for {video_id}")
             original_start = float(candidate["start_sec"])
             original_end = float(candidate["end_sec"])
+            if not (
+                0.0
+                <= original_start
+                < original_end
+                <= duration + FROZEN_SOURCE_TIME_TOLERANCE_SEC
+            ):
+                raise BoundaryRefinementError(
+                    f"frozen candidate interval violates source-time tolerance for {video_id}/{candidate_id}"
+                )
             if float(refinement.get("original_start_sec", -1.0)) != original_start or float(
                 refinement.get("original_end_sec", -1.0)
             ) != original_end:
@@ -709,8 +995,41 @@ def validate_boundary_refinement_payload(
             if decision not in decision_counts:
                 raise BoundaryRefinementError(f"unknown boundary decision for {video_id}")
             decision_counts[decision] += 1
+            rule = str(refinement.get("decision_rule", ""))
+            if rule not in rule_counts:
+                raise BoundaryRefinementError(f"unknown boundary decision rule for {video_id}")
+            rule_counts[rule] += 1
             refined_start = _finite_number(refinement.get("refined_start_sec"), "refined_start")
             refined_end = _finite_number(refinement.get("refined_end_sec"), "refined_end")
+            window: dict[str, float] | None = None
+            timing: dict[str, Any] | None = None
+            if name == "BR-1":
+                window = compute_local_context_window(
+                    start_sec=original_start,
+                    end_sec=original_end,
+                    duration_sec=duration,
+                    context_padding_sec=parameters["context_padding_sec"],
+                    max_context_duration_sec=parameters["max_context_duration_sec"],
+                )
+                emitted_window = refinement.get("local_context_window")
+                if not isinstance(emitted_window, Mapping) or any(
+                    abs(float(emitted_window[key]) - float(window[key]))
+                    > _WINDOW_TOLERANCE_SEC
+                    for key in ("start_sec", "end_sec")
+                ):
+                    raise BoundaryRefinementError(
+                        f"local window mismatch for {video_id}/{candidate_id}"
+                    )
+                emitted_timing = refinement.get("clip_timing")
+                if not isinstance(emitted_timing, Mapping):
+                    raise BoundaryRefinementError(
+                        f"clip timing missing for {video_id}/{candidate_id}"
+                    )
+                timing = _validate_clip_timing(emitted_timing, window)
+            elif refinement.get("local_context_window") is not None or refinement.get(
+                "clip_timing"
+            ) is not None:
+                raise BoundaryRefinementError(f"BR-0 must not carry clip timing for {video_id}")
             if decision == BR0_DECISION or decision == "IDENTITY_FALLBACK":
                 if (
                     abs(refined_start - original_start) > _IDENTITY_TOLERANCE_SEC
@@ -722,21 +1041,7 @@ def validate_boundary_refinement_payload(
                 if decision == BR0_DECISION and refinement.get("decision_rule") != "br0.identity":
                     raise BoundaryRefinementError(f"BR-0 rule mismatch for {video_id}")
             else:
-                window = compute_local_context_window(
-                    start_sec=original_start,
-                    end_sec=original_end,
-                    duration_sec=duration,
-                    context_padding_sec=parameters["context_padding_sec"],
-                    max_context_duration_sec=parameters["max_context_duration_sec"],
-                )
-                emitted_window = refinement.get("local_context_window")
-                if not isinstance(emitted_window, Mapping) or any(
-                    abs(float(emitted_window[key]) - float(window[key])) > _WINDOW_TOLERANCE_SEC
-                    for key in ("start_sec", "end_sec")
-                ):
-                    raise BoundaryRefinementError(
-                        f"local window mismatch for {video_id}/{candidate_id}"
-                    )
+                assert window is not None
                 guard = assess_event_identity(
                     original_start_sec=original_start,
                     original_end_sec=original_end,
@@ -748,16 +1053,86 @@ def validate_boundary_refinement_payload(
                 )
                 if not guard["pass"]:
                     raise BoundaryRefinementError(
-                        f"REFINE violates the event identity guard for {video_id}/{candidate_id}"
+                        f"REFINE violates the temporal parent-consistency guard for {video_id}/{candidate_id}"
                     )
                 if refinement.get("decision_rule") != "br1.model_refine":
                     raise BoundaryRefinementError(f"REFINE rule mismatch for {video_id}")
+                if refinement.get("parent_consistency_guard") != guard:
+                    raise BoundaryRefinementError(
+                        f"REFINE guard provenance mismatch for {video_id}/{candidate_id}"
+                    )
             if decision == "IDENTITY_FALLBACK":
-                rule = str(refinement.get("decision_rule", ""))
-                if not rule.startswith("br1.fallback"):
+                if rule not in {
+                    "br1.model_identity",
+                    "br1.fallback_transport_error",
+                    "br1.fallback_empty_response",
+                    "br1.fallback_parse_error",
+                    "br1.fallback_parent_consistency_guard",
+                }:
                     raise BoundaryRefinementError(
                         f"fallback rule mismatch for {video_id}/{candidate_id}"
                     )
+                model_response = refinement.get("model_response")
+                if not isinstance(model_response, Mapping):
+                    raise BoundaryRefinementError(
+                        f"fallback provenance missing for {video_id}/{candidate_id}"
+                    )
+                if rule == "br1.fallback_transport_error":
+                    if model_response.get("transport_error_type") not in {
+                        "ConnectionError",
+                        "TimeoutError",
+                    }:
+                        raise BoundaryRefinementError("transport fallback provenance mismatch")
+                else:
+                    preview = model_response.get("text_preview")
+                    if not isinstance(preview, str):
+                        raise BoundaryRefinementError("model response preview is missing")
+                    assert timing is not None
+                    if rule == "br1.fallback_empty_response" and preview.strip():
+                        raise BoundaryRefinementError("empty-response fallback is not empty")
+                    if rule == "br1.fallback_parse_error":
+                        try:
+                            parse_boundary_response(
+                                preview,
+                                context_start_sec=float(timing["actual_source_origin_sec"]),
+                                context_end_sec=float(timing["actual_source_origin_sec"])
+                                + float(timing["clip_duration_sec"]),
+                            )
+                        except BoundaryResponseError:
+                            pass
+                        else:
+                            raise BoundaryRefinementError("parse fallback contains a valid response")
+                    if rule in {
+                        "br1.model_identity",
+                        "br1.fallback_parent_consistency_guard",
+                    }:
+                        parsed = parse_boundary_response(
+                            preview,
+                            context_start_sec=float(timing["actual_source_origin_sec"]),
+                            context_end_sec=float(timing["actual_source_origin_sec"])
+                            + float(timing["clip_duration_sec"]),
+                        )
+                        if rule == "br1.model_identity" and parsed["decision"] != "IDENTITY_FALLBACK":
+                            raise BoundaryRefinementError("model identity provenance mismatch")
+                        if rule == "br1.fallback_parent_consistency_guard":
+                            assert window is not None
+                            guard = assess_event_identity(
+                                original_start_sec=original_start,
+                                original_end_sec=original_end,
+                                refined_start_sec=parsed["refined_start_sec"],
+                                refined_end_sec=parsed["refined_end_sec"],
+                                window=window,
+                                duration_sec=duration,
+                                min_parent_temporal_iou=parameters[
+                                    "min_parent_temporal_iou"
+                                ],
+                            )
+                            if guard["pass"] or refinement.get(
+                                "parent_consistency_guard"
+                            ) != guard:
+                                raise BoundaryRefinementError(
+                                    "parent-consistency fallback provenance mismatch"
+                                )
             if not isinstance(refinement.get("boundary_reason"), str):
                 raise BoundaryRefinementError(f"boundary_reason missing for {video_id}")
             confidence = _finite_number(refinement.get("confidence"), "confidence")
@@ -768,10 +1143,13 @@ def validate_boundary_refinement_payload(
         raise BoundaryRefinementError("boundary result candidate count mismatch")
     if result.get("decision_counts") != decision_counts:
         raise BoundaryRefinementError("boundary decision counts mismatch")
+    if result.get("decision_rule_counts") != rule_counts:
+        raise BoundaryRefinementError("boundary decision rule counts mismatch")
     return {
         "record_count": len(result_records),
         "input_candidate_count": candidate_total,
         "decision_counts": decision_counts,
+        "decision_rule_counts": rule_counts,
         "boundary_refinement_semantic_hash": claimed,
     }
 
@@ -834,6 +1212,7 @@ def run_refinement_to_file(
     output_path: Path,
     *,
     model_fn: ModelFn | None = None,
+    prepare_context_fn: PrepareContextFn | None = None,
     allow_draft_protocol: bool = True,
 ) -> dict[str, Any]:
     """Protocol-bound refinement chain: load → refine → validate → write."""
@@ -841,7 +1220,8 @@ def run_refinement_to_file(
     role_path = role_manifest_path.expanduser().resolve()
     role_summary = validate_role_manifest_directory(role_path.parent, cache_manifest=manifest)
     role_manifest = _read_json_object(role_path)
-    protocol = load_boundary_protocol(protocol_path, allow_draft=allow_draft_protocol)
+    resolved_protocol_path = protocol_path.expanduser().resolve()
+    protocol = load_boundary_protocol(resolved_protocol_path, allow_draft=allow_draft_protocol)
     if protocol.get("role_manifest_summary_hash") != role_summary["semantic_sha256"]:
         raise BoundaryRefinementError("protocol role summary hash mismatch")
     role_hashes = protocol.get("role_manifest_hashes")
@@ -850,10 +1230,33 @@ def run_refinement_to_file(
     ) != role_manifest["semantic_sha256"]:
         raise BoundaryRefinementError("protocol role manifest hash mismatch")
     config = refiner_config_from_protocol(protocol, refiner_name)
-    result = create_boundary_refinement_result(
-        manifest, role_manifest, records, config, model_fn=model_fn
+    protocol_bytes_hash = hashlib.sha256(resolved_protocol_path.read_bytes()).hexdigest()
+    git_head = resolve_git_head(resolved_protocol_path)
+    binding = build_protocol_binding(
+        protocol,
+        protocol_bytes_sha256=protocol_bytes_hash,
+        refiner_name=refiner_name,
+        role_manifest_hash=role_manifest["semantic_sha256"],
+        git_head=git_head,
     )
-    validate_boundary_refinement_payload(result, manifest, role_manifest, records)
+    result = create_boundary_refinement_result(
+        manifest,
+        role_manifest,
+        records,
+        config,
+        model_fn=model_fn,
+        prepare_context_fn=prepare_context_fn,
+        protocol_binding=binding,
+    )
+    validate_boundary_refinement_payload(
+        result,
+        manifest,
+        role_manifest,
+        records,
+        protocol=protocol,
+        protocol_bytes_sha256=protocol_bytes_hash,
+        expected_git_head=git_head,
+    )
     _write_new_canonical_json(output_path, result)
     return result
 
@@ -862,6 +1265,9 @@ def validate_refinement_file(
     cache_dir: Path,
     role_manifest_path: Path,
     refinement_result_path: Path,
+    protocol_path: Path,
+    *,
+    allow_draft_protocol: bool = True,
 ) -> dict[str, Any]:
     manifest, records = load_cache_payloads(cache_dir)
     role_path = role_manifest_path.expanduser().resolve()
@@ -871,7 +1277,17 @@ def validate_refinement_file(
     result = _read_json_object(result_path)
     if result_path.read_bytes() != canonical_json_bytes(result):
         raise BoundaryRefinementError("boundary refinement result is not canonical JSON")
-    return validate_boundary_refinement_payload(result, manifest, role_manifest, records)
+    resolved_protocol_path = protocol_path.expanduser().resolve()
+    protocol = load_boundary_protocol(resolved_protocol_path, allow_draft=allow_draft_protocol)
+    return validate_boundary_refinement_payload(
+        result,
+        manifest,
+        role_manifest,
+        records,
+        protocol=protocol,
+        protocol_bytes_sha256=hashlib.sha256(resolved_protocol_path.read_bytes()).hexdigest(),
+        expected_git_head=resolve_git_head(resolved_protocol_path),
+    )
 
 
 def replay_refinement_to_jsonl(
@@ -879,13 +1295,26 @@ def replay_refinement_to_jsonl(
     role_manifest_path: Path,
     refinement_result_path: Path,
     output_path: Path,
+    protocol_path: Path,
+    *,
+    allow_draft_protocol: bool = True,
 ) -> dict[str, Any]:
     manifest, records = load_cache_payloads(cache_dir)
     role_path = role_manifest_path.expanduser().resolve()
     validate_role_manifest_directory(role_path.parent, cache_manifest=manifest)
     role_manifest = _read_json_object(role_path)
     result = _read_json_object(refinement_result_path.expanduser().resolve())
-    validate_boundary_refinement_payload(result, manifest, role_manifest, records)
+    resolved_protocol_path = protocol_path.expanduser().resolve()
+    protocol = load_boundary_protocol(resolved_protocol_path, allow_draft=allow_draft_protocol)
+    validate_boundary_refinement_payload(
+        result,
+        manifest,
+        role_manifest,
+        records,
+        protocol=protocol,
+        protocol_bytes_sha256=hashlib.sha256(resolved_protocol_path.read_bytes()).hexdigest(),
+        expected_git_head=resolve_git_head(resolved_protocol_path),
+    )
     replayed = replay_refined_predictions(result, records)
     destination = output_path.expanduser().resolve()
     if destination.exists():
@@ -906,6 +1335,9 @@ def evaluate_refinement_to_file(
     refined_predictions_path: Path,
     frozen_predictions_paths: Iterable[Path],
     output_path: Path,
+    protocol_path: Path,
+    *,
+    allow_draft_protocol: bool = True,
 ) -> dict[str, Any]:
     """Evaluate refined predictions with the unchanged frozen metric function."""
     from .candidate_selection import evaluate_replayed_predictions
@@ -915,7 +1347,17 @@ def evaluate_refinement_to_file(
     validate_role_manifest_directory(role_path.parent, cache_manifest=manifest)
     role_manifest = _read_json_object(role_path)
     result = _read_json_object(refinement_result_path.expanduser().resolve())
-    validate_boundary_refinement_payload(result, manifest, role_manifest, records)
+    resolved_protocol_path = protocol_path.expanduser().resolve()
+    protocol = load_boundary_protocol(resolved_protocol_path, allow_draft=allow_draft_protocol)
+    validate_boundary_refinement_payload(
+        result,
+        manifest,
+        role_manifest,
+        records,
+        protocol=protocol,
+        protocol_bytes_sha256=hashlib.sha256(resolved_protocol_path.read_bytes()).hexdigest(),
+        expected_git_head=resolve_git_head(resolved_protocol_path),
+    )
     refined = _read_jsonl(refined_predictions_path.expanduser().resolve())
     expected_replay = replay_refined_predictions(result, records)
     if refined != expected_replay:

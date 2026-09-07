@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import argparse
 import json
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -15,14 +17,15 @@ from aic_video_highlight.highlight_retrieval.boundary_refinement import (
     assess_event_identity,
     assess_refinement_files,
     build_boundary_prompt,
+    build_protocol_binding,
     compute_local_context_window,
-    create_boundary_refinement_result,
+    create_boundary_refinement_result as _create_boundary_refinement_result,
     load_boundary_protocol,
     parse_boundary_response,
     refine_candidates,
     refiner_config_from_protocol,
     replay_refined_predictions,
-    validate_boundary_refinement_payload,
+    validate_boundary_refinement_payload as _validate_boundary_refinement_payload,
 )
 from aic_video_highlight.highlight_retrieval.candidate_cache import (
     canonical_json_bytes,
@@ -55,6 +58,47 @@ BR0_CONFIG = {
     "refiner_version": REFINER_VERSION,
     "parameters": {},
 }
+TEST_GIT_HEAD = "c" * 40
+
+
+def _protocol_and_bytes_hash():
+    protocol = load_boundary_protocol(PROTOCOL_PATH)
+    return protocol, hashlib.sha256(PROTOCOL_PATH.read_bytes()).hexdigest()
+
+
+def create_boundary_refinement_result(
+    manifest, role_manifest, records, config, *, model_fn=None, prepare_context_fn=None
+):
+    protocol, bytes_hash = _protocol_and_bytes_hash()
+    binding = build_protocol_binding(
+        protocol,
+        protocol_bytes_sha256=bytes_hash,
+        refiner_name=config["refiner_name"],
+        role_manifest_hash=role_manifest["semantic_sha256"],
+        git_head=TEST_GIT_HEAD,
+    )
+    return _create_boundary_refinement_result(
+        manifest,
+        role_manifest,
+        records,
+        config,
+        model_fn=model_fn,
+        prepare_context_fn=prepare_context_fn,
+        protocol_binding=binding,
+    )
+
+
+def validate_boundary_refinement_payload(result, manifest, role_manifest, records):
+    protocol, bytes_hash = _protocol_and_bytes_hash()
+    return _validate_boundary_refinement_payload(
+        result,
+        manifest,
+        role_manifest,
+        records,
+        protocol=protocol,
+        protocol_bytes_sha256=bytes_hash,
+        expected_git_head=TEST_GIT_HEAD,
+    )
 
 
 def make_candidate(video_id: str, start: float, end: float, score: float, reason: str, chunk: int):
@@ -156,6 +200,52 @@ def test_br0_is_exact_identity():
             assert refinement["decision_rule"] == "br0.identity"
 
 
+@pytest.mark.parametrize("excess", [8e-8, 5e-7, 1e-6])
+def test_br0_accepts_stage42_frozen_endpoint_tolerance(excess):
+    """Stage 4.2 accepts frozen endpoints up to duration + 1e-6."""
+    duration = 60.0
+    frozen_end = duration + excess
+    candidate = make_candidate("qvh_tolerance", 59.0, frozen_end, 0.9, "末帧事件", 0)
+    records = {"qvh_tolerance": make_cache_record("qvh_tolerance", [candidate], duration)}
+    manifest = {"global_semantic_sha256": EXPECTED_CACHE_GLOBAL_HASH}
+    role_manifest = create_role_manifest(
+        role="dev_tune",
+        records=[{"video_id": "qvh_tolerance", "split": "dev"}],
+        source_cache_global_hash=EXPECTED_CACHE_GLOBAL_HASH,
+        source_cache_manifest_sha256=HEX_A,
+        audit_membership_source_sha256=HEX_B,
+    )
+
+    result = create_boundary_refinement_result(manifest, role_manifest, records, BR0_CONFIG)
+
+    refinement = result["records"][0]["candidate_refinements"][0]
+    assert refinement["original_end_sec"] == frozen_end
+    assert refinement["refined_end_sec"] == frozen_end
+
+
+def test_br0_rejects_endpoint_beyond_stage42_frozen_tolerance():
+    duration = 60.0
+    candidate = make_candidate(
+        "qvh_tolerance_invalid", 59.0, duration + 1.0001e-6, 0.9, "末帧事件", 0
+    )
+    records = {
+        "qvh_tolerance_invalid": make_cache_record(
+            "qvh_tolerance_invalid", [candidate], duration
+        )
+    }
+    manifest = {"global_semantic_sha256": EXPECTED_CACHE_GLOBAL_HASH}
+    role_manifest = create_role_manifest(
+        role="dev_tune",
+        records=[{"video_id": "qvh_tolerance_invalid", "split": "dev"}],
+        source_cache_global_hash=EXPECTED_CACHE_GLOBAL_HASH,
+        source_cache_manifest_sha256=HEX_A,
+        audit_membership_source_sha256=HEX_B,
+    )
+
+    with pytest.raises(BoundaryRefinementError):
+        create_boundary_refinement_result(manifest, role_manifest, records, BR0_CONFIG)
+
+
 def test_br0_determinism():
     manifest, role_manifest, records = make_role_and_cache()
     first = create_boundary_refinement_result(manifest, role_manifest, records, BR0_CONFIG)
@@ -180,6 +270,24 @@ def test_br0_replay_equals_frozen_projection():
             }
             for candidate in candidates
         ]
+
+
+def test_br0_accepts_frozen_record_with_zero_candidates():
+    records = {"qvh_empty": make_cache_record("qvh_empty", [])}
+    manifest = {"global_semantic_sha256": EXPECTED_CACHE_GLOBAL_HASH}
+    role_manifest = create_role_manifest(
+        role="dev_tune",
+        records=[{"video_id": "qvh_empty", "split": "dev"}],
+        source_cache_global_hash=EXPECTED_CACHE_GLOBAL_HASH,
+        source_cache_manifest_sha256=HEX_A,
+        audit_membership_source_sha256=HEX_B,
+    )
+
+    result = create_boundary_refinement_result(manifest, role_manifest, records, BR0_CONFIG)
+
+    assert result["record_count"] == 1
+    assert result["input_candidate_count"] == 0
+    assert result["records"][0]["candidate_refinements"] == []
 
 
 def test_local_window_clamps_and_caps():
@@ -318,9 +426,51 @@ def test_br1_accepts_valid_refine():
     assert decisions[0]["decision"] == "REFINE"
     assert decisions[0]["refined_start_sec"] == 12.0
     assert decisions[0]["refined_end_sec"] == 20.0
-    assert decisions[0]["identity_guard"]["pass"] is True
+    assert decisions[0]["parent_consistency_guard"]["pass"] is True
     assert decisions[0]["model_response"]["finish_reason"] == "stop"
     assert decisions[0]["local_context_window"] == {"start_sec": 0.0, "end_sec": 40.0}
+
+
+def test_br1_maps_local_boundaries_from_actual_clip_origin_not_requested_window():
+    candidate = make_candidate("qvh_origin", 30.0, 35.0, 0.9, "局部事件", 0)
+
+    def prepare_context(*, video_id, candidate_id, window):
+        assert window == {"start_sec": 10.0, "end_sec": 55.0}
+        return {
+            "coordinate_contract": "source_sec = actual_source_origin_sec + local_sec",
+            "extraction_backend": "ffmpeg_reencode",
+            "requested_source_start_sec": 10.0,
+            "requested_source_end_sec": 55.0,
+            "actual_source_origin_sec": 10.033333,
+            "clip_duration_sec": 44.966667,
+            "actual_source_frame_index": None,
+            "source_fps": None,
+            "first_source_frame_checksum": "ABCD1234",
+        }
+
+    def model_fn(prompt, *, video_id, candidate_id, window):
+        return response(
+            {
+                "refined_start_sec": 20.466667,
+                "refined_end_sec": 24.966667,
+                "decision": "REFINE",
+                "confidence": 0.9,
+                "boundary_reason": "frame-quantized origin",
+            }
+        )
+
+    decision = refine_candidates(
+        [candidate],
+        BR1_CONFIG,
+        duration_sec=60.0,
+        video_id="qvh_origin",
+        model_fn=model_fn,
+        prepare_context_fn=prepare_context,
+    )[0]
+
+    assert decision["clip_timing"]["actual_source_origin_sec"] == 10.033333
+    assert decision["refined_start_sec"] == pytest.approx(30.5)
+    assert decision["refined_end_sec"] == pytest.approx(35.0)
 
 
 def test_br1_falls_back_on_parse_error():
@@ -338,8 +488,82 @@ def test_br1_falls_back_on_parse_error():
     )
     assert decisions[0]["decision"] == "IDENTITY_FALLBACK"
     assert decisions[0]["decision_rule"] == "br1.fallback_parse_error"
+
+
+def test_br1_falls_back_on_expected_transport_connection_failure():
+    _, _, records = make_role_and_cache()
+    candidate = records["qvh_smoke_a"]["merged_candidates"][0]
+
+    def model_fn(prompt, *, video_id, candidate_id, window):
+        raise ConnectionError("synthetic connection failure")
+
+    decisions = refine_candidates(
+        [candidate],
+        BR1_CONFIG,
+        duration_sec=records["qvh_smoke_a"]["duration_sec"],
+        video_id="qvh_smoke_a",
+        model_fn=model_fn,
+    )
+
+    assert decisions[0]["decision_rule"] == "br1.fallback_transport_error"
+    assert decisions[0]["refined_start_sec"] == candidate["start_sec"]
+    assert decisions[0]["refined_end_sec"] == candidate["end_sec"]
+
+
+def test_br1_empty_response_has_distinct_fallback_rule():
+    _, _, records = make_role_and_cache()
+    candidate = records["qvh_smoke_a"]["merged_candidates"][0]
+
+    def model_fn(prompt, *, video_id, candidate_id, window):
+        return "  ", "stop"
+
+    decisions = refine_candidates(
+        [candidate],
+        BR1_CONFIG,
+        duration_sec=records["qvh_smoke_a"]["duration_sec"],
+        video_id="qvh_smoke_a",
+        model_fn=model_fn,
+    )
+
+    assert decisions[0]["decision_rule"] == "br1.fallback_empty_response"
+
+
+def test_br1_falls_back_on_expected_transport_timeout():
+    _, _, records = make_role_and_cache()
+    candidate = records["qvh_smoke_a"]["merged_candidates"][0]
+
+    def model_fn(prompt, *, video_id, candidate_id, window):
+        raise TimeoutError("synthetic timeout")
+
+    decisions = refine_candidates(
+        [candidate],
+        BR1_CONFIG,
+        duration_sec=records["qvh_smoke_a"]["duration_sec"],
+        video_id="qvh_smoke_a",
+        model_fn=model_fn,
+    )
+
+    assert decisions[0]["decision_rule"] == "br1.fallback_transport_error"
+    assert decisions[0]["model_response"]["transport_error_type"] == "TimeoutError"
     assert decisions[0]["refined_start_sec"] == 10.0
     assert decisions[0]["refined_end_sec"] == 20.0
+
+
+def test_br1_does_not_hide_programming_errors_as_transport_fallback():
+    _, _, records = make_role_and_cache()
+    candidate = records["qvh_smoke_a"]["merged_candidates"][0]
+
+    def model_fn(prompt, *, video_id, candidate_id, window):
+        raise RuntimeError("synthetic programming error")
+
+    with pytest.raises(RuntimeError, match="programming error"):
+        refine_candidates(
+            [candidate],
+            BR1_CONFIG,
+            duration_sec=records["qvh_smoke_a"]["duration_sec"],
+            video_id="qvh_smoke_a",
+            model_fn=model_fn,
+        )
 
 
 def test_br1_honours_model_identity_fallback():
@@ -364,7 +588,7 @@ def test_br1_honours_model_identity_fallback():
         model_fn=model_fn,
     )
     assert decisions[0]["decision"] == "IDENTITY_FALLBACK"
-    assert decisions[0]["decision_rule"] == "br1.fallback_model_identity"
+    assert decisions[0]["decision_rule"] == "br1.model_identity"
 
 
 def test_br1_guard_rejects_drifted_event():
@@ -391,10 +615,10 @@ def test_br1_guard_rejects_drifted_event():
         model_fn=model_fn,
     )
     assert decisions[0]["decision"] == "IDENTITY_FALLBACK"
-    assert decisions[0]["decision_rule"] == "br1.fallback_event_identity_guard"
+    assert decisions[0]["decision_rule"] == "br1.fallback_parent_consistency_guard"
     assert decisions[0]["refined_start_sec"] == 10.0
     assert decisions[0]["refined_end_sec"] == 20.0
-    assert decisions[0]["identity_guard"]["failed_checks"]
+    assert decisions[0]["parent_consistency_guard"]["failed_checks"]
 
 
 def test_br1_requires_model_fn():
@@ -465,6 +689,98 @@ def test_validator_negative_controls():
         validate_boundary_refinement_payload(
             _rehash(forbidden), manifest, role_manifest, records
         )
+
+
+def test_result_records_protocol_runtime_binding():
+    manifest, role_manifest, records = make_role_and_cache()
+
+    result = create_boundary_refinement_result(manifest, role_manifest, records, BR0_CONFIG)
+
+    assert result["protocol_binding"]["protocol_status"] == "DRAFT_FOR_INDEPENDENT_REVIEW"
+    assert result["protocol_binding"]["model_identifier"] is None
+    assert result["protocol_binding"]["git_head"]
+
+
+def test_br1_machine_summary_exposes_all_mutually_exclusive_rule_counters():
+    manifest, role_manifest, records = make_role_and_cache()
+    build_local_original_map(records)
+    result = create_boundary_refinement_result(
+        manifest, role_manifest, records, BR1_CONFIG, model_fn=trim_start_model_fn
+    )
+
+    assert set(result["decision_rule_counts"]) == {
+        "br1.model_refine",
+        "br1.model_identity",
+        "br1.fallback_transport_error",
+        "br1.fallback_empty_response",
+        "br1.fallback_parse_error",
+        "br1.fallback_parent_consistency_guard",
+    }
+    assert sum(result["decision_rule_counts"].values()) == result["input_candidate_count"]
+
+
+@pytest.mark.parametrize(
+    ("path", "value"),
+    [
+        (("protocol_bytes_sha256",), "d" * 64),
+        (("protocol_status",), "PREREGISTERED_BEFORE_FORMAL"),
+        (("model_identifier",), "wrong/model"),
+        (("prompt_semantic_sha256",), "e" * 64),
+        (("refiner_runtime_config", "parameters", "context_padding_sec"), 21.0),
+        (("role_manifest_hash",), "f" * 64),
+    ],
+)
+def test_validator_rejects_protocol_runtime_binding_negative_controls(path, value):
+    manifest, role_manifest, records = make_role_and_cache()
+    build_local_original_map(records)
+    result = create_boundary_refinement_result(
+        manifest, role_manifest, records, BR1_CONFIG, model_fn=trim_start_model_fn
+    )
+    mutated = json.loads(json.dumps(result, ensure_ascii=False))
+    target = mutated["protocol_binding"]
+    for key in path[:-1]:
+        target = target[key]
+    target[path[-1]] = value
+
+    with pytest.raises(BoundaryRefinementError):
+        validate_boundary_refinement_payload(
+            _rehash(mutated), manifest, role_manifest, records
+        )
+
+
+def test_protocol_loader_rejects_wrong_status_with_valid_semantic_hash(tmp_path: Path):
+    protocol = json.loads(PROTOCOL_PATH.read_text(encoding="utf-8"))
+    protocol["protocol_status"] = "UNREVIEWED"
+    protocol["protocol_semantic_sha256"] = semantic_sha256(
+        {key: value for key, value in protocol.items() if key != "protocol_semantic_sha256"}
+    )
+    path = tmp_path / "wrong-status.json"
+    path.write_text(json.dumps(protocol, ensure_ascii=False), encoding="utf-8")
+
+    with pytest.raises(BoundaryRefinementError, match="status"):
+        load_boundary_protocol(path, allow_draft=True)
+
+
+@pytest.mark.parametrize(
+    ("model", "timeout", "message"),
+    [
+        ("wrong/model", None, "--model"),
+        ("Qwen/Qwen3.5-4B", 121.0, "--vllm-timeout-sec"),
+    ],
+)
+def test_cli_runtime_overrides_are_assertions_not_method_changes(model, timeout, message):
+    from scripts.run_boundary_refinement import _build_br1_runtime
+
+    protocol = load_boundary_protocol(PROTOCOL_PATH)
+    args = argparse.Namespace(
+        dataset_manifest=Path("unused-manifest.jsonl"),
+        video_root=Path("unused-video-root"),
+        model=model,
+        vllm_timeout_sec=timeout,
+    )
+
+    with pytest.raises(SystemExit, match=message):
+        _build_br1_runtime(args, protocol)
 
 
 def test_replay_keeps_frozen_score_reason_source():

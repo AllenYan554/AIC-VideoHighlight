@@ -18,7 +18,7 @@
     "audit_diagnostic": "Post-hoc diagnostic only, after Hard is complete; never for Prompt/threshold/padding/rule development",
     "heldout": "ABSOLUTELY_LOCKED"
   },
-  "git_head_policy": "Git HEAD is recorded in freeze/overall_method_freeze.json at method-freeze time, not embedded in this preregistration payload to avoid commit circularity.",
+  "git_head_policy": "Every refinement result embeds the execution Git HEAD in its Protocol/runtime binding; the later method-freeze artifact independently records the same commit after review acceptance.",
   "refiners": {
     "BR-0": {
       "definition": "Identity boundary control: refined_start_sec = original start_sec and refined_end_sec = original end_sec for every candidate; no model, no video, no parameters",
@@ -36,7 +36,9 @@
       "parameter_policy": "Fixed conservative values for v1; not tuned on Audit36 or Smoke metrics. If a grid is ever introduced it must be preregistered here first and selected on Dev-Tune166 only.",
       "model": {
         "model_name": "Qwen/Qwen3.5-4B",
+        "model_revision": null,
         "backend": "existing externally managed vLLM OpenAI-compatible server; no new inference framework",
+        "timeout_sec": 120.0,
         "temperature": 0.0,
         "max_new_tokens": 256,
         "enable_thinking": false
@@ -49,16 +51,16 @@
     }
   },
   "local_context_policy": {
-    "window_definition": "window = [max(0, start - context_padding_sec), min(duration, end + context_padding_sec)]; if the padded window exceeds max_context_duration_sec the excess is trimmed deterministically from the larger outer side first while always keeping the candidate interval fully inside",
+    "window_definition": "Frozen logical endpoints are accepted under the Stage 4.2 source-time tolerance (1e-6) and are never rewritten. For media access only, operational_end=min(frozen_end,duration), then window=[max(0,start-context_padding_sec),min(duration,operational_end+context_padding_sec)]; cap trimming is deterministic and keeps the operational candidate projection inside.",
     "input_scope": "The model may only observe the extracted local clip; full-video re-entry is forbidden",
-    "coordinate_system": "The model returns seconds relative to the clip start; the refiner maps them back by adding the window start",
-    "clip_extraction": "extract_video_clip (ffmpeg preferred, OpenCV fallback); source videos are read-only"
+    "coordinate_system": "The model returns seconds relative to the first decoded clip frame; source_sec = actual_source_origin_sec + local_sec. requested_source_start_sec, actual_source_origin_sec, and clip_duration_sec are recorded separately; frozen logical endpoints are never clamped or rewritten.",
+    "clip_extraction": "Frame-accurate decode/re-encode/trim via extract_video_clip (ffmpeg preferred, OpenCV fallback); stream copy is forbidden; source videos are read-only"
   },
-  "event_identity_guard": {
-    "purpose": "Refinement must stay the same event as the parent candidate; moving to a neighbouring event is forbidden",
+  "temporal_parent_consistency_guard": {
+    "purpose": "Refinement must remain temporally consistent with the parent candidate. parent tIoU >= 0.5 is a temporal check only and does not prove semantic same-event identity.",
     "checks": [
       "interval_valid: refined interval is finite, 0 <= refined_start < refined_end <= video duration",
-      "within_local_window: refined interval lies inside the recomputed local context window (1e-9 tolerance)",
+      "within_local_window: refined interval lies inside the recomputed operational local context window (1e-6 tolerance)",
       "parent_temporal_iou: temporal_iou(original interval, refined interval) >= min_parent_temporal_iou"
     ],
     "on_failure": "Reject the model output and fall back to the original boundaries; the rejection reason and guard detail are recorded; nothing is silently repaired into a different event"
@@ -69,9 +71,16 @@
       "response does not parse as the exact required JSON schema",
       "model outputs decision IDENTITY_FALLBACK",
       "model outputs boundaries identical to the original (no-op refine is recorded as REFINE with equal values)",
-      "event identity guard failure"
+      "temporal parent-consistency guard failure"
     ],
-    "behaviour": "IDENTITY_FALLBACK keeps the original start/end; candidate is never dropped, never created, never split, never merged"
+    "behaviour": "IDENTITY_FALLBACK keeps the original start/end; candidate is never dropped, never created, never split, never merged",
+    "auditable_decision_rules": [
+      "br1.model_identity",
+      "br1.fallback_transport_error",
+      "br1.fallback_empty_response",
+      "br1.fallback_parse_error",
+      "br1.fallback_parent_consistency_guard"
+    ]
   },
   "allowed_boundary_modifications": [
     "start_sec of an existing frozen merged candidate",
@@ -151,5 +160,5 @@
     "must_not_change_protocol": true
   },
   "audit_posthoc_policy": "Audit36 stays locked until Phases 1-5 are complete; Audit output is diagnostic only and cannot change any frozen decision.",
-  "protocol_semantic_sha256": "82aef34d8509a0b4c6f85e7acf06122d03c9ccd50701ca4008f9450b391ce963"
+  "protocol_semantic_sha256": "8ab3b8284f6798941b9e9cb45cf72fd6b8a0c1551c22d617f4adda52504d55d1"
 }
