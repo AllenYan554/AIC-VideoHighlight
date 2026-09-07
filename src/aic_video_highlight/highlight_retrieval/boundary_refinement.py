@@ -375,6 +375,9 @@ def _check_result_leakage(result: Mapping[str, Any]) -> None:
     for key, value in result.items():
         if key == "refiner_config":
             continue
+        normalized = str(key).lower()
+        if any(fragment in normalized for fragment in _FORBIDDEN_KEY_FRAGMENTS):
+            raise BoundaryRefinementError(f"forbidden boundary field at $.{key}")
         _check_forbidden_keys(value, f"$.{key}")
 
 
