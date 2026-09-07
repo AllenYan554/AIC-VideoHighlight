@@ -1,6 +1,6 @@
 {
   "protocol_schema_version": "aic.stage4-boundary-experiment-protocol/v1",
-  "protocol_status": "DRAFT_FOR_INDEPENDENT_REVIEW",
+  "protocol_status": "PREREGISTERED_BEFORE_FORMAL",
   "stage": "4.4",
   "stage_title": "Temporal Boundary Refinement Baseline",
   "research_question": "For frozen candidates whose event already exists, does restricted local refinement of start_sec/end_sec only improve Temporal IoU without violating Recall Guardrails?",
@@ -160,5 +160,5 @@
     "must_not_change_protocol": true
   },
   "audit_posthoc_policy": "Audit36 stays locked until Phases 1-5 are complete; Audit output is diagnostic only and cannot change any frozen decision.",
-  "protocol_semantic_sha256": "8ab3b8284f6798941b9e9cb45cf72fd6b8a0c1551c22d617f4adda52504d55d1"
+  "protocol_semantic_sha256": "fa767d96e1beee9af23e31ed41b7b2a5716eaf4f2dd41f145ab2cee8c5ed825d"
 }
