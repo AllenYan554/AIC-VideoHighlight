@@ -1,0 +1,158 @@
+{
+  "protocol_schema_version": "aic.stage4-selection-experiment-protocol/v1",
+  "protocol_status": "PREREGISTERED_BEFORE_FORMAL",
+  "source_cache_global_hash": "4b515a6d6fb47073413c686214c3fa5f97293655a3824241eb3305b9e7753246",
+  "role_manifest_summary_hash": "6eccf82509295980cb16270a306fad251941b6a09f9f0178335eeabd811b23e0",
+  "role_manifest_hashes": {
+    "dev_tune": "bceb82034bcc5eed42a5099d7f54dd0fa776fe240969dfada231d255a368ec71",
+    "hard_stress": "81d734ee28ec38c096b908a573249c62713d358fb03ea135e5b55e1ae4405687",
+    "audit_diagnostic": "98fd987b7b56bdc18dd58a0c809e77adb28b93e322fd08a5246c04e115e1780c"
+  },
+  "data_roles": {
+    "dev_tune": "Only role allowed for SEL-1/SEL-2 parameter selection",
+    "hard_stress": "Frozen-parameter stress/generalization evaluation only",
+    "audit_diagnostic": "Post-hoc diagnostic only after all methods and parameters are frozen",
+    "heldout": "ABSOLUTELY_LOCKED"
+  },
+  "selectors": {
+    "SEL-0": {
+      "definition": "Keep every frozen merged candidate in original order",
+      "selector_version": "aic.lightweight-candidate-selection/v1",
+      "parameters": {}
+    },
+    "SEL-1": {
+      "definition": "Keep candidate iff score >= threshold",
+      "selector_version": "aic.lightweight-candidate-selection/v1",
+      "parameter_name": "threshold",
+      "grid": [0.7, 0.75, 0.8, 0.85, 0.9, 0.92]
+    },
+    "SEL-2": {
+      "definition": "Keep candidate iff score >= video_max_score - delta",
+      "selector_version": "aic.lightweight-candidate-selection/v1",
+      "parameter_name": "delta",
+      "grid": [0.0, 0.03, 0.05, 0.1, 0.15]
+    },
+    "SEL-3": {
+      "definition": "Drop only a clearly negative contextual lexical match without a positive override; uncertain means KEEP",
+      "selector_version": "aic.lightweight-candidate-selection/v1",
+      "parameters": {
+        "rules": [
+          {
+            "rule_id": "explicit_no_highlight",
+            "pattern": "(?:无|没有)(?:明显|突出|关键|值得保留的).{0,8}(?:事件|动作|变化|高光|亮点)",
+            "positive_override_patterns": []
+          },
+          {
+            "rule_id": "setup_only",
+            "pattern": "(?:为|只是|仅为|主要为).{0,12}(?:后续|接下来).{0,12}(?:铺垫|准备)",
+            "positive_override_patterns": ["高潮", "关键", "结果", "完整事件", "主要事件", "核心事件", "突发", "惊喜", "兴奋", "互动", "观看价值"]
+          },
+          {
+            "rule_id": "ordinary_only",
+            "pattern": "(?:日常生活场景|日常家务活动|普通走动|普通操作|环境扫镜)",
+            "positive_override_patterns": ["高潮", "关键", "结果", "完整事件", "主要事件", "核心事件", "突发", "惊喜", "兴奋", "互动", "观看价值"]
+          },
+          {
+            "rule_id": "transition_only",
+            "pattern": "(?:仅|只是|单纯|主要是).{0,8}(?:场景切换|转场|过渡)",
+            "positive_override_patterns": ["高潮", "关键", "结果", "信息量明显提升", "突发", "惊喜", "兴奋", "互动", "观看价值"]
+          },
+          {
+            "rule_id": "repetition_without_new_information",
+            "pattern": "(?:重复|再次).{0,12}(?:无|没有).{0,8}(?:新增|新).{0,8}(?:信息|动作|事件|变化)",
+            "positive_override_patterns": ["高潮", "关键", "结果", "更强", "升级", "突发", "惊喜"]
+          }
+        ]
+      },
+      "rule_provenance": {
+        "source": "Stage 2 frozen error analysis and conservative-filtering lessons only",
+        "prohibited_sources": ["Stage 4.1 adjudication", "Audit36 rationales", "Dev166 metric-driven keyword additions"],
+        "risk_control": "Bare 准备/铺垫/过渡/重复 tokens are insufficient; contextual pattern plus absence of positive override is required"
+      }
+    }
+  },
+  "formal_phases": [
+    "Phase 0 validate Git, cache, role manifests, and protocol hashes",
+    "Phase 1 run SEL-0 identity control on Dev-Tune166",
+    "Phase 2 run frozen SEL-1 grid on Dev-Tune166",
+    "Phase 3 run frozen SEL-2 grid on Dev-Tune166",
+    "Phase 4 run fixed SEL-3 on Dev-Tune166",
+    "Phase 5 select SEL-1/SEL-2 only by the preregistered Dev rule",
+    "Phase 6 write parameter-freeze evidence before Hard",
+    "Phase 7 run frozen methods on Hard-Stress229 without feedback",
+    "Phase 8 apply preregistered promotion and Hard-Stress gates",
+    "Phase 9 only then permit Audit36 post-hoc diagnostic",
+    "Phase 10 statistical analysis, figures, and Markdown report"
+  ],
+  "dev_recall_guardrail": {
+    "min_mean_recall": 0.94,
+    "min_delta_mean_recall": -0.02,
+    "max_delta_missed_reference_fraction": 0.02,
+    "max_delta_empty_prediction_count": 0,
+    "max_delta_recall_eq_0_count": 0,
+    "max_delta_recall_lt_0_5_count": 1,
+    "max_delta_recall_lt_0_8_count": 3
+  },
+  "dev_promotion_gate": {
+    "min_delta_mean_f1": 0.01,
+    "min_delta_mean_precision": 0.01,
+    "min_delta_mean_temporal_iou": 0.0,
+    "max_delta_mean_prediction_coverage": -1e-12,
+    "max_delta_total_over_prediction_sec": -1e-12
+  },
+  "hard_stress_gate": {
+    "min_delta_mean_recall": -0.03,
+    "max_delta_missed_reference_fraction": 0.03,
+    "max_delta_empty_prediction_count": 0,
+    "max_delta_recall_eq_0_count": 0,
+    "max_delta_recall_lt_0_5_count": 2,
+    "max_delta_recall_lt_0_8_count": 5,
+    "min_delta_mean_f1": 0.0,
+    "min_delta_mean_precision": 0.0,
+    "min_delta_mean_temporal_iou": 0.0,
+    "max_delta_mean_prediction_coverage": -1e-12,
+    "max_delta_total_over_prediction_sec": -1e-12
+  },
+  "parameter_selection_rule": {
+    "eligibility": "Pass every dev_recall_guardrail check",
+    "ordering": [
+      "maximum mean weak-reference F1",
+      "maximum mean weak-reference Recall",
+      "minimum R<0.8 count",
+      "minimum missed-reference fraction",
+      "maximum mean Temporal IoU",
+      "minimum mean prediction coverage",
+      "more recall-conservative parameter: lower SEL-1 threshold or larger SEL-2 delta",
+      "stable numeric order"
+    ],
+    "no_eligible_result": "NO_ELIGIBLE_CONFIGURATION; do not relax gates"
+  },
+  "reported_metrics": [
+    "mean Precision",
+    "mean Recall",
+    "mean F1",
+    "mean Temporal IoU",
+    "prediction coverage",
+    "over-prediction seconds",
+    "missed-reference seconds",
+    "final segment count",
+    "empty prediction count",
+    "R<0.8 count",
+    "R<0.5 count",
+    "R=0 count",
+    "all per-video paired deltas versus SEL-0"
+  ],
+  "stopping_rules": [
+    "Stop on any cache, role, protocol, selection, replay, or evaluation hash mismatch",
+    "Stop if any selector output is not an exact subset of frozen merged candidates",
+    "Stop on reference/metric/Audit-label leakage into selector output",
+    "Stop on Heldout access",
+    "Do not alter grids, rules, guardrails, tie-breaks, or gates after Formal begins"
+  ],
+  "development_smoke_policy": {
+    "labels": ["DEVELOPMENT_SMOKE", "NON_FORMAL", "NOT_FOR_PARAMETER_SELECTION"],
+    "maximum_video_count": 8,
+    "must_not_change_protocol": true
+  },
+  "protocol_semantic_sha256": "1265af82ccc67834fdffda7a992f86d2993e0c59a310275100603b3113b0b11e"
+}
