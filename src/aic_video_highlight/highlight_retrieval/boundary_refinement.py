@@ -484,7 +484,7 @@ def refine_candidates(
                 {
                     **base,
                     "decision": "IDENTITY_FALLBACK",
-                    "decision_rule": "br1.model_identity_fallback",
+                    "decision_rule": "br1.fallback_model_identity",
                     "refined_start_sec": original_start,
                     "refined_end_sec": original_end,
                     "confidence": float(parsed["confidence"]),

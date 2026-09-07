@@ -352,7 +352,7 @@ def test_br1_honours_model_identity_fallback():
         model_fn=model_fn,
     )
     assert decisions[0]["decision"] == "IDENTITY_FALLBACK"
-    assert decisions[0]["decision_rule"] == "br1.model_identity_fallback"
+    assert decisions[0]["decision_rule"] == "br1.fallback_model_identity"
 
 
 def test_br1_guard_rejects_drifted_event():
