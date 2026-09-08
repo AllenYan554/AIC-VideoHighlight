@@ -57,6 +57,14 @@ class SubjectPolicyConfig:
     full_frame_height_fraction: float = 0.98
     full_frame_area_fraction: float = 0.995
     target_ratio: tuple[int | float, int | float] = (9, 16)
+    person_priority: bool = False
+    person_label: str = "person"
+
+    @property
+    def policy_version(self) -> str:
+        if self.person_priority:
+            return "primary_subject_policy_v1_person_priority"
+        return "primary_subject_policy_v0"
 
     def __post_init__(self) -> None:
         if not 0 <= self.possible_score <= self.reliable_score <= 1:
@@ -150,7 +158,16 @@ def select_primary_subject(
         if invalid_count:
             fallback_reasons.append(REASON_INVALID_GEOMETRY)
     else:
-        primary_index, primary = reliable[0]
+        ranked_reliable = reliable
+        if config.person_priority:
+            persons = [
+                (index, c)
+                for index, c in reliable
+                if c.label == config.person_label
+            ]
+            if persons:
+                ranked_reliable = persons
+        primary_index, primary = ranked_reliable[0]
         frame_area = float(image_width * image_height)
         if primary.area() < config.min_area_fraction * frame_area:
             fallback_reasons.append(REASON_BOX_TOO_SMALL)
@@ -164,8 +181,9 @@ def select_primary_subject(
         else:
             contenders = [
                 (index, c)
-                for index, c in reliable[1:]
-                if primary.score - c.score <= config.ambiguity_score_gap
+                for index, c in reliable
+                if index != primary_index
+                and primary.score - c.score <= config.ambiguity_score_gap
                 and detection_iou(primary, c) < config.ambiguity_iou_threshold
             ]
             ambiguous_count = len(contenders)

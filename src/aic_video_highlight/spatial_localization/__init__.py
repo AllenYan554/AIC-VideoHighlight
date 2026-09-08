@@ -1,6 +1,12 @@
 """Stage 5.2 subject-aware spatial localization."""
 
 from .rt_detr_localizer import DEFAULT_MODEL_ID, RTDetrLocalizer
+from .subject_to_crop import (
+    STATUS_CONTAINS_SUBJECT,
+    STATUS_DEGRADED_MAX_CROP,
+    DiagnosticCrop,
+    subject_centered_crop,
+)
 from .subject_localization import (
     FALLBACK_REASONS,
     REASON_BOX_TOO_LARGE,
@@ -41,6 +47,9 @@ __all__ = [
     "SubjectCandidate",
     "SubjectDecision",
     "SubjectPolicyConfig",
+    "DiagnosticCrop",
+    "STATUS_CONTAINS_SUBJECT",
+    "STATUS_DEGRADED_MAX_CROP",
     "candidate_is_valid",
     "clamp_box",
     "decision_to_record",
@@ -48,4 +57,5 @@ __all__ = [
     "render_decision_frame",
     "save_decision_image",
     "select_primary_subject",
+    "subject_centered_crop",
 ]
