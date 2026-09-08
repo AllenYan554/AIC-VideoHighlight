@@ -89,6 +89,49 @@ def test_parse_dense_response_accepts_full_bins_fence_and_canonical_sort():
     assert [item["bin_id"] for item in parsed] == ["bin_000", "bin_001", "bin_002"]
 
 
+def test_parse_dense_response_normalizes_unambiguous_string_confidence():
+    bins = build_temporal_bins(clip_timing(6.0), bin_size_sec=2.0, max_bin_count=64)
+    raw = json.dumps(
+        {"bins": [
+            {"bin_id": "bin_000", "label": "OUTSIDE", "confidence": "0.8"},
+            {"bin_id": "bin_001", "label": "CONTEXT", "confidence": "1.0"},
+            {"bin_id": "bin_002", "label": "CORE", "confidence": "0"},
+        ]}
+    )
+
+    parsed = parse_dense_response(raw, bins)
+
+    assert [item["confidence"] for item in parsed] == [0.8, 1.0, 0.0]
+    assert all(type(item["confidence"]) is float for item in parsed)
+
+
+@pytest.mark.parametrize(
+    "confidence",
+    ["high", "", "NaN", "Infinity", "0.8abc", "-0.1", "1.1", [], {}],
+    ids=[
+        "word",
+        "empty",
+        "nan",
+        "infinity",
+        "trailing-text",
+        "below-range",
+        "above-range",
+        "array",
+        "object",
+    ],
+)
+def test_parse_dense_response_rejects_invalid_string_or_structured_confidence(confidence):
+    bins = build_temporal_bins(clip_timing(2.0), bin_size_sec=2.0, max_bin_count=64)
+    raw = json.dumps(
+        {"bins": [
+            {"bin_id": "bin_000", "label": "CORE", "confidence": confidence},
+        ]}
+    )
+
+    with pytest.raises(DenseTemporalResponseError):
+        parse_dense_response(raw, bins)
+
+
 @pytest.mark.parametrize(
     "render",
     [

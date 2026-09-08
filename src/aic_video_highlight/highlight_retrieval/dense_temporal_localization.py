@@ -219,9 +219,19 @@ def parse_dense_response(
         if label not in LABELS:
             raise DenseTemporalResponseError(f"invalid label for {bin_id}")
         confidence = item.get("confidence")
-        if isinstance(confidence, bool) or not isinstance(confidence, (int, float)):
+        if isinstance(confidence, bool):
             raise DenseTemporalResponseError(f"confidence must be numeric for {bin_id}")
-        confidence = float(confidence)
+        if isinstance(confidence, str):
+            try:
+                confidence = float(confidence)
+            except ValueError as error:
+                raise DenseTemporalResponseError(
+                    f"confidence must be numeric for {bin_id}"
+                ) from error
+        elif isinstance(confidence, (int, float)):
+            confidence = float(confidence)
+        else:
+            raise DenseTemporalResponseError(f"confidence must be numeric for {bin_id}")
         if not math.isfinite(confidence) or not 0.0 <= confidence <= 1.0:
             raise DenseTemporalResponseError(f"confidence out of range for {bin_id}")
         parsed_by_id[bin_id] = {
