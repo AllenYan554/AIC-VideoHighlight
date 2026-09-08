@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from aic_video_highlight.spatial_composition.center_crop import compute_center_crop
+from aic_video_highlight.spatial_composition.center_crop import compute_center_crop, derived_height
 from aic_video_highlight.spatial_localization import (
     DEFAULT_MODEL_ID,
     RTDetrLocalizer,
@@ -145,13 +145,13 @@ def run(args: argparse.Namespace) -> int:
                         }
                     else:
                         fallback = decision.fallback_box
-                        crop = compute_center_crop(width, height, 9, 16)
+                        h_val = derived_height(fallback[2], 9, 16)
                         crop_payload = {
                             "video_id": video_id,
                             "frame": frame_id,
                             "policy": tag,
                             "subject_xyxy": None,
-                            "crop_xywh": [fallback[0], fallback[1], fallback[2], crop.h],
+                            "crop_xywh": [fallback[0], fallback[1], fallback[2], float(h_val)],
                             "status": "CENTER_CROP_FALLBACK",
                             "contains_subject": False,
                             "degraded": False,
