@@ -1,0 +1,66 @@
+{
+  "freeze_id": "stage5_2_final_freeze",
+  "title": "Stage 5.2 Subject Localization Mainline FINAL FREEZE",
+  "status": "FINAL_FROZEN",
+  "created": "2026-09-08",
+  "git_head_at_freeze": "01418ca9b737c942cd1acbfb51431ab40ef2b5ab",
+  "statement": "Subject Localization Mainline (RT-DETR-R50 + primary_subject_policy_v1_person_priority) is frozen. This is NOT a freeze of the final composition; Stage 5.3+ consumes these artifacts read-only.",
+  "frozen_components": [
+    "PekingU/rtdetr_r50vd @ df939e661d8c52e80608d1ec566561aabd25a4e7 (weights sha256 5263d5521eff3e356f6cd8a371fd5dfb891725beda5f713674f79669115cdc64)",
+    "policy thresholds and person-priority semantics (primary_subject_policy_v1_person_priority)",
+    "Stage 5.2 raw detector artifact (byte-frozen on AutoDL canonical storage)",
+    "Stage 5.2 policy-v1 decision artifact (byte-frozen on AutoDL canonical storage)",
+    "Stage 5.1 frame set and frozen predictions consumed as input"
+  ],
+  "bindings": {
+    "formal_protocol_sha256": "8c8f2bd4fb60f4002efc067134d3d0352b371561b84cb9b3deb7250e030c703e",
+    "formal_protocol_path": "configs/stage5_2_loc1_formal_protocol.json",
+    "full_dev_execution_config_sha256": "936e7d195af26951bc37d621b97cb8ae0f3de897cd9d16fe818f596e888045df",
+    "full_dev_execution_config_path": "configs/stage5_2_full_dev_inference.json",
+    "model_revision": "df939e661d8c52e80608d1ec566561aabd25a4e7",
+    "weights_sha256": "5263d5521eff3e356f6cd8a371fd5dfb891725beda5f713674f79669115cdc64",
+    "policy_version": "primary_subject_policy_v1_person_priority",
+    "stage5_1_predictions_sha256": "ca44cc2831e935e82fa7b05820b1269d7f2cc0d360c030b5847a192ede11b9a5",
+    "stage5_1_metadata_cache_sha256": "52e46f16cfe5012aa68cfb8d7440f4d53e31b7cc133add7e29b78d648a9d5675"
+  },
+  "artifact_verification": {
+    "canonical_location": "/root/autodl-tmp/outputs/stage5/stage5_2_full_dev/",
+    "record_count": 51256,
+    "video_count": 166,
+    "missing": 0,
+    "extra": 0,
+    "duplicates": 0,
+    "model_error_frames": 0,
+    "semantic_sha256": {
+      "raw_candidates": "44ae9383d20fe0afd290c10f8fb78c5bcd2ee5b0709fb7aedf61dbd83d52f399",
+      "policy_v1_decisions": "222258d1d7960639697bd6c3f36339443c85a27bee9dcee7742f24fda238871d",
+      "crop_diagnostics": "f62b0160151d9b68a44d16df3626d89171e56961038bcd9c0c1f4d7203bc59d2"
+    },
+    "deterministic_audit": {
+      "plan_sha256": "8dc620a2a2bc4a03032b398978c4bcf6afa3cacc2317819af405ac822625b980",
+      "subset_frames": 975,
+      "raw_semantic_identical": true
+    },
+    "status_counts": {
+      "PRIMARY": 42595,
+      "CENTER_CROP_FALLBACK": 8661,
+      "person_primary": 37961,
+      "nonperson_primary": 4634,
+      "ambiguous_frames": 14185
+    }
+  },
+  "forbidden_after_freeze": [
+    "re-running RT-DETR for frozen frames",
+    "threshold changes",
+    "person-priority semantics changes",
+    "raw artifact modification",
+    "policy decision modification",
+    "Stage 5.1 frame set changes",
+    "Heldout392 access"
+  ],
+  "heldout_lock": {
+    "heldout392": "ABSOLUTELY_LOCKED",
+    "allowed_access": 0
+  },
+  "consumer": "Stage 5.3 Target-Ratio Spatial Composition (CMP-0 / CMP-1) consumes these frozen artifacts read-only."
+}
