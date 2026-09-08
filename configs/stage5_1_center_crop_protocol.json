@@ -1,8 +1,18 @@
 {
   "protocol_id": "stage5_1_center_crop_baseline",
   "title": "Stage 5.1 Official Output Contract & Center-Crop Baseline",
-  "status": "DEVELOPMENT_DRAFT",
+  "status": "FINAL_FROZEN",
   "created": "2026-09-08",
+  "freeze": {
+    "date": "2026-09-08",
+    "basis": "Dev166 Real-Data Acceptance Gate PASS (166/166 metadata success; frozen replay sha matched; validator 0 violations; A/B/C byte-identical reruns; fresh ffprobe cache rebuild deterministic; frame-contract conflict 0; Heldout access 0)",
+    "acceptance_report": "D:/CDUT/硕士/2026-09 AIC/实验记录/Stage5_逐帧高光预测与空间构图/02_Dev_Baseline_Run/experiment_report.md",
+    "engineering_report": "D:/CDUT/硕士/2026-09 AIC/实验记录/Stage5_逐帧高光预测与空间构图/01_Official_Output_Contract_Center_Crop_Baseline/experiment_report.md",
+    "dev166_predictions_sha256": "ca44cc2831e935e82fa7b05820b1269d7f2cc0d360c030b5847a192ede11b9a5",
+    "dev166_metadata_cache_sha256": "52e46f16cfe5012aa68cfb8d7440f4d53e31b7cc133add7e29b78d648a9d5675",
+    "frozen_replay_sha256": "40b3efe503ae0d3b358648510780746f1d469f6908bb6ca82f999611b20b26e7",
+    "interpretation": "Center Crop is the frozen spatial control baseline for Stage 5.2+ comparison; it is NOT the final spatial mainline. Frame IDs, projection, rounding, writer, validator semantics are frozen and read-only for later stages."
+  },
   "stage": "5.1",
   "scope": {
     "goal": "Convert Frozen Retrieval v0 temporal segments into official-format per-frame predictions with a deterministic center-crop spatial baseline, an independent validator, and a frozen output contract for Stage 5.2-5.5.",
