@@ -1,0 +1,159 @@
+{
+  "protocol_id": "stage5_1_center_crop_baseline",
+  "title": "Stage 5.1 Official Output Contract & Center-Crop Baseline",
+  "status": "DEVELOPMENT_DRAFT",
+  "created": "2026-09-08",
+  "stage": "5.1",
+  "scope": {
+    "goal": "Convert Frozen Retrieval v0 temporal segments into official-format per-frame predictions with a deterministic center-crop spatial baseline, an independent validator, and a frozen output contract for Stage 5.2-5.5.",
+    "in_scope": [
+      "official output format audit",
+      "temporal segment -> frame projection contract",
+      "per-video metadata cache",
+      "center crop spatial baseline",
+      "official-format JSONL writer",
+      "independent submission validator",
+      "synthetic regression and official sample schema smoke"
+    ],
+    "out_of_scope": [
+      "SAM / SAM2 / YOLO / GroundingDINO / tracking",
+      "subject-aware spatial localization (Stage 5.2)",
+      "any modification of Frozen Retrieval v0",
+      "Heldout392 in any form",
+      "GPU, Qwen, vLLM calls"
+    ]
+  },
+  "temporal_source": {
+    "name": "Frozen Retrieval v0",
+    "binding": "Stage 4.5/4.6 closure: Temporal mainline = Frozen Retrieval v0 + No Selection (SEL-3 optional frozen prune, NOT enabled) + No BR-1 + No DTL-1.",
+    "frozen_cache_global_semantic_sha256": "4b515a6d6fb47073413c686214c3fa5f97293655a3824241eb3305b9e7753246",
+    "dev_replay_artifact": "D:/CDUT/硕士/2026-09 AIC/实验记录/Stage4_候选筛选与时间边界精修/05_Temporal_Pipeline_Ablation_Experiment/results/dev/config_a/replay.jsonl",
+    "dev_replay_sha256": "40b3efe503ae0d3b358648510780746f1d469f6908bb6ca82f999611b20b26e7",
+    "dev_replay_identity_note": "Byte-identical to the frozen Stage 4.3 sel0 / 4.4 br0 / 4.6 dtl0 frozen passthrough replay hash recorded in the Stage 4.6 final report.",
+    "forbidden_variants": ["SEL-3", "BR-1", "DTL-1"],
+    "segment_modification_policy": "FORBIDDEN: no re-running Qwen, no interval editing, no candidate deletion, no threshold changes. Stage 5.1 variables are only segment->frame projection and frame->bbox."
+  },
+  "official_format_audit": {
+    "sources": [
+      "Official competition brief PDF (基于视频大模型的通用视频高光剪辑, AIC 算法挑战赛)",
+      "Official baseline kit README + baseline_center.py + test_index.json + predictions.jsonl (organizer lab repo mirror, local copy)"
+    ],
+    "line_format": "{\"video_id\": \"<id>\", \"targetRatioWH\": [<target_w>, <target_h>], \"predictions\": [{\"frame\": <int>, \"bboxes\": [<x>, <y>, <w>]}, ...]}",
+    "audit_findings": {
+      "frame_semantics": "frame is the original global frame index; official kit sample uses 0-based indices (frame 0 present); constraint frame >= 0 and < total frame count; total frame count read by evaluator from the original video",
+      "bbox_type": "integers in source pixels per official baseline kit README ('three ints in source pixels'); official kit baseline emits ints; competition brief example uses ints",
+      "height": "never submitted; evaluator derives h = w * target_h / target_w",
+      "duplicate_frames": "only the first valid prediction per frame counts for IoU; further duplicates count as false positives; writer must therefore dedup and validator must reject duplicates",
+      "ordering": "ascending by frame officially recommended (not mandatory); this project freezes ascending as mandatory",
+      "empty_predictions": "allowed and required as a line per video with \"predictions\": [] when no highlight; no fabrication of frames to avoid empties",
+      "video_coverage": "one line per video covering every index entry (official kit README)",
+      "out_of_bounds": "after [x,y,w] -> [x,y,w,h] conversion the box must stay inside the original frame; x >= 0, y >= 0, w > 0",
+      "invalid_prediction_triggers": "missing fields, unmatched video_id, frame out of bounds, coordinate out of bounds, NaN, empty box, derived-height overflow",
+      "metric": "per-video IoU-weighted F (N_gt=0 and N_pred=0 -> F=1; else P=S_IoU/N_pred, R=S_IoU/N_gt, F=2PR/(P+R)); final score = mean over videos; exact video_id+frame matching",
+      "gt_frame_density": "train.jsonl cropRois covers every integer frame inside GT segments (dense); official test GT structure is UNKNOWN_FROM_AVAILABLE_PUBLIC_DATA"
+    },
+    "unknowns": {
+      "official_test_gt": "UNKNOWN_FROM_AVAILABLE_PUBLIC_DATA",
+      "evaluator_int_vs_float_tolerance": "evaluator code not public; contract frozen to integers because the official kit README demands ints and ints are safe under both interpretations",
+      "official_sample_videos": "not present in the local baseline kit copy (video/ folder not shipped); metadata-dependent smoke therefore limited to schema-level checks"
+    }
+  },
+  "frame_projection_contract": {
+    "frame_indexing": "0-based global frame index; valid range [0, frame_count)",
+    "canonical_timestamp": {
+      "CFR_FPS": "t(frame) = frame / fps, compared in exact rational arithmetic (Fraction); fps interpreted as its shortest decimal representation",
+      "PTS_TABLE": "t(frame) = canonical PTS of that frame from ffprobe frame scan; compared exactly via Fraction of the decimal pts_time strings",
+      "membership": "frame belongs to segment [start_sec, end_sec) iff start_sec <= t(frame) < end_sec (half-open, prevents shared boundary frames between adjacent segments)",
+      "segment_bound_interpretation": "segment bounds are floats from the frozen replay; interpreted as their shortest decimal round-trip representation before exact rational comparison"
+    },
+    "mode_selection": {
+      "CFR_FPS": "default; requires r_frame_rate == avg_frame_rate (exact rational equality) from ffprobe",
+      "PTS_TABLE": "fallback for VFR sources; requires a full frame PTS table; never trusts CAP_PROP_POS_MSEC"
+    },
+    "dedup_policy": "union of per-segment frames, deduplicated by frame id, emitted strictly ascending",
+    "beyond_video_end_policy": "default clip to [0, frame_count); strict mode raises; fully-beyond segments project to zero frames; frozen segments are never edited",
+    "empty_projection_policy": "zero-duration or inverted segments project to zero frames; videos with no frozen segments emit an empty predictions line"
+  },
+  "target_ratio_contract": {
+    "source": "official test index field targetRatioWH = [target_w, target_h]; official sample kit contains both [16,9] and [9,16]",
+    "frozen_train_observation": "train.jsonl targetRatioWH = (9.0, 16.0) for 987/987 records",
+    "height_derivation": "h = w * target_h / target_w, computed by the evaluator, never emitted"
+  },
+  "center_crop_formula": {
+    "name": "largest target-ratio centered rectangle",
+    "exact_rational_math": "all comparisons in Fraction arithmetic; no float decisions",
+    "rule": "if W/H >= tw/th then crop_w = floor(H * tw / th), crop_h = H; else crop_w = W, crop_h = floor(W * th / tw) (centering only); x = floor((W - crop_w) / 2), y = floor((H - crop_h) / 2)",
+    "infeasible_geometry": "raise when floor(H * tw / th) < 1 (no width >= 1 crop can satisfy the derived-height bound); never emit an invalid box"
+  },
+  "rounding_policy": {
+    "bbox_type": "strict integers",
+    "constrained_dimension": "floor (guarantees derived h = w * target_h / target_w <= H and x + w <= W, y + h <= H without any evaluator-side flooring assumption)",
+    "centering": "floor division by 2",
+    "deviation_from_official_baseline": "official baseline_center.py uses round-half-even sizing (round(H * tw / th)); for 1920x1080 -> [9,16] that yields w=608 and derived h=1080.888 > 1080, which the competition brief classifies as an invalid out-of-bounds prediction. This protocol floors the constrained dimension (w=607, derived h=1079.111 <= 1080).",
+    "no_ad_hoc_rounding": "floor/round/ceil selection is frozen here; later stages must not change it without a new protocol"
+  },
+  "duplicate_frame_policy": "writer rejects duplicate frames; validator counts duplicate_frame_count; target 0",
+  "ordering_policy": "writer rejects non-ascending predictions; validator flags non_ascending_order; target 0 violations",
+  "empty_prediction_policy": "empty predictions are legal output for videos with no frozen temporal segments; fabricating frames is forbidden",
+  "output_schema": {
+    "file": "JSONL, UTF-8, LF newlines, one line per index entry, index order",
+    "line": {
+      "video_id": "string, copied verbatim from the official index",
+      "targetRatioWH": "[target_w, target_h] copied from the official index (official kit sample emits it per line)",
+      "predictions": "array of {\"frame\": int, \"bboxes\": [int, int, int]}; [] allowed"
+    },
+    "determinism": "canonical json.dumps (ensure_ascii=False, default separators, insertion order), byte-identical across repeated runs"
+  },
+  "metadata_cache": {
+    "schema": "aic.spatial-video-metadata/v1",
+    "per_video_fields": [
+      "video_id", "video_path", "width", "height", "fps", "fps_rational",
+      "frame_count", "duration_sec", "timestamp_mode", "rate_provenance", "pts_timestamps (PTS mode only)"
+    ],
+    "provenance": "r_frame_rate / avg_frame_rate recorded verbatim; selected rate recorded",
+    "reuse": "shared by Stage 5.2-5.5; deterministic, validator-recomputable",
+    "cpu_policy": "ffprobe metadata only; no pixel decode, no PNG/JPEG extraction"
+  },
+  "validator": {
+    "version": "stage5_1_validator_v1",
+    "independence": "re-implements all checks; does not trust writer internals; shares only the frozen projection contract for temporal traceability recomputation",
+    "checks": [
+      "JSONL structure and per-line object shape",
+      "video_id present, non-empty, matched against index when provided",
+      "frame strictly integer, >= 0, < frame_count (with metadata)",
+      "no duplicate frames per video",
+      "ascending order",
+      "bboxes shape [x, y, w], strict ints, finite by construction, x >= 0, y >= 0, w > 0",
+      "x + w <= W (with metadata)",
+      "derived h = w * target_h / target_w <= H - y via exact rational compare (with metadata + ratio)",
+      "targetRatioWH valid and consistent with index",
+      "temporal traceability: every frame must lie in the frozen-segment allow-list (recomputed)",
+      "every index entry has exactly one line"
+    ],
+    "stats": [
+      "video_count", "prediction_count", "empty_video_count", "invalid_frame_count",
+      "duplicate_frame_count", "invalid_bbox_count", "out_of_bounds_count",
+      "ratio_violation_count", "temporal_traceability_violation_count",
+      "missing_video_count", "unknown_video_count"
+    ],
+    "gate": "for a PASS, all violation counts must be 0 and issues empty"
+  },
+  "evaluation_policy": {
+    "contract_metrics": "Stage 5.1 reports only contract/engineering stats; target all-zero violations",
+    "spatial_gt": "no official spatial GT available locally; no invented approximate official score; train.jsonl spatial fields remain excluded from model selection",
+    "sample_smoke": "official kit predictions.jsonl validated in schema-only mode; tagged SAMPLE_SMOKE / NOT_FOR_MODEL_SELECTION"
+  },
+  "heldout_lock": {
+    "heldout392": "ABSOLUTELY_LOCKED",
+    "allowed_access": 0,
+    "operations_forbidden": [
+      "read index contents", "read videos", "generate frames", "generate bboxes", "run validator or evaluator"
+    ]
+  },
+  "gates": {
+    "synthetic_regression": "validator PASS on all synthetic configs; byte-identical output across two runs",
+    "targeted_tests": "all Stage 5.1 tests PASS",
+    "full_test_suite": "no new failures versus the Stage 4.6 recorded baseline (182 passed / 3 allowlisted failures / 3 skipped)"
+  },
+  "next_stage_handoff": "Stage 5.2 Subject-Aware Spatial Localization builds on this frozen output contract; the contract files must not change without a new preregistered protocol."
+}
