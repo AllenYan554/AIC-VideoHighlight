@@ -23,6 +23,12 @@ from aic_video_highlight.highlight_retrieval.candidate_selection import (
 )
 
 
+LOCALIZER_BY_COMMAND = {
+    "dtl0": "DTL-0",
+    "dtl1": "DTL-1",
+}
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Stage 4.6 dense temporal localization")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -156,7 +162,7 @@ def main() -> int:
             prepare, model = _build_dtl1_runtime(args, protocol)
         result = run_localization_to_file(
             args.cache_dir, args.role_manifest, args.protocol,
-            args.command.upper(), args.output, model_fn=model, prepare_context_fn=prepare,
+            LOCALIZER_BY_COMMAND[args.command], args.output, model_fn=model, prepare_context_fn=prepare,
             allow_draft_protocol=args.allow_draft_protocol,
         )
         print(json.dumps({"records": result["input_record_count"], "candidates": result["input_candidate_count"], "rules": result["decision_rule_counts"]}, ensure_ascii=False))

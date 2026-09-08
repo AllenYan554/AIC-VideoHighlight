@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 from copy import deepcopy
+from types import SimpleNamespace
 
 import pytest
 
@@ -18,6 +19,38 @@ from aic_video_highlight.highlight_retrieval.dense_temporal_localization import 
     validate_dense_localization_payload,
 )
 from aic_video_highlight.highlight_retrieval.candidate_cache import semantic_sha256
+from scripts import run_dense_temporal_localization as dense_cli
+
+
+def run_cli_command_with_fakes(monkeypatch, command: str) -> str:
+    captured: dict[str, str] = {}
+    args = SimpleNamespace(
+        command=command,
+        cache_dir="cache",
+        role_manifest="role.json",
+        protocol="protocol.json",
+        output="result.json",
+        allow_draft_protocol=False,
+    )
+    monkeypatch.setattr(dense_cli, "parse_args", lambda: args)
+    monkeypatch.setattr(dense_cli, "load_dense_protocol", lambda *args, **kwargs: {})
+    monkeypatch.setattr(dense_cli, "_build_dtl1_runtime", lambda *args, **kwargs: (None, None))
+
+    def fake_run_localization_to_file(*call_args, **kwargs):
+        captured["localizer_name"] = call_args[3]
+        return {"input_record_count": 0, "input_candidate_count": 0, "decision_rule_counts": {}}
+
+    monkeypatch.setattr(dense_cli, "run_localization_to_file", fake_run_localization_to_file)
+    assert dense_cli.main() == 0
+    return captured["localizer_name"]
+
+
+def test_dtl0_cli_uses_hyphenated_protocol_localizer_name(monkeypatch):
+    assert run_cli_command_with_fakes(monkeypatch, "dtl0") == "DTL-0"
+
+
+def test_dtl1_cli_uses_hyphenated_protocol_localizer_name(monkeypatch):
+    assert run_cli_command_with_fakes(monkeypatch, "dtl1") == "DTL-1"
 
 
 def clip_timing(duration: float = 10.0, origin: float = 3.25) -> dict:
