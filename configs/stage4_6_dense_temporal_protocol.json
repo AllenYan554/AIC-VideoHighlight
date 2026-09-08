@@ -1,0 +1,110 @@
+{
+  "protocol_schema_version": "aic.stage4-dense-temporal-protocol/v1",
+  "protocol_status": "DRAFT_FOR_INDEPENDENT_REVIEW",
+  "stage": "4.6",
+  "stage_title": "Dense Temporal Localization Baseline",
+  "source_cache_global_hash": "4b515a6d6fb47073413c686214c3fa5f97293655a3824241eb3305b9e7753246",
+  "role_manifest_summary_hash": "6eccf82509295980cb16270a306fad251941b6a09f9f0178335eeabd811b23e0",
+  "role_manifest_hashes": {
+    "dev_tune": "bceb82034bcc5eed42a5099d7f54dd0fa776fe240969dfada231d255a368ec71",
+    "hard_stress": "81d734ee28ec38c096b908a573249c62713d358fb03ea135e5b55e1ae4405687",
+    "audit_diagnostic": "98fd987b7b56bdc18dd58a0c809e77adb28b93e322fd08a5246c04e115e1780c"
+  },
+  "data_roles": {
+    "dev_tune": "Development smoke and later formal development evaluation only",
+    "hard_stress": "Locked during development; frozen-method stress evaluation only",
+    "audit_diagnostic": "Membership may be used for identity checks; adjudication remains locked until a future authorized post-Hard phase",
+    "heldout": "ABSOLUTELY_LOCKED"
+  },
+  "localizers": {
+    "DTL-0": {
+      "definition": "Exact Frozen Retrieval identity control; no video, model, or bins",
+      "localizer_version": "aic.dense-temporal-localization/v1",
+      "parameters": {}
+    },
+    "DTL-1": {
+      "definition": "Classify every fixed temporal bin as CORE, CONTEXT, or OUTSIDE, then use the deterministic component-anchor decoder",
+      "localizer_version": "aic.dense-temporal-localization/v1",
+      "parameters": {
+        "context_padding_sec": 20.0,
+        "max_context_duration_sec": 120.0,
+        "bin_size_sec": 2.0,
+        "max_bin_count": 64
+      },
+      "context_parameter_status": "CONTROLLED-CONTEXT REUSE from BR-1 to isolate representation change; 20/120 are not claimed optimal for DTL",
+      "model": {
+        "model_name": "Qwen/Qwen3.5-4B",
+        "model_revision": null,
+        "backend": "existing externally managed vLLM OpenAI-compatible server",
+        "timeout_sec": 120.0,
+        "temperature": 0.0,
+        "max_new_tokens": 2048,
+        "enable_thinking": false
+      },
+      "prompt": {
+        "prompt_id": "dense_temporal_bins_v1",
+        "prompt_version": "v1",
+        "prompt_semantic_sha256": "be4b605ffaa793022210fc227fd38773bb46018d954399b39d8e2a825d94529d"
+      }
+    }
+  },
+  "clip_coordinate_contract": "source_sec = actual_source_origin_sec + local_sec",
+  "clip_extraction": "Reuse video_clip.extract_video_clip frame-accurate decode/re-encode with actual_source_origin_sec provenance and OpenCV fallback; stream copy forbidden",
+  "bin_policy": {
+    "interval": "[0, clip_duration_sec) partitioned at immutable 2-second local edges; final bin may be shorter",
+    "fields": ["bin_id", "local_start_sec", "local_end_sec", "source_start_sec", "source_end_sec"],
+    "precision_statement": "DTL-1 v1 does not predict sub-bin boundaries; output edges are real bin edges except the final clip end",
+    "overflow": "Fail closed above 64 bins"
+  },
+  "label_schema": {
+    "labels": ["CORE", "CONTEXT", "OUTSIDE"],
+    "recall_policy": "Prefer CONTEXT over OUTSIDE when uncertain; prefer CORE or CONTEXT over aggressive OUTSIDE",
+    "confidence_policy": "Finite [0,1] diagnostic only; decoder uses no confidence threshold"
+  },
+  "decoder": {
+    "decoder_version": "dtl.component-anchor/v1",
+    "steps": [
+      "Split consecutive non-OUTSIDE bins into components",
+      "Retain only components containing at least one CORE bin",
+      "Retain only components with positive-duration overlap with the original frozen candidate",
+      "If none remain, use IDENTITY_FALLBACK and never DROP",
+      "Sort by descending parent overlap duration, descending CORE duration, descending CORE bin count, then earliest component start",
+      "Use selected first source_start_sec and last source_end_sec as the refined interval"
+    ],
+    "parent_anchor_rule": "Selected component must contain CORE and have overlap_duration_sec > 0 with the original candidate; no tunable parent-tIoU threshold",
+    "forbidden_selection_inputs": ["confidence", "reference", "metric", "human label"]
+  },
+  "fallback_taxonomy": [
+    "dtl1.fallback_no_core",
+    "dtl1.fallback_no_parent_overlap",
+    "dtl1.fallback_parse_error",
+    "dtl1.fallback_empty_response",
+    "dtl1.fallback_transport_error"
+  ],
+  "allowed_model_output": "Exactly one {bin_id,label,confidence} object per expected bin; order may differ and is canonicalized",
+  "forbidden_model_operations": [
+    "output start/end timestamps or any final interval",
+    "drop, create, split, merge, rerank, or rescore candidates",
+    "retrieve another highlight or search outside the local window",
+    "use references, metrics, Audit adjudication, human labels, or Heldout"
+  ],
+  "replay_policy": "Only refined start/end come from localization; candidate ID, score, reason, source, and source_chunk are re-projected from the frozen cache",
+  "evaluation_plan": {
+    "metrics_supported": ["precision", "recall", "f1", "temporal_iou", "coverage", "over_prediction_seconds", "missed_reference_fraction", "recall_tails"],
+    "promotion_gate": null,
+    "note": "No formal promotion gate is frozen in this development draft; user decides after Development Smoke"
+  },
+  "development_policy": {
+    "current_status": "DEVELOPMENT / PRE-SMOKE",
+    "next_step": "Development Smoke after explicit user authorization",
+    "real_qwen_smoke_authorized": false,
+    "formal_authorized": false
+  },
+  "stopping_rules": [
+    "Stop on cache, role, protocol, prompt, clip, bin, candidate, decoder, replay, or count mismatch",
+    "Stop if DTL-0 is not exact identity over 431 records and 1277 candidates",
+    "Stop on Audit adjudication or Heldout access",
+    "Stop if model timestamps or non-deterministic decoder logic become necessary"
+  ],
+  "protocol_semantic_sha256": "6f4f063819f28ac1c3d5a5ffd723b7eca2789ca8701cf55e9b50ef39301c4ccf"
+}
