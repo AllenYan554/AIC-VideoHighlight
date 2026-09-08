@@ -1,0 +1,51 @@
+"""Stage 5.2 subject-aware spatial localization."""
+
+from .rt_detr_localizer import DEFAULT_MODEL_ID, RTDetrLocalizer
+from .subject_localization import (
+    FALLBACK_REASONS,
+    REASON_BOX_TOO_LARGE,
+    REASON_BOX_TOO_SMALL,
+    REASON_FULL_FRAME_LIKE,
+    REASON_INVALID_GEOMETRY,
+    REASON_LOW_CONFIDENCE,
+    REASON_MODEL_ERROR,
+    REASON_MULTI_SUBJECT_AMBIGUOUS,
+    REASON_NO_DETECTION,
+    STATUS_CENTER_CROP_FALLBACK,
+    STATUS_PRIMARY,
+    SubjectCandidate,
+    SubjectDecision,
+    SubjectPolicyConfig,
+    candidate_is_valid,
+    clamp_box,
+    decision_to_record,
+    detection_iou,
+    select_primary_subject,
+)
+from .visualization import render_decision_frame, save_decision_image
+
+__all__ = [
+    "DEFAULT_MODEL_ID",
+    "FALLBACK_REASONS",
+    "RTDetrLocalizer",
+    "REASON_BOX_TOO_LARGE",
+    "REASON_BOX_TOO_SMALL",
+    "REASON_FULL_FRAME_LIKE",
+    "REASON_INVALID_GEOMETRY",
+    "REASON_LOW_CONFIDENCE",
+    "REASON_MODEL_ERROR",
+    "REASON_MULTI_SUBJECT_AMBIGUOUS",
+    "REASON_NO_DETECTION",
+    "STATUS_CENTER_CROP_FALLBACK",
+    "STATUS_PRIMARY",
+    "SubjectCandidate",
+    "SubjectDecision",
+    "SubjectPolicyConfig",
+    "candidate_is_valid",
+    "clamp_box",
+    "decision_to_record",
+    "detection_iou",
+    "render_decision_frame",
+    "save_decision_image",
+    "select_primary_subject",
+]
