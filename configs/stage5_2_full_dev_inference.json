@@ -1,0 +1,66 @@
+{
+  "execution_config_id": "stage5_2_full_dev_inference",
+  "status": "FROZEN_EXECUTION_CONFIG",
+  "created": "2026-09-08",
+  "source_git_head": "7defb2b374b545d8b0dc2f719d442ccece842264",
+  "method_binding": {
+    "formal_protocol_sha256": "8c8f2bd4fb60f4002efc067134d3d0352b371561b84cb9b3deb7250e030c703e",
+    "model_id": "PekingU/rtdetr_r50vd",
+    "model_revision": "df939e661d8c52e80608d1ec566561aabd25a4e7",
+    "weights_sha256": "5263d5521eff3e356f6cd8a371fd5dfb891725beda5f713674f79669115cdc64",
+    "license": "apache-2.0",
+    "policy_version": "primary_subject_policy_v1_person_priority",
+    "policy_thresholds": {
+      "reliable_score": 0.5,
+      "possible_score": 0.3,
+      "ambiguity_score_gap": 0.05,
+      "ambiguity_iou_threshold": 0.5,
+      "min_area_fraction": 0.002,
+      "full_frame_width_fraction": 0.98,
+      "full_frame_height_fraction": 0.98,
+      "full_frame_area_fraction": 0.995
+    },
+    "person_priority": true,
+    "target_ratio": [9, 16],
+    "precision": "float32",
+    "batch_size": 1
+  },
+  "input_binding": {
+    "stage5_1_predictions_sha256": "ca44cc2831e935e82fa7b05820b1269d7f2cc0d360c030b5847a192ede11b9a5",
+    "stage5_1_frozen_replay_sha256": "40b3efe503ae0d3b358648510780746f1d469f6908bb6ca82f999611b20b26e7",
+    "dev166_video_count": 166,
+    "expected_selected_frames": 51256,
+    "frame_set_rule": "exact (video_id, frame) set from Stage 5.1 frozen predictions; missing/extra/duplicate = 0 required",
+    "metadata_cache_sha256": "52e46f16cfe5012aa68cfb8d7440f4d53e31b7cc133add7e29b78d648a9d5675"
+  },
+  "execution": {
+    "device": "cuda (AutoDL RTX 4090 D 24GB)",
+    "shard_unit": "per video (166 shards, sorted video_id order)",
+    "frame_decoding": "OpenCV sequential grab/retrieve of needed frame indices; temporary in-memory frames only; no permanent frame PNGs",
+    "retry_policy": "max 1 deterministic retry per frame on model exception; unresolved failure recorded as MODEL_ERROR with CENTER_CROP_FALLBACK decision record preserved (frame identity kept)",
+    "resume_policy": "per-video shard files + status json (frame count + sha256); complete valid shards skipped on restart; incomplete shards recomputed from scratch; no partial overwrite",
+    "merge_gate": "expected frames = 51256; actual = 51256; duplicate keys = 0; missing keys = 0; extra keys = 0"
+  },
+  "deterministic_audit_subset": {
+    "rule": "sorted(video_id); pick 10 videos by even index spacing; per video take up to 100 evenly spaced predicted frames; fixed by rule BEFORE rerun; model-blind",
+    "rerun_scope": "detector rerun on subset only; compare raw candidate semantic hash + policy v1 decisions vs Run A shard artifacts",
+    "required": "semantic identical (timing fields excluded)"
+  },
+  "output_schema": {
+    "per_video_shards": [
+      "raw_detector/{video_id}.jsonl (every raw candidate: box_xyxy, score, label_id, label)",
+      "policy_v1/{video_id}.jsonl (video_id, frame, W/H, source_timestamp, candidates embedded, primary, status, fallback_reasons, ambiguous, policy_version, model_error)",
+      "diagnostic_crop/{video_id}.jsonl (subject->9:16 exact-ratio diagnostic crop or fallback crop)"
+    ],
+    "status": "status/{video_id}.json (frame_count, shard sha256 list, timing)",
+    "semantic_hashes": "sorted canonical JSON hashes for raw candidates / policy v1 decisions / crop diagnostics"
+  },
+  "forbidden_changes": [
+    "thresholds", "policy semantics", "model/revision", "precision/batch", "fallback taxonomy",
+    "Stage 5.1 frame set", "temporal selection", "Heldout392"
+  ],
+  "heldout_lock": {
+    "heldout392": "ABSOLUTELY_LOCKED",
+    "allowed_access": 0
+  }
+}

@@ -1,6 +1,19 @@
 """Stage 5.2 subject-aware spatial localization."""
 
 from .rt_detr_localizer import DEFAULT_MODEL_ID, RTDetrLocalizer
+from .full_dev import (
+    FrameIdentityError,
+    ShardStateError,
+    ShardStatus,
+    canonical_sha,
+    file_sha256,
+    load_shard_records,
+    merge_and_verify,
+    pick_even,
+    shard_is_complete,
+    shard_paths,
+    write_shard,
+)
 from .subject_to_crop import (
     STATUS_CONTAINS_SUBJECT,
     STATUS_DEGRADED_MAX_CROP,
@@ -31,6 +44,9 @@ from .subject_localization import (
 from .visualization import render_decision_frame, save_decision_image
 
 __all__ = [
+    "FrameIdentityError",
+    "ShardStateError",
+    "ShardStatus",
     "DEFAULT_MODEL_ID",
     "FALLBACK_REASONS",
     "RTDetrLocalizer",
@@ -51,11 +67,19 @@ __all__ = [
     "STATUS_CONTAINS_SUBJECT",
     "STATUS_DEGRADED_MAX_CROP",
     "candidate_is_valid",
+    "canonical_sha",
     "clamp_box",
     "decision_to_record",
     "detection_iou",
+    "file_sha256",
+    "load_shard_records",
+    "merge_and_verify",
+    "pick_even",
     "render_decision_frame",
     "save_decision_image",
     "select_primary_subject",
+    "shard_is_complete",
+    "shard_paths",
     "subject_centered_crop",
+    "write_shard",
 ]
