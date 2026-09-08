@@ -70,7 +70,7 @@ def _first_frame_perceptual_hash(path: Path, *, frame_index: int = 0) -> int:
     assert ok and frame is not None
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     small = cv2.resize(gray, (9, 8), interpolation=cv2.INTER_AREA)
-    return int.from_bytes(np.packbits(small[:, 1:] > small[:, :-1]).tobytes())
+    return int.from_bytes(np.packbits(small[:, 1:] > small[:, :-1]).tobytes(), "big")
 
 
 def _first_video_pts(path: Path) -> float:
