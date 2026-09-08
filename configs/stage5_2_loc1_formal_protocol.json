@@ -1,0 +1,110 @@
+{
+  "protocol_id": "stage5_2_loc1_formal",
+  "title": "Stage 5.2 Subject-Aware Spatial Localization Formal Experiment (LOC-1 RT-DETR-R50 + Policy v1)",
+  "status": "PREREGISTERED_BEFORE_FORMAL",
+  "created": "2026-09-08",
+  "git_head_at_preregistration": "361f9a5445c5715a8e45ad2d8fc6e02bf4a3ea5f",
+  "research_questions": {
+    "H1": "Reliable person priority (policy v1) removes category-priority errors (e.g. potted_plant/car/chair/vase/microwave over reliable person) without breaking engineering stability.",
+    "H2": "A diagnostic-only subject-box -> exact target-ratio crop transform removes the shape confounding between tight subject boxes and 9:16-style weak crop references.",
+    "H3": "RT-DETR-R50 + policy v1 keeps high detection coverage, legal bboxes, low fallback, determinism, and acceptable inference cost on a larger fixed formal subset."
+  },
+  "model": {
+    "model_id": "PekingU/rtdetr_r50vd",
+    "revision": "df939e661d8c52e80608d1ec566561aabd25a4e7",
+    "weights_sha256": "5263d5521eff3e356f6cd8a371fd5dfb891725beda5f713674f79669115cdc64",
+    "weights_bytes": 172175856,
+    "license": "apache-2.0",
+    "device": "cuda (RTX 4090 D 24GB)",
+    "precision": "float32",
+    "batch_size": 1
+  },
+  "policy_v0": {
+    "version": "primary_subject_policy_v0",
+    "rules": [
+      "drop geometrically invalid candidates (non-finite, inverted, zero extent); count INVALID_GEOMETRY",
+      "possible = score >= 0.30; reliable = score >= 0.50",
+      "no possible -> NO_DETECTION fallback; possible but no reliable -> LOW_CONFIDENCE fallback",
+      "primary = highest score in valid reliable pool; ties by area desc then input order",
+      "BOX_TOO_SMALL if area < 0.002 * frame area; BOX_TOO_LARGE if area >= 0.995 * frame area; FULL_FRAME_LIKE if width >= 98% and height >= 98% -> CENTER_CROP_FALLBACK",
+      "MULTI_SUBJECT_AMBIGUOUS flag (no fallback) when another reliable candidate within score gap 0.05 has IoU < 0.5 vs primary",
+      "fallback box = Stage 5.1 frozen compute_center_crop(9:16)"
+    ]
+  },
+  "policy_v1": {
+    "version": "primary_subject_policy_v1_person_priority",
+    "inherits": "policy_v0 entirely",
+    "single_change": "if any reliable candidate has class == 'person', primary is selected among reliable persons only (score desc -> area desc -> input order); otherwise exact v0 behavior",
+    "explicitly_excluded": [
+      "action-subject priority",
+      "motion models",
+      "Qwen reranking",
+      "Grounding DINO / OWLv2",
+      "SAM / Detector->SAM",
+      "union boxes for multi-person",
+      "tracking / smoothing"
+    ]
+  },
+  "crop_compatible_diagnostic": {
+    "tag": "DIAGNOSTIC-ONLY / not the Stage 5.3 production algorithm",
+    "definition": "subject_centered_crop: minimal integer-k crop with exact targetRatioWH ratio fully containing the primary subject, centered on subject center, shifted into frame; if the required crop exceeds the frame, degrade to the largest legal target-ratio crop (k_max = min(floor(W/tw), floor(H/th))), flagged degraded",
+    "status_values": ["SUBJECT_CENTERED_CONTAINING", "DEGRADED_MAX_LEGAL_CROP", "CENTER_CROP_FALLBACK"],
+    "deterministic": true,
+    "target_ratio": [9, 16]
+  },
+  "configurations": {
+    "LOC-0": "Stage 5.1 frozen center crop (control)",
+    "LOC-1-v0": "RT-DETR-R50 raw candidates + policy v0 (raw subject box)",
+    "LOC-1-v1": "RT-DETR-R50 raw candidates + policy v1 (raw subject box)",
+    "LOC-1-v0-CROP": "diagnostic transform applied to LOC-1-v0 primary",
+    "LOC-1-v1-CROP": "diagnostic transform applied to LOC-1-v1 primary"
+  },
+  "shared_raw_detector": "single detector pass per run feeds both policies; candidates recorded verbatim in raw_detector.json",
+  "formal_manifest": {
+    "path": "formal/manifests/spatial_formal_manifest_v2.json",
+    "manifest_id": "stage5_2_spatial_formal_manifest_v2",
+    "sha256": "d5994d62cd972e719057ef09f448d18e4bf9da8780b86e6c6ee666d7ecb04a27",
+    "video_count": 30,
+    "frame_count": 450,
+    "frames_with_weak_roi": 121,
+    "sampling_rule": "sorted(video_id); strata with_weak_roi 18 + dropped_center_default 12 (model-blind, weak-reference presence only); even index spacing; up to 15 evenly spaced Stage 5.1 frozen predicted frames per video; frozen before formal inference"
+  },
+  "weak_reference": {
+    "path": "manifests/dev166_weak_spatial_reference.jsonl",
+    "sha256": "702f0bf1c74c33b3240a1d24409640d7b4bab8d62a4b84a1857838c6dcb5d5e2",
+    "status": "seed_weak_training_label_v1; NOT official GT; WEAK_REFERENCE_DIAGNOSTIC only; NOT FOR OFFICIAL SCORE CLAIM"
+  },
+  "metrics": [
+    "primary-gate engineering counters (invalid bbox, crop invalid, frame identity, model errors)",
+    "policy behavior gate (reliable-person frames, v0 violations, v1 violations, changed counts)",
+    "weak-reference IoU/center-error per configuration with paired win/tie/loss (diagnostic only)",
+    "per-frame latency (decode vs inference) mean/median/P90/P95/max",
+    "peak VRAM allocated/reserved"
+  ],
+  "primary_gates": {
+    "all_must_pass": [
+      "frame identity preservation = 100% (frames == manifest frames)",
+      "invalid primary bbox = 0",
+      "diagnostic crop invalid (non-exact-ratio or out-of-bounds or overlapping-error) = 0",
+      "Stage 5.1 frozen contract regression = 0 (full pytest, allowlisted Stage 4.6 items excluded)",
+      "deterministic semantic rerun PASS (Run A vs Run B: raw candidates, v1 decisions, crop outputs identical)",
+      "model crash = 0",
+      "unknown frame = 0 (no frame outside frozen selected set)",
+      "Heldout access = 0",
+      "policy v1 does not change detector candidates (same raw_detector for v0/v1)",
+      "policy v1 only changes primary selection (no temporal, no frame set, no writer changes)"
+    ]
+  },
+  "policy_behavior_gate": {
+    "definition": "for every frame with >= 1 reliable person candidate, policy v1 primary must be a person",
+    "expected": "policy_violation_count = 0; changed_away_from_person = 0"
+  },
+  "random_seed": null,
+  "determinism_note": "no stochastic components; fp32 + inference_mode; semantic hashes compared across Run A/B excluding wall-time fields",
+  "heldout_lock": {
+    "heldout392": "ABSOLUTELY_LOCKED",
+    "allowed_access": 0
+  },
+  "resources_forbidden": ["Qwen", "vLLM", "Grounding DINO", "OWLv2", "SAM", "tracking", "motion evidence", "SFT/LoRA/RL", "commercial APIs"],
+  "next_step_gate": "READY_FOR_STAGE5_2_FULL_DEV_INFERENCE only if all primary gates PASS and behavior/latency/VRAM acceptable; 51,256-frame run requires user confirmation"
+}
