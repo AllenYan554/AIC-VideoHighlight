@@ -26,3 +26,11 @@ PYTHONPATH=src python scripts/experiments/stage5/run.py --experiment stage5_3_fo
 ```
 
 The launcher currently rejects `stage5_3_formal` deliberately. A later scientific task must first create and freeze its config/protocol and register its runner.
+
+Current AutoDL evidence locations after cleanup:
+
+- Stage 5.2 Full Dev: `/root/autodl-tmp/outputs/stage5/stage5_2_full_dev/`
+- Legacy logs: `/root/autodl-tmp/logs/legacy/<stage>/`
+- Migration manifests: `/root/autodl-tmp/archive/physical_cleanup_20260908/`
+
+Do not use the removed repo-local `outputs/stage5_2_full_dev` path. Stage 4 legacy recovery paths remain unchanged until the recovery work is formally closed.

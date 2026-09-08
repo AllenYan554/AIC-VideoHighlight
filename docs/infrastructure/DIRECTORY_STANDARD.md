@@ -27,3 +27,5 @@ Each run output uses:
 Logs go only to `<logs>/<stage>/<experiment_id>/` as `run.log`, `stderr.log`, `progress.json`, `progress.jsonl`, and `events.jsonl`. Cache is reusable but non-authoritative. Temporary decode/merge material goes to `<tmp>/<experiment_id>/` and must never be required to interpret a completed run.
 
 Windows and AutoDL roots live in separate environment configs. Scientific configs bind scientific inputs and protocol hashes; changing machines must not require changing the scientific protocol.
+
+As of the 2026-09-08 physical cleanup, tracked repo-level `outputs/` and `logs/` placeholders were removed. The Windows Stage 5 tree contains only scientific records; infrastructure compatibility evidence lives under `实验记录/_工程与基础设施记录/`. Historical scientific paths are not retroactively renamed.

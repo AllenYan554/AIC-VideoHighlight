@@ -32,7 +32,5 @@ hf-cache/
 cache/
 
 outputs/*
-!outputs/.gitkeep
 
 logs/*
-!logs/.gitkeep
