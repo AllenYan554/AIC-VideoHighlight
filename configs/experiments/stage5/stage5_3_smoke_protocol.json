@@ -1,0 +1,124 @@
+{
+  "protocol_id": "stage5_3_smoke",
+  "title": "Stage 5.3 Target-Ratio Spatial Composition — Development Smoke (CMP-0 vs CMP-1)",
+  "status": "PREREGISTERED_BEFORE_SMOKE",
+  "created": "2026-09-08",
+  "git_head_at_preregistration": "5d73e170bd8e116e7c91b8551053a622bc28bac7",
+  "research_questions": {
+    "Q1": "Does CMP-1 (Primary-Subject Shifted Max-Ratio Crop) keep 100% engineering validity (frame identity, in-bounds, exact target ratio) relative to CMP-0 (Stage 5.1 Frozen Center Crop)?",
+    "Q2": "In which model-blind geometry strata does CMP-1 improve subject visibility, and by how much?",
+    "Q3": "How often does the sanitized primary bbox overflow, and how often does sanitization degenerate (INVALID_SANITIZED_SUBJECT)?"
+  },
+  "scope": {
+    "in_scope": [
+      "CMP-0 = Stage 5.1 Frozen Center Crop (control, verbatim from frozen predictions)",
+      "CMP-1 = Primary-Subject Shifted Max-Ratio Crop (position-only single variable)",
+      "raw primary bbox sanitization (clamp-into-frame, first version, deterministic)",
+      "selected-primary overflow audit (offline, CPU only)",
+      "subject visibility / center containment / crop shift metrics",
+      "model-blind center-offset strata comparison",
+      "FULL_FRAME_SUBJECT_DIAGNOSTIC for BOX_TOO_LARGE frames (observation only)",
+      "multi_subject_diagnostic for ambiguous frames (observation only)",
+      "weak-reference diagnostic (NOT official GT, NOT for model selection)"
+    ],
+    "out_of_scope": [
+      "adaptive center-vs-subject policy (CMP-2)",
+      "multi-subject union / fusion production policy",
+      "zoom / crop scale changes (CMP-1 keeps the maximal legal crop size)",
+      "SAM / tracking / motion / Qwen / vLLM / RT-DETR rerun",
+      "Stage 5.1 or Stage 5.2 semantic modification",
+      "Heldout392 in any form",
+      "final experiment_report.md (AI-written after human handoff)"
+    ]
+  },
+  "inputs": {
+    "stage5_1_predictions_sha256": "ca44cc2831e935e82fa7b05820b1269d7f2cc0d360c030b5847a192ede11b9a5",
+    "stage5_1_metadata_cache_sha256": "52e46f16cfe5012aa68cfb8d7440f4d53e31b7cc133add7e29b78d648a9d5675",
+    "dev166_index_sha256": "b541ade5c05e066dd5163f5d1cf2f7deb8780613589839000b55b1c55803a04e",
+    "stage5_2_policy_artifact_sha256": "0344ebdbeff2e4f7863877b170a9f2a48489047f43af014a52a33417490785b8",
+    "stage5_2_raw_detector_sha256": "259f360c682c6d5483f01285e747f34ad6b3a97907e89d5bf1436f9282b78824",
+    "weak_spatial_reference_sha256": "702f0bf1c74c33b3240a1d24409640d7b4bab8d62a4b84a1857838c6dcb5d5e2",
+    "stage5_2_freeze_reference": "configs/stage5_2_final_freeze.json",
+    "full_dev_policy_semantic_sha256": "222258d1d7960639697bd6c3f36339443c85a27bee9dcee7742f24fda238871d"
+  },
+  "smoke_manifest": {
+    "manifest_id": "stage5_3_smoke_manifest_v1",
+    "expected_manifest_sha256": "97b54d29bc8dc7c3241097c595f8377615fc24efe0235d2678de3e39b2b23c74",
+    "selection_rule": "frames = exact frame set of the frozen Stage 5.2 formal policy artifact (30 videos, 450 frames); strata = preregistered horizontal center-offset thresholds on the sanitized Stage 5.2 primary bbox; model-blind; frozen before composition",
+    "video_count": 30,
+    "frame_count": 450
+  },
+  "cmp_definitions": {
+    "CMP-0": {
+      "name": "Stage 5.1 Frozen Center Crop",
+      "definition": "the frozen Stage 5.1 prediction bbox [x, y, w] for the frame, taken verbatim; ratio/rounding contract frozen in stage5_1_center_crop_protocol.json",
+      "role": "control"
+    },
+    "CMP-1": {
+      "name": "Primary-Subject Shifted Max-Ratio Crop v1",
+      "definition": "crop size (crop_w, crop_h) = Stage 5.1 maximal legal target-ratio crop via the frozen compute_center_crop; ideal position = floor(sanitized subject center - crop/2); then clamped into bounds; single variable = position",
+      "sanitization": "x1'=clamp(x1,0,W), y1'=clamp(y1,0,H), x2'=clamp(x2,0,W), y2'=clamp(y2,0,H); if x2'<=x1' or y2'<=y1' then INVALID_SANITIZED_SUBJECT -> CMP-0 fallback; raw bbox is never modified; clamp amounts recorded per side",
+      "fallback_rules": [
+        "Stage 5.2 status != PRIMARY",
+        "primary bbox absent",
+        "sanitized bbox invalid",
+        "geometry transform failure"
+      ],
+      "placement_status_values": ["SUBJECT_SHIFTED", "CENTER_EQUIVALENT", "FALLBACK_CENTER_CROP"]
+    }
+  },
+  "strata": {
+    "feature": "horizontal center offset |cx/W - 0.5| of the sanitized primary bbox (model-blind geometry)",
+    "thresholds": {
+      "near_center": "< 0.10",
+      "moderately_off_center": "0.10 <= o < 0.25",
+      "strongly_off_center": ">= 0.25",
+      "no_subject": "Stage 5.2 fallback or sanitized-invalid frames"
+    },
+    "frozen_before_composition": true
+  },
+  "metrics": [
+    "engineering counters (frame identity, invalid crop, out-of-bounds, ratio violations, missing, duplicate, sanitized-invalid-unhandled, Stage 5.1 frozen regression, Stage 5.2 artifact modification, Heldout access)",
+    "subject_visible_fraction = area(sanitized subject intersect crop) / area(sanitized subject), per CMP-0/CMP-1 with mean/median/P10/P50/P90 and >=0.50/0.75/0.90/0.95/1.00 shares",
+    "subject_center_inside_crop rate per CMP-0/CMP-1",
+    "crop shift distance normalized by frame width/height, per CMP-0/CMP-1",
+    "per-stratum visibility comparison (near-center / moderately / strongly / no_subject)",
+    "selected-primary overflow audit: frames >0/>1/>3/>5/>10 px; per-direction median/P90/P95/P99/max; sanitized invalid count",
+    "BOX_TOO_LARGE FULL_FRAME_SUBJECT_DIAGNOSTIC (observation only)",
+    "multi_subject_diagnostic (observation only)",
+    "weak-reference IoU CMP-0 vs CMP-1 with paired win/tie/loss (diagnostic only)"
+  ],
+  "primary_engineering_gates": {
+    "all_must_pass": [
+      "frame identity = 100% (manifest frames == produced frames)",
+      "invalid crop = 0",
+      "out-of-bounds = 0",
+      "ratio violations = 0",
+      "missing = 0",
+      "duplicate = 0",
+      "sanitized invalid unhandled = 0",
+      "deterministic replay = PASS (canonical SHA of all frame records)",
+      "Stage 5.1 frozen regression = 0 (CMP-0 boxes == frozen Stage 5.1 predictions)",
+      "Stage 5.2 artifact modified = NO (input SHA recheck after run)",
+      "Heldout access = 0",
+      "official-format emission validated for CMP-0 and CMP-1 (independent validator, 0 violations)",
+      "diagnostic mirror cross-check vs frozen PRIMARY decisions: mismatches = 0"
+    ]
+  },
+  "behavior_evidence_policy": "CMP-1 value is observed in the off-center strata via subject visibility; weak IoU is NEVER a promotion gate (weak reference is center-biased)",
+  "visualization": {
+    "required_categories": [
+      "top_improvement", "regression", "strong_off_center", "box_too_large",
+      "ambiguous", "non_person", "border_clamp"
+    ],
+    "content": "frame + raw primary bbox + sanitized bbox + CMP-0 crop + CMP-1 crop + weak reference when present",
+    "media_note": "when source videos are unavailable (Windows CPU smoke), figures are GEOMETRY_SCHEMATIC and tagged as such; source-frame figures require the videos root (AutoDL)"
+  },
+  "forbidden": [
+    "RT-DETR inference", "GPU", "SAM", "Grounding DINO", "Qwen", "vLLM", "tracking", "smoothing",
+    "frame calibration", "Stage 4 temporal modification", "Stage 5.1 modification",
+    "Stage 5.2 scientific semantics modification", "Heldout", "official test",
+    "multi-subject union production policy", "adaptive composition production policy"
+  ],
+  "next_step_gate": "STAGE5_3_FORMAL_PREREGISTRATION only after all primary engineering gates PASS and behavior evidence is reviewed by a human + AI report"
+}

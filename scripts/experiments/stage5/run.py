@@ -1,29 +1,59 @@
 #!/usr/bin/env python3
-"""Canonical Stage 5 launcher; Stage 5.3 remains intentionally unregistered."""
+"""Canonical Stage 5 launcher.
+
+Registered experiments:
+- stage5_infra_tiny_fake  : CPU infrastructure acceptance (synthetic)
+- stage5_3_smoke          : CPU development smoke for target-ratio composition (CMP-0 vs CMP-1)
+- stage5_3_formal         : FORMAL composition baseline (registered, DEFAULT NOT RUN)
+
+Environment auto-selection: on Windows the default environment is
+configs/environments/windows_local.json, otherwise configs/environments/autodl.json.
+"""
 
 from __future__ import annotations
 
 import argparse
+import platform
 import subprocess
 import sys
 from pathlib import Path
 
+RUNNERS = {
+    "stage5_infra_tiny_fake": "scripts/experiments/run_tiny_fake.py",
+    "stage5_3_smoke": "scripts/experiments/stage5/run_stage5_3_composition.py",
+    "stage5_3_formal": "scripts/experiments/stage5/run_stage5_3_composition.py",
+}
+
+CONFIGS = {
+    "stage5_infra_tiny_fake": "configs/experiments/stage5/stage5_infra_tiny_fake.json",
+    "stage5_3_smoke": "configs/experiments/stage5/stage5_3_smoke.json",
+    "stage5_3_formal": "configs/experiments/stage5/stage5_3_formal.json",
+}
+
+
+def default_environment() -> Path:
+    if platform.system() == "Windows":
+        return Path("configs/environments/windows_local.json")
+    return Path("configs/environments/autodl.json")
+
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--experiment", required=True)
+    parser.add_argument("--experiment", required=True, choices=sorted(RUNNERS))
     parser.add_argument("--config", type=Path)
-    parser.add_argument("--environment", type=Path, default=Path("configs/environments/autodl.json"))
+    parser.add_argument("--environment", type=Path, default=None)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--validate-only", action="store_true")
     args = parser.parse_args(argv)
-    if args.experiment != "stage5_infra_tiny_fake":
-        parser.error(
-            f"experiment {args.experiment!r} is not registered; Stage 5.3 has not started and no scientific runner was invented"
-        )
-    config = args.config or Path("configs/experiments/stage5/stage5_infra_tiny_fake.json")
-    command = [sys.executable, "scripts/experiments/run_tiny_fake.py", "--config", str(config), "--environment", str(args.environment)]
+    config = args.config or Path(CONFIGS[args.experiment])
+    environment = args.environment or default_environment()
+    command = [
+        sys.executable,
+        RUNNERS[args.experiment],
+        "--config", str(config),
+        "--environment", str(environment),
+    ]
     for enabled, flag in ((args.resume, "--resume"), (args.dry_run, "--dry-run"), (args.validate_only, "--validate-only")):
         if enabled:
             command.append(flag)

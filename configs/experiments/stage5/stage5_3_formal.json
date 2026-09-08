@@ -1,0 +1,85 @@
+{
+  "experiment_id": "stage5_3_formal",
+  "stage": "stage5",
+  "run_type": "FORMAL_BASELINE",
+  "status_note": "REGISTERED_NOT_RUN: default NOT RUN; preregistration completes only after stage5_3_smoke gates PASS and human confirmation",
+  "protocol": "configs/experiments/stage5/stage5_3_formal_protocol.json",
+  "composition": {
+    "cmp0": "stage5_1_frozen_center_crop",
+    "cmp1": "primary_subject_shifted_max_ratio_crop_v1",
+    "single_variable": "crop position only; crop size equals the Stage 5.1 maximal legal target-ratio crop",
+    "target_ratio": [9, 16],
+    "strata_thresholds": {
+      "near_center_lt": 0.10,
+      "strongly_off_center_gte": 0.25
+    },
+    "stage5_2_policy_thresholds": {
+      "reliable_score": 0.5,
+      "possible_score": 0.3,
+      "ambiguity_score_gap": 0.05,
+      "ambiguity_iou_threshold": 0.5,
+      "min_area_fraction": 0.002,
+      "full_frame_width_fraction": 0.98,
+      "full_frame_height_fraction": 0.98,
+      "full_frame_area_fraction": 0.995
+    }
+  },
+  "manifest": {
+    "manifest_id": "stage5_3_formal_manifest_v1",
+    "expected_manifest_sha256": null,
+    "manifest_sha_policy": "manifest is derived deterministically from the hash-verified frozen inputs at run start, recorded into run_manifest.json before composition; inputs are bound by SHA so any drift fails resume",
+    "video_count": 166,
+    "frame_count": 51256
+  },
+  "expected_policy_semantic_sha256": "222258d1d7960639697bd6c3f36339443c85a27bee9dcee7742f24fda238871d",
+  "verify_stage5_2_shards": true,
+  "defer_raw_loading": true,
+  "figures_per_category": 3,
+  "videos_root": {
+    "base": "datasets",
+    "path": "aic_highlight_dev"
+  },
+  "inputs": {
+    "stage5_1_predictions": {
+      "base": "outputs",
+      "path": "stage5_1_dev_baseline/predictions_runA.jsonl",
+      "sha256": "ca44cc2831e935e82fa7b05820b1269d7f2cc0d360c030b5847a192ede11b9a5",
+      "format": "jsonl"
+    },
+    "video_metadata_cache": {
+      "base": "outputs",
+      "path": "stage5_1_dev_baseline/metadata_cache.json",
+      "sha256": "52e46f16cfe5012aa68cfb8d7440f4d53e31b7cc133add7e29b78d648a9d5675",
+      "format": "json"
+    },
+    "dev166_index": {
+      "base": "outputs",
+      "path": "stage5_1_dev_baseline/dev166_stage5_index.jsonl",
+      "sha256": "b541ade5c05e066dd5163f5d1cf2f7deb8780613589839000b55b1c55803a04e",
+      "format": "jsonl"
+    },
+    "stage5_2_policy_artifact": {
+      "base": "outputs",
+      "path": "stage5/stage5_2_full_dev/policy_v1",
+      "sha256": null,
+      "format": "policy_shard_dir"
+    },
+    "stage5_2_raw_detector": {
+      "base": "outputs",
+      "path": "stage5/stage5_2_full_dev/raw_detector",
+      "sha256": null,
+      "format": "raw_shard_dir"
+    },
+    "weak_spatial_reference": {
+      "base": "outputs",
+      "path": "stage5_3_inputs/dev166_weak_spatial_reference.jsonl",
+      "sha256": "702f0bf1c74c33b3240a1d24409640d7b4bab8d62a4b84a1857838c6dcb5d5e2",
+      "format": "jsonl",
+      "sync_note": "lightweight 747KB file; must be synced from the Windows archive to AutoDL outputs/stage5_3_inputs/ before the formal run"
+    }
+  },
+  "heldout_lock": {
+    "heldout392": "ABSOLUTELY_LOCKED",
+    "allowed_access": 0
+  }
+}

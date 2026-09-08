@@ -1,0 +1,76 @@
+{
+  "experiment_id": "stage5_3_smoke",
+  "stage": "stage5",
+  "run_type": "DEVELOPMENT_SMOKE",
+  "protocol": "configs/experiments/stage5/stage5_3_smoke_protocol.json",
+  "composition": {
+    "cmp0": "stage5_1_frozen_center_crop",
+    "cmp1": "primary_subject_shifted_max_ratio_crop_v1",
+    "single_variable": "crop position only; crop size equals the Stage 5.1 maximal legal target-ratio crop",
+    "target_ratio": [9, 16],
+    "strata_thresholds": {
+      "near_center_lt": 0.10,
+      "strongly_off_center_gte": 0.25
+    },
+    "stage5_2_policy_thresholds": {
+      "reliable_score": 0.5,
+      "possible_score": 0.3,
+      "ambiguity_score_gap": 0.05,
+      "ambiguity_iou_threshold": 0.5,
+      "min_area_fraction": 0.002,
+      "full_frame_width_fraction": 0.98,
+      "full_frame_height_fraction": 0.98,
+      "full_frame_area_fraction": 0.995
+    }
+  },
+  "manifest": {
+    "manifest_id": "stage5_3_smoke_manifest_v1",
+    "expected_manifest_sha256": "97b54d29bc8dc7c3241097c595f8377615fc24efe0235d2678de3e39b2b23c74",
+    "video_count": 30,
+    "frame_count": 450
+  },
+  "inputs": {
+    "stage5_1_predictions": {
+      "base": "archive",
+      "path": "Stage5_逐帧高光预测与空间构图/02_Dev_Baseline_Run/predictions/predictions_runA.jsonl",
+      "sha256": "ca44cc2831e935e82fa7b05820b1269d7f2cc0d360c030b5847a192ede11b9a5",
+      "format": "jsonl"
+    },
+    "video_metadata_cache": {
+      "base": "archive",
+      "path": "Stage5_逐帧高光预测与空间构图/02_Dev_Baseline_Run/metadata/metadata_cache.json",
+      "sha256": "52e46f16cfe5012aa68cfb8d7440f4d53e31b7cc133add7e29b78d648a9d5675",
+      "format": "json"
+    },
+    "dev166_index": {
+      "base": "archive",
+      "path": "Stage5_逐帧高光预测与空间构图/02_Dev_Baseline_Run/config/dev166_stage5_index.jsonl",
+      "sha256": "b541ade5c05e066dd5163f5d1cf2f7deb8780613589839000b55b1c55803a04e",
+      "format": "jsonl"
+    },
+    "stage5_2_policy_artifact": {
+      "base": "archive",
+      "path": "Stage5_逐帧高光预测与空间构图/03_Subject_Aware_Spatial_Localization_Baseline/formal/policy_v1/policy_v1.json",
+      "sha256": "0344ebdbeff2e4f7863877b170a9f2a48489047f43af014a52a33417490785b8",
+      "format": "json"
+    },
+    "stage5_2_raw_detector": {
+      "base": "archive",
+      "path": "Stage5_逐帧高光预测与空间构图/03_Subject_Aware_Spatial_Localization_Baseline/formal/raw_detector/raw_detector.json",
+      "sha256": "259f360c682c6d5483f01285e747f34ad6b3a97907e89d5bf1436f9282b78824",
+      "format": "json"
+    },
+    "weak_spatial_reference": {
+      "base": "archive",
+      "path": "Stage5_逐帧高光预测与空间构图/03_Subject_Aware_Spatial_Localization_Baseline/manifests/dev166_weak_spatial_reference.jsonl",
+      "sha256": "702f0bf1c74c33b3240a1d24409640d7b4bab8d62a4b84a1857838c6dcb5d5e2",
+      "format": "jsonl"
+    }
+  },
+  "figures_per_category": 3,
+  "defer_raw_loading": false,
+  "heldout_lock": {
+    "heldout392": "ABSOLUTELY_LOCKED",
+    "allowed_access": 0
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "protocol_id": "stage5_3_formal",
+  "title": "Stage 5.3 Target-Ratio Spatial Composition — Formal Baseline (CMP-0 vs CMP-1, Dev166 frozen Full Dev artifact)",
+  "status": "DRAFT_AWAITING_SMOKE_EVIDENCE",
+  "created": "2026-09-08",
+  "preregistration_policy": "Config and protocol are frozen as DRAFT; final PREREGISTERED_BEFORE_FORMAL status is set only after stage5_3_smoke primary gates PASS and the user explicitly requests the formal run. The agent must never start the formal run autonomously.",
+  "research_questions": {
+    "Q1": "Does CMP-1 keep 100% engineering validity over all 51,256 frozen frames (frame identity, in-bounds, exact target ratio)?",
+    "Q2": "In which model-blind geometry strata does CMP-1 improve subject visibility over CMP-0 across Dev166, and by how much?",
+    "Q3": "What is the selected-primary overflow profile (>0/>1/>3/>5/>10 px) and sanitized-invalid count over the frozen Full Dev artifact?"
+  },
+  "scope": {
+    "in_scope": [
+      "read-only consumption of the frozen Stage 5.2 Full Dev artifact (/root/autodl-tmp/outputs/stage5/stage5_2_full_dev/)",
+      "CMP-0 vs CMP-1 position-only composition over 51,256 frozen frames",
+      "subject visibility / center containment / crop shift metrics and strata comparison",
+      "selected-primary overflow audit on the full artifact",
+      "FULL_FRAME_SUBJECT_DIAGNOSTIC and multi_subject_diagnostic on the full artifact",
+      "weak-reference diagnostic (NOT official GT, NOT for model selection)"
+    ],
+    "out_of_scope": [
+      "RT-DETR re-inference", "GPU compute", "Stage 5.1/5.2 modification",
+      "adaptive composition (CMP-2)", "multi-subject union production policy",
+      "zoom/scale changes", "Heldout392", "official test"
+    ]
+  },
+  "inputs": {
+    "stage5_2_full_dev_root": "/root/autodl-tmp/outputs/stage5/stage5_2_full_dev/",
+    "expected_policy_semantic_sha256": "222258d1d7960639697bd6c3f36339443c85a27bee9dcee7742f24fda238871d",
+    "expected_raw_semantic_sha256_reference": "44ae9383d20fe0afd290c10f8fb78c5bcd2ee5b0709fb7aedf61dbd83d52f399",
+    "stage5_1_predictions_sha256": "ca44cc2831e935e82fa7b05820b1269d7f2cc0d360c030b5847a192ede11b9a5",
+    "stage5_1_metadata_cache_sha256": "52e46f16cfe5012aa68cfb8d7440f4d53e31b7cc133add7e29b78d648a9d5675",
+    "dev166_index_sha256": "b541ade5c05e066dd5163f5d1cf2f7deb8780613589839000b55b1c55803a04e",
+    "weak_spatial_reference_sha256": "702f0bf1c74c33b3240a1d24409640d7b4bab8d62a4b84a1857838c6dcb5d5e2",
+    "shard_integrity": "every Stage 5.2 shard rechecked via its status file (frame count + byte sha256) before composition"
+  },
+  "strata": {
+    "feature": "horizontal center offset |cx/W - 0.5| of the sanitized primary bbox (model-blind geometry)",
+    "thresholds": {
+      "near_center": "< 0.10",
+      "moderately_off_center": "0.10 <= o < 0.25",
+      "strongly_off_center": ">= 0.25",
+      "no_subject": "Stage 5.2 fallback or sanitized-invalid frames"
+    },
+    "frozen_before_composition": true
+  },
+  "primary_engineering_gates": {
+    "all_must_pass": [
+      "frame identity = 100% over 51,256 frozen frames",
+      "invalid crop = 0",
+      "out-of-bounds = 0",
+      "ratio violations = 0",
+      "missing = 0",
+      "duplicate = 0",
+      "sanitized invalid unhandled = 0",
+      "deterministic replay = PASS",
+      "Stage 5.1 frozen regression = 0",
+      "Stage 5.2 artifact modified = NO (shard status recheck + policy semantic SHA)",
+      "Heldout access = 0",
+      "official-format emission validated for CMP-0 and CMP-1 (0 violations)",
+      "diagnostic mirror cross-check vs frozen PRIMARY decisions: mismatches = 0"
+    ]
+  },
+  "resources_forbidden": ["RT-DETR", "GPU", "Qwen", "vLLM", "SAM", "tracking", "motion evidence", "commercial APIs"],
+  "determinism_note": "pure CPU geometry; deterministic replay compares the canonical SHA of all frame records",
+  "next_step_gate": "STAGE5_3_REPORT only after all gates PASS; CMP-2 (adaptive center/subject) may be proposed in a NEW protocol if smoke+formal evidence supports it"
+}
