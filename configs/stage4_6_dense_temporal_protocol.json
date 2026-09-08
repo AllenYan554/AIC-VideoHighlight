@@ -42,9 +42,9 @@
         "enable_thinking": false
       },
       "prompt": {
-        "prompt_id": "dense_temporal_bins_v1",
-        "prompt_version": "v1",
-        "prompt_semantic_sha256": "be4b605ffaa793022210fc227fd38773bb46018d954399b39d8e2a825d94529d"
+        "prompt_id": "dense_temporal_bins_v1_1",
+        "prompt_version": "v1.1-smoke-envelope-fix",
+        "prompt_semantic_sha256": "56341ba51e031ec308e6db2add95a0b1af82af0d2de2f89f05de51c28d01e5cf"
       }
     }
   },
@@ -82,6 +82,7 @@
     "dtl1.fallback_transport_error"
   ],
   "allowed_model_output": "Exactly one {bin_id,label,confidence} object per expected bin; order may differ and is canonicalized",
+  "parser_envelope_policy": "Development robustness: accept a strict JSON object, a bare bins array, or exactly one complete fenced object/array with optional surrounding prose; bin count, IDs, labels, confidence, duplicates, unknowns, and all content remain strict",
   "forbidden_model_operations": [
     "output start/end timestamps or any final interval",
     "drop, create, split, merge, rerank, or rescore candidates",
@@ -106,5 +107,5 @@
     "Stop on Audit adjudication or Heldout access",
     "Stop if model timestamps or non-deterministic decoder logic become necessary"
   ],
-  "protocol_semantic_sha256": "6f4f063819f28ac1c3d5a5ffd723b7eca2789ca8701cf55e9b50ef39301c4ccf"
+  "protocol_semantic_sha256": "a8cdd95fbcd0554a800f5dc8ef6518333ad5b1d4a84ead78792213c3667b0fb4"
 }

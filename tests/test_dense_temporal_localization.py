@@ -90,6 +90,39 @@ def test_parse_dense_response_accepts_full_bins_fence_and_canonical_sort():
 
 
 @pytest.mark.parametrize(
+    "render",
+    [
+        lambda array: json.dumps(array),
+        lambda array: f"```json\n{json.dumps(array)}\n```",
+        lambda array: f"Brief analysis omitted.\n```json\n{json.dumps({'bins': array})}\n```",
+        lambda array: f"Brief analysis omitted.\n```json\n{json.dumps(array)}\n```",
+    ],
+)
+def test_parse_dense_response_is_envelope_tolerant_but_content_strict(render):
+    bins = build_temporal_bins(clip_timing(6.0), bin_size_sec=2.0, max_bin_count=64)
+    array = [
+        {"bin_id": item["bin_id"], "label": "CORE", "confidence": 0.8}
+        for item in bins
+    ]
+    parsed = parse_dense_response(render(array), bins)
+    assert [item["bin_id"] for item in parsed] == ["bin_000", "bin_001", "bin_002"]
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        'prose before {"bins": []}',
+        '```json\n{"bins": []}\n```\n```json\n{"bins": []}\n```',
+        'prose before ```json\n{"bins": []}',
+    ],
+)
+def test_parse_dense_response_rejects_ambiguous_or_unclosed_envelopes(raw):
+    bins = build_temporal_bins(clip_timing(6.0), bin_size_sec=2.0, max_bin_count=64)
+    with pytest.raises(DenseTemporalResponseError):
+        parse_dense_response(raw, bins)
+
+
+@pytest.mark.parametrize(
     "raw_builder",
     [
         lambda bins: labels_for(bins[:-1], ["CORE"] * (len(bins) - 1)),

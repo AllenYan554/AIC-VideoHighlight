@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
 import subprocess
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from pathlib import Path
@@ -25,14 +26,13 @@ from .candidate_selection import (
     validate_role_manifest,
     validate_role_manifest_directory,
 )
-from .response_parser import ResponseParseError, _load_json_object
 from .video_clip import COORDINATE_CONTRACT
 
 
 DTL_VERSION = "aic.dense-temporal-localization/v1"
 RESULT_SCHEMA_VERSION = "aic.dense-temporal-localization-result/v1"
 LABELS = ("CORE", "CONTEXT", "OUTSIDE")
-PROMPT_ID = "dense_temporal_bins_v1"
+PROMPT_ID = "dense_temporal_bins_v1_1"
 DECODER_VERSION = "dtl.component-anchor/v1"
 _CLIP_FIELDS = {
     "coordinate_contract",
@@ -168,14 +168,39 @@ def _validate_clip_timing(
     return _canonical_copy(timing)
 
 
+_FENCED_JSON = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL | re.IGNORECASE)
+
+
+def _load_dense_envelope(raw_response: str) -> dict[str, Any]:
+    """Accept a narrow set of envelopes while leaving bin content strict."""
+    text = raw_response.strip()
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError as whole_error:
+        fenced = list(_FENCED_JSON.finditer(text))
+        if len(fenced) != 1:
+            raise DenseTemporalResponseError(
+                "response must be JSON or contain exactly one complete fenced JSON payload"
+            ) from whole_error
+        outside = text[: fenced[0].start()] + text[fenced[0].end() :]
+        if "```" in outside:
+            raise DenseTemporalResponseError("response contains an ambiguous or unclosed fence")
+        try:
+            payload = json.loads(fenced[0].group(1))
+        except json.JSONDecodeError as fenced_error:
+            raise DenseTemporalResponseError("fenced payload is not strict JSON") from fenced_error
+    if isinstance(payload, list):
+        return {"bins": payload}
+    if not isinstance(payload, dict):
+        raise DenseTemporalResponseError("JSON payload must be an object or bins array")
+    return payload
+
+
 def parse_dense_response(
     raw_response: str, expected_bins: Sequence[Mapping[str, Any]]
 ) -> list[dict[str, Any]]:
     """Strictly parse exactly one label and diagnostic confidence per expected bin."""
-    try:
-        payload = _load_json_object(raw_response)
-    except ResponseParseError as exc:
-        raise DenseTemporalResponseError(str(exc)) from exc
+    payload = _load_dense_envelope(raw_response)
     if set(payload) != {"bins"} or not isinstance(payload.get("bins"), list):
         raise DenseTemporalResponseError("top-level schema must contain only bins array")
     expected_ids = [str(item["bin_id"]) for item in expected_bins]
@@ -332,6 +357,7 @@ def build_dense_prompt(
             f'{float(item["local_end_sec"]):.3f}) overlap={str(overlap).lower()}'
         )
     query = highlight_query.strip() or "current frozen highlight candidate"
+    expected_ids = ",".join(str(item["bin_id"]) for item in temporal_bins)
     return (
         f"Task: label fixed bins for the current anchored highlight.\n"
         f"Highlight query: {query}\n"
@@ -342,6 +368,9 @@ def build_dense_prompt(
         "choose CORE or CONTEXT, never aggressive OUTSIDE.\n"
         "The candidate is the anchor. Do not find another highlight. Do not drop/create candidates, change score, "
         "use references/metrics/human labels, or search beyond this local window. Do not output timestamps.\n"
+        "OUTPUT CONTRACT: ONLY return one JSON object with top-level key bins. DO NOT return a bare JSON array. "
+        "DO NOT add prose, reasoning, explanation, or Markdown commentary. DO NOT omit any bin or stop early. "
+        f"Return all {len(temporal_bins)} bins in one response. Required IDs exactly once: {expected_ids}.\n"
         "Label every bin exactly once. JSON only: {\"bins\":[{\"bin_id\":\"bin_000\",\"label\":\"CORE\",\"confidence\":0.8}]}\n"
         + "\n".join(rows)
     )
