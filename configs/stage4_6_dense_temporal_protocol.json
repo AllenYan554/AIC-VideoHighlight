@@ -1,6 +1,6 @@
 {
   "protocol_schema_version": "aic.stage4-dense-temporal-protocol/v1",
-  "protocol_status": "DRAFT_FOR_INDEPENDENT_REVIEW",
+  "protocol_status": "PREREGISTERED_BEFORE_FORMAL",
   "stage": "4.6",
   "stage_title": "Dense Temporal Localization Baseline",
   "source_cache_global_hash": "4b515a6d6fb47073413c686214c3fa5f97293655a3824241eb3305b9e7753246",
@@ -11,9 +11,9 @@
     "audit_diagnostic": "98fd987b7b56bdc18dd58a0c809e77adb28b93e322fd08a5246c04e115e1780c"
   },
   "data_roles": {
-    "dev_tune": "Development smoke and later formal development evaluation only",
-    "hard_stress": "Locked during development; frozen-method stress evaluation only",
-    "audit_diagnostic": "Membership may be used for identity checks; adjudication remains locked until a future authorized post-Hard phase",
+    "dev_tune": "Formal development evaluation (Dev-Tune166); Recall Guardrail and Promotion Gate evaluated here",
+    "hard_stress": "HISTORICAL REGRESSION / STRESS SET (previously observed in Stages 4.3-4.5); NOT a blind validation or unseen generalization set; only executed after Dev Promotion PASS",
+    "audit_diagnostic": "POST-HOC / NON-IID diagnostic; adjudication only after Dev Promotion PASS and Hard completion; never changes method, gates, parameters, or conclusion rules",
     "heldout": "ABSOLUTELY_LOCKED"
   },
   "localizers": {
@@ -52,12 +52,22 @@
   "clip_extraction": "Reuse video_clip.extract_video_clip frame-accurate decode/re-encode with actual_source_origin_sec provenance and OpenCV fallback; stream copy forbidden",
   "bin_policy": {
     "interval": "[0, clip_duration_sec) partitioned at immutable 2-second local edges; final bin may be shorter",
-    "fields": ["bin_id", "local_start_sec", "local_end_sec", "source_start_sec", "source_end_sec"],
+    "fields": [
+      "bin_id",
+      "local_start_sec",
+      "local_end_sec",
+      "source_start_sec",
+      "source_end_sec"
+    ],
     "precision_statement": "DTL-1 v1 does not predict sub-bin boundaries; output edges are real bin edges except the final clip end",
     "overflow": "Fail closed above 64 bins"
   },
   "label_schema": {
-    "labels": ["CORE", "CONTEXT", "OUTSIDE"],
+    "labels": [
+      "CORE",
+      "CONTEXT",
+      "OUTSIDE"
+    ],
     "recall_policy": "Prefer CONTEXT over OUTSIDE when uncertain; prefer CORE or CONTEXT over aggressive OUTSIDE",
     "confidence_policy": "Finite [0,1] diagnostic only; decoder uses no confidence threshold"
   },
@@ -72,7 +82,12 @@
       "Use selected first source_start_sec and last source_end_sec as the refined interval"
     ],
     "parent_anchor_rule": "Selected component must contain CORE and have overlap_duration_sec > 0 with the original candidate; no tunable parent-tIoU threshold",
-    "forbidden_selection_inputs": ["confidence", "reference", "metric", "human label"]
+    "forbidden_selection_inputs": [
+      "confidence",
+      "reference",
+      "metric",
+      "human label"
+    ]
   },
   "fallback_taxonomy": [
     "dtl1.fallback_no_core",
@@ -91,21 +106,113 @@
   ],
   "replay_policy": "Only refined start/end come from localization; candidate ID, score, reason, source, and source_chunk are re-projected from the frozen cache",
   "evaluation_plan": {
-    "metrics_supported": ["precision", "recall", "f1", "temporal_iou", "coverage", "over_prediction_seconds", "missed_reference_fraction", "recall_tails"],
-    "promotion_gate": null,
-    "note": "No formal promotion gate is frozen in this development draft; user decides after Development Smoke"
+    "metrics_supported": [
+      "precision",
+      "recall",
+      "f1",
+      "temporal_iou",
+      "coverage",
+      "over_prediction_seconds",
+      "missed_reference_fraction",
+      "recall_tails"
+    ],
+    "promotion_gate": "frozen under formal_gates.dev_promotion_gate",
+    "note": "Gates are machine-evaluated AND-combinations at full float precision; paired per-video bootstrap is descriptive only and never participates in promotion"
+  },
+  "formal_gates": {
+    "dev_recall_guardrail": {
+      "min_mean_recall": 0.94,
+      "min_delta_mean_recall": -0.005,
+      "max_delta_missed_reference_fraction": 0.005,
+      "max_delta_empty_prediction_count": 0,
+      "max_delta_recall_eq_0_count": 0,
+      "max_delta_recall_lt_0_5_count": 1,
+      "max_delta_recall_lt_0_8_count": 2
+    },
+    "dev_promotion_gate": {
+      "min_delta_mean_temporal_iou": 0.02,
+      "min_delta_mean_f1": 0.01,
+      "min_delta_mean_precision": 0.0
+    },
+    "hard_regression_gate": {
+      "min_delta_mean_recall": -0.01,
+      "max_delta_missed_reference_fraction": 0.01,
+      "max_delta_empty_prediction_count": 0,
+      "max_delta_recall_eq_0_count": 0,
+      "max_delta_recall_lt_0_5_count": 1,
+      "max_delta_recall_lt_0_8_count": 3,
+      "min_delta_mean_precision": 0.0,
+      "min_delta_mean_f1": 0.0,
+      "min_delta_mean_temporal_iou": 0.0
+    }
+  },
+  "formal_phases": {
+    "phase_order": [
+      "preflight",
+      "dev_dtl0",
+      "dev_dtl1",
+      "dev_gates_and_bootstrap",
+      "method_freeze_only_if_dev_promotion_pass",
+      "hard_dtl0",
+      "hard_dtl1",
+      "hard_regression_gate_and_bootstrap",
+      "audit_posthoc_only_after_hard_completion"
+    ],
+    "dev_formal_decision": {
+      "recall_guardrail_fail": "NEGATIVE_RESULT_RECALL_GUARDRAIL; STOP FORMAL; do not run Hard DTL or Audit DTL",
+      "recall_pass_promotion_fail": "NEGATIVE_RESULT_NO_MEANINGFUL_GAIN; STOP FORMAL; do not run Hard DTL or Audit DTL",
+      "recall_pass_promotion_pass": "freeze overall method, then proceed to Hard229"
+    },
+    "hard_positioning": "HISTORICAL REGRESSION / STRESS SET; Hard never rescues a Dev FAIL and is not a second promotion set; Hard must not repeat the Dev +0.02 tIoU / +0.01 F1 promotion requirements",
+    "audit_positioning": "POST-HOC / NON-IID / NOT FOR TUNING; executed only after Dev Promotion PASS and Hard completion; S1-S5 analysis is descriptive and can never change method, gates, parameters, or conclusion rules"
+  },
+  "formal_outcomes": {
+    "dev_recall_guardrail_fail": "NEGATIVE_RESULT_RECALL_GUARDRAIL",
+    "dev_recall_pass_promotion_fail": "NEGATIVE_RESULT_NO_MEANINGFUL_GAIN",
+    "dev_promotion_pass_hard_regression_fail": "DEV_POSITIVE_HARD_REGRESSION",
+    "dev_promotion_pass_hard_regression_pass": "FORMAL_POSITIVE_SIGNAL"
+  },
+  "formal_isolation": {
+    "hard_results_observed_before_method_freeze": false,
+    "audit_adjudication_accessed_before_hard_completion": false,
+    "heldout_accessed": false,
+    "heldout_records_accessed": 0,
+    "qwen_retry_allowed": false,
+    "bootstrap": {
+      "method": "paired per-video percentile, descriptive only, no IID claim",
+      "resamples": 10000,
+      "seed": 20260906
+    }
   },
   "development_policy": {
-    "current_status": "DEVELOPMENT / PRE-SMOKE",
-    "next_step": "Development Smoke after explicit user authorization",
-    "real_qwen_smoke_authorized": false,
-    "formal_authorized": false
+    "current_status": "FORMAL PREREGISTERED",
+    "development_smoke_history": [
+      {
+        "round": "initial",
+        "result": "DEVELOPMENT_SMOKE_BLOCKED",
+        "schema_valid": "0/8"
+      },
+      {
+        "round": "retry_1",
+        "result": "DEVELOPMENT_SMOKE_BLOCKED",
+        "schema_valid": "7/8"
+      },
+      {
+        "round": "retry_2",
+        "result": "DEVELOPMENT_SMOKE_PASS",
+        "schema_valid": "8/8"
+      }
+    ],
+    "algorithm_frozen_for_formal": true,
+    "code_commit_after_freeze_forbidden": true
   },
   "stopping_rules": [
     "Stop on cache, role, protocol, prompt, clip, bin, candidate, decoder, replay, or count mismatch",
     "Stop if DTL-0 is not exact identity over 431 records and 1277 candidates",
-    "Stop on Audit adjudication or Heldout access",
-    "Stop if model timestamps or non-deterministic decoder logic become necessary"
+    "Stop on Audit adjudication before Hard completion or any Heldout access",
+    "Stop if model timestamps or non-deterministic decoder logic become necessary",
+    "Stop on any preflight failure, any DTL test failure, or any full-suite failure beyond the allowlisted preexisting Stage 4.4 protocol-status failures",
+    "Stop if any code, prompt, parser, decoder, or parameter modification becomes necessary during Formal; such a modification invalidates the run and returns the stage to Development"
   ],
-  "protocol_semantic_sha256": "a8cdd95fbcd0554a800f5dc8ef6518333ad5b1d4a84ead78792213c3667b0fb4"
+  "protocol_semantic_sha256": "a8b25f13442578c16e723e74bf215726b18dc41a7c2781d8496f7d941147ae69"
 }
