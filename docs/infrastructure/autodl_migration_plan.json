@@ -1,0 +1,26 @@
+{
+  "schema_version": "aic.safe-migration-plan/v1",
+  "generated": "2026-09-08",
+  "operations": [
+    {
+      "action": "KEEP",
+      "source": "/root/autodl-tmp/AIC-VideoHighlight-run",
+      "destination": "/root/autodl-tmp/AIC-VideoHighlight-run"
+    },
+    {
+      "action": "ARCHIVE_CANDIDATE",
+      "source": "/root/autodl-tmp/AIC-VideoHighlight",
+      "destination": "/root/autodl-tmp/archive/repos/AIC-VideoHighlight-legacy-962bc77"
+    },
+    {
+      "action": "KEEP",
+      "source": "/root/autodl-tmp/outputs/stage4_2_formal_431",
+      "destination": "/root/autodl-tmp/outputs/stage4_2_formal_431"
+    },
+    {
+      "action": "KEEP",
+      "source": "/root/autodl-tmp/outputs/stage4_3_formal_431",
+      "destination": "/root/autodl-tmp/outputs/stage4_3_formal_431"
+    }
+  ]
+}
