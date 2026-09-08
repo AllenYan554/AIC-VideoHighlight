@@ -1,0 +1,9 @@
+{
+  "experiment_id": "stage5_infra_tiny_fake",
+  "stage": "stage5",
+  "run_type": "INFRASTRUCTURE_ACCEPTANCE",
+  "protocol": "configs/experiments/stage5/stage5_infra_tiny_fake_protocol.json",
+  "total_shards": 3,
+  "input_hashes": {},
+  "model": {"name": "none", "gpu": false}
+}

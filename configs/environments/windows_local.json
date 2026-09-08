@@ -1,0 +1,12 @@
+{
+  "name": "windows_local",
+  "repo": "D:/CDUT/硕士/2026-09 AIC/AIC-VideoHighlight",
+  "datasets": "D:/CDUT/硕士/2026-09 AIC/数据集",
+  "models": "D:/CDUT/硕士/2026-09 AIC/models",
+  "hf_cache": "D:/CDUT/硕士/2026-09 AIC/hf-cache",
+  "outputs": "D:/CDUT/硕士/2026-09 AIC/实验运行/outputs",
+  "logs": "D:/CDUT/硕士/2026-09 AIC/实验运行/logs",
+  "cache": "D:/CDUT/硕士/2026-09 AIC/实验运行/cache",
+  "tmp": "D:/CDUT/硕士/2026-09 AIC/实验运行/tmp",
+  "archive": "D:/CDUT/硕士/2026-09 AIC/实验记录"
+}

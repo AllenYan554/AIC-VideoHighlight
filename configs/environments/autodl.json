@@ -1,0 +1,12 @@
+{
+  "name": "autodl",
+  "repo": "/root/autodl-tmp/AIC-VideoHighlight-run",
+  "datasets": "/root/autodl-tmp/datasets",
+  "models": "/root/autodl-tmp/models",
+  "hf_cache": "/root/autodl-tmp/hf-cache",
+  "outputs": "/root/autodl-tmp/outputs",
+  "logs": "/root/autodl-tmp/logs",
+  "cache": "/root/autodl-tmp/cache",
+  "tmp": "/root/autodl-tmp/tmp",
+  "archive": "/root/autodl-tmp/archive"
+}

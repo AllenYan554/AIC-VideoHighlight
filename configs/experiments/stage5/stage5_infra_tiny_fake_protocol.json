@@ -1,0 +1,7 @@
+{
+  "schema_version": "aic.infrastructure-acceptance-protocol/v1",
+  "status": "TEST_ONLY",
+  "scientific_claims": false,
+  "gpu_calls_allowed": 0,
+  "heldout_access_allowed": 0
+}
