@@ -30,6 +30,16 @@ CONFIGS = {
     "stage5_3_formal": "configs/experiments/stage5/stage5_3_formal.json",
 }
 
+# Launch metadata consumed by scripts/experiments/registry.py (single source of
+# truth for the unified PowerShell launcher). target: WINDOWS | AUTODL.
+# gpu: NONE | OPTIONAL | REQUIRED. Register new experiments here together
+# with RUNNERS/CONFIGS; the PowerShell launcher never needs editing.
+LAUNCH = {
+    "stage5_infra_tiny_fake": {"target": "WINDOWS", "gpu": "NONE"},
+    "stage5_3_smoke": {"target": "WINDOWS", "gpu": "NONE"},
+    "stage5_3_formal": {"target": "AUTODL", "gpu": "NONE"},
+}
+
 
 def default_environment() -> Path:
     if platform.system() == "Windows":
