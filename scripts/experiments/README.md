@@ -31,6 +31,27 @@ Options: `-Resume`, `-ValidateOnly`, `-DryRun`, `-Target WINDOWS|AUTODL`,
 `-List`, `-Help`, `-CloseDelaySec <n>` (default 5), `-Inline` (run in the
 current console instead of a new window).
 
+## Interactive Experiment Execution Policy
+
+All user-visible Smoke, Formal, Ablation and Validation runs started from a
+Windows agent environment MUST use:
+
+```powershell
+.\scripts\experiments\launch_experiment.ps1 <experiment>
+```
+
+The default (without `-Inline`) is the interactive contract: a dedicated child
+PowerShell window, live stdout/stderr, and lifecycle handling based on the
+runner's final process exit code. Agents must not replace it with direct `ssh`
+or `python scripts/.../run.py` commands merely to save a step.
+
+Direct runner execution remains supported only for CI, unit tests,
+`--validate-only`, and explicit developer debugging. Such runs are recorded in
+`run_manifest.json` as `NON_INTERACTIVE_DIRECT_RUN`. PowerShell-launched runs
+record `launch_source`, `launch_mode`, `interactive_child`, and `target` as
+operational provenance. These fields are intentionally outside strict run
+identity and scientific semantic hashes.
+
 ## Dry run
 
 ```powershell
@@ -84,6 +105,11 @@ instances and never modifies `~/.ssh/config`.
   the window prints `EXPERIMENT FAILED`, the exit code and all stderr /
   traceback above, and waits for `Press Enter to close...`. It never
   auto-closes.
+
+Scientific validation failures use this same rule. For example, exit code 2
+after a complete Formal run remains a real non-zero result: it is displayed as
+failed/not passed and the child window stays open. Reaching 100% frames never
+overrides the final exit status.
 
 ## Resume
 

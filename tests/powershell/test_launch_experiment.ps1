@@ -74,10 +74,12 @@ Check "U5b runner args with resume/dry-run/validate-only" (($args2 -join " ") -e
 
 $specResult = Get-LaunchSpec -Context $context -Name "stage5_3_formal"
 $spec = $specResult.Data
-$remoteCmd = Build-RemoteCommand -Spec $spec -RunnerArgs (Build-RunnerArgs -Experiment "stage5_3_formal" -Resume) -RemotePython "python"
-$expectedRemote = "bash -lc 'cd /root/autodl-tmp/AIC-VideoHighlight-run && export PYTHONPATH=src PYTHONUTF8=1 LANG=C.UTF-8 LC_ALL=C.UTF-8 && python scripts/experiments/stage5/run.py --experiment stage5_3_formal --resume'"
+$remoteProvenance = Get-LaunchProvenance -Target "AUTODL" -WindowMode $true
+$remoteCmd = Build-RemoteCommand -Spec $spec -RunnerArgs (Build-RunnerArgs -Experiment "stage5_3_formal" -Resume) -RemotePython "python" -LaunchProvenance $remoteProvenance
+$expectedRemote = "bash -lc 'cd /root/autodl-tmp/AIC-VideoHighlight-run && export PYTHONPATH=src PYTHONUTF8=1 LANG=C.UTF-8 LC_ALL=C.UTF-8 AIC_EXPERIMENT_LAUNCHER=powershell_v1 AIC_EXPERIMENT_LAUNCH_MODE=interactive_child AIC_EXPERIMENT_INTERACTIVE_CHILD=true AIC_EXPERIMENT_LAUNCH_TARGET=AUTODL && python scripts/experiments/stage5/run.py --experiment stage5_3_formal --resume'"
 Check "U6 remote command construction exact" ($remoteCmd -eq $expectedRemote) $remoteCmd
 Check "U6b remote command single-quoted for ssh" ($remoteCmd.StartsWith("bash -lc '") -and $remoteCmd.EndsWith("'"))
+Check "U6c remote command records launcher provenance" ($remoteCmd -match "AIC_EXPERIMENT_LAUNCHER=powershell_v1" -and $remoteCmd -match "AIC_EXPERIMENT_INTERACTIVE_CHILD=true")
 
 $unsafeThrew = $false
 try { Build-RunnerArgs -Experiment 'stage5";rm' | Out-Null } catch { $unsafeThrew = $true }
@@ -142,6 +144,29 @@ Check "B5 dry-run WINDOWS target shows local command" ($dryLocal.ExitCode -eq 0 
 $badTarget = Invoke-LauncherCaptured -ArgString "stage5_3_formal -Target LINUX -Inline" -Tag "bad_target"
 Check "B6 invalid -Target rejected" ($badTarget.ExitCode -eq 2 -and $badTarget.Out -match "Invalid -Target")
 
+$stderrProbeScript = Join-Path $tmp "streaming_stderr_probe.ps1"
+$stderrProbeOut = Join-Path $tmp "streaming_stderr_out.txt"
+$stderrProbeErr = Join-Path $tmp "streaming_stderr_err.txt"
+$escapedLauncher = $launcher.Replace("'", "''")
+$escapedRepoRoot = $repoRoot.Replace("'", "''")
+$stderrProbeSource = @"
+. '$escapedLauncher' -ImportOnly
+`$code = Start-StreamingProcess -FilePath "powershell.exe" ``
+    -ArgumentList @("-NoProfile", "-Command", "[Console]::Error.WriteLine('AIC_STDERR_VISIBLE')") ``
+    -WorkingDirectory '$escapedRepoRoot'
+exit `$code
+"@
+[System.IO.File]::WriteAllText($stderrProbeScript, $stderrProbeSource, [System.Text.UTF8Encoding]::new($true))
+$stderrProcess = Start-Process -FilePath "powershell.exe" `
+    -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ('"{0}"' -f $stderrProbeScript)) `
+    -WorkingDirectory $repoRoot -NoNewWindow -Wait -PassThru `
+    -RedirectStandardOutput $stderrProbeOut -RedirectStandardError $stderrProbeErr
+$stderrCode = $stderrProcess.ExitCode
+$stderrText = if (Test-Path $stderrProbeErr) { Get-Content $stderrProbeErr -Raw -Encoding UTF8 } else { "" }
+Check "B6b native stderr remains visible through streaming process" (
+    $stderrCode -eq 0 -and $stderrText -match "AIC_STDERR_VISIBLE"
+) ("exit=" + $stderrCode + " stderr=" + $stderrText)
+
 # B7: success path auto-closes the dedicated child window (dry-run, 1s delay).
 $successChild = Start-Process -FilePath "powershell.exe" `
     -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ('"{0}"' -f $launcher), "-Child", "-Experiment", "stage5_infra_tiny_fake", "-DryRun", "-CloseDelaySec", "1") `
@@ -166,6 +191,15 @@ try {
 } finally {
     Remove-Item Env:AIC_AUTODL_SSH_HOST -ErrorAction SilentlyContinue
 }
+
+# B8e: scientific validation exit code 2 follows the same retained-window path.
+$exitTwoChild = Start-Process -FilePath "powershell.exe" `
+    -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ('"{0}"' -f $launcher), "-Child", "-Experiment", "stage5_4_formal", "-Target", "INVALID") `
+    -WorkingDirectory $repoRoot -PassThru
+Start-Sleep -Seconds 3
+$exitTwoStillOpen = -not $exitTwoChild.HasExited
+Check "B8e exit code 2 child window stays open" $exitTwoStillOpen ("hasExited=" + $exitTwoChild.HasExited)
+if ($exitTwoStillOpen) { & taskkill /PID $exitTwoChild.Id /T /F | Out-Null }
 
 # B8c: the same failure inline captures the FAILED banner and exit code 3.
 $env:AIC_AUTODL_SSH_HOST = "aic_invalid_host_for_launcher_test"
@@ -229,6 +263,12 @@ Check "B10e resume flag forwarded to runner" ($real.Out -match "--resume")
 $manifestRaw = ""
 if (Test-Path $manifestPath) { $manifestRaw = Get-Content $manifestPath -Raw -Encoding UTF8 }
 Check "B11 run_manifest resume_mode true" ($manifestRaw -match '"resume_mode":\s*true')
+Check "B11b run_manifest records PowerShell inline provenance" (
+    $manifestRaw -match '"launch_source":\s*"powershell_v1"' -and
+    $manifestRaw -match '"launch_mode":\s*"inline"' -and
+    $manifestRaw -match '"interactive_child":\s*false' -and
+    $manifestRaw -match '"target":\s*"WINDOWS"'
+)
 
 Write-Host ""
 if ($script:Failures -eq 0) {

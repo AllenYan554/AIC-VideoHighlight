@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import platform
 import subprocess
 import sys
@@ -43,6 +44,21 @@ def _package_versions() -> dict[str, str | None]:
         except metadata.PackageNotFoundError:
             versions[distribution] = None
     return versions
+
+
+def _launch_provenance() -> dict[str, Any]:
+    """Return operational launch metadata, deliberately outside run identity."""
+    raw_interactive = os.environ.get("AIC_EXPERIMENT_INTERACTIVE_CHILD")
+    return {
+        "launch_source": os.environ.get(
+            "AIC_EXPERIMENT_LAUNCHER", "NON_INTERACTIVE_DIRECT_RUN"
+        ),
+        "launch_mode": os.environ.get("AIC_EXPERIMENT_LAUNCH_MODE", "direct"),
+        "interactive_child": (
+            raw_interactive.lower() == "true" if raw_interactive is not None else False
+        ),
+        "target": os.environ.get("AIC_EXPERIMENT_LAUNCH_TARGET", "UNKNOWN"),
+    }
 
 
 @dataclass
@@ -88,6 +104,7 @@ class RunContext:
     def start(self, *, resume: bool = False) -> dict[str, Any]:
         self.paths.create()
         identity = self.identity()
+        launch_provenance = _launch_provenance()
         if self.manifest_path.exists():
             previous = __import__("json").loads(self.manifest_path.read_text(encoding="utf-8"))
             for key, value in identity.items():
@@ -97,6 +114,7 @@ class RunContext:
                 raise FileExistsError("run already exists; pass --resume after verifying identity")
             manifest = previous
             manifest["resume_mode"] = True
+            manifest["resume_launch_provenance"] = launch_provenance
         else:
             manifest = {
                 "schema_version": "aic.experiment-run-manifest/v1",
@@ -108,6 +126,7 @@ class RunContext:
                 "tmp_root": str(self.paths.tmp.resolve()),
                 "cache_root": str(self.paths.cache.resolve()),
                 "resume_mode": resume,
+                "launch_provenance": launch_provenance,
                 "machine_environment": {
                     "platform": platform.platform(),
                     "python": sys.version.split()[0],

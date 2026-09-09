@@ -51,10 +51,34 @@ def test_manifest_resume_and_hash_mismatch(tmp_path):
     first = context(tmp_path)
     manifest = first.start()
     assert manifest["schema_version"] == "aic.experiment-run-manifest/v1"
+    assert manifest["launch_provenance"] == {
+        "launch_source": "NON_INTERACTIVE_DIRECT_RUN",
+        "launch_mode": "direct",
+        "interactive_child": False,
+        "target": "UNKNOWN",
+    }
+    assert "launch_provenance" not in first.identity()
     assert json.loads(first.status_path.read_text())["status"] == "RUNNING"
     assert context(tmp_path).start(resume=True)["resume_mode"] is True
     with pytest.raises(RunIdentityMismatch, match="config_sha256"):
         context(tmp_path, '{"changed": true}').start(resume=True)
+
+
+def test_powershell_launch_provenance_is_operational_not_identity(tmp_path, monkeypatch):
+    monkeypatch.setenv("AIC_EXPERIMENT_LAUNCHER", "powershell_v1")
+    monkeypatch.setenv("AIC_EXPERIMENT_LAUNCH_MODE", "interactive_child")
+    monkeypatch.setenv("AIC_EXPERIMENT_INTERACTIVE_CHILD", "true")
+    monkeypatch.setenv("AIC_EXPERIMENT_LAUNCH_TARGET", "AUTODL")
+    run = context(tmp_path)
+    identity = run.identity()
+    manifest = run.start()
+    assert "launch_provenance" not in identity
+    assert manifest["launch_provenance"] == {
+        "launch_source": "powershell_v1",
+        "launch_mode": "interactive_child",
+        "interactive_child": True,
+        "target": "AUTODL",
+    }
 
 
 def test_protocol_hash_mismatch(tmp_path):

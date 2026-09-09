@@ -133,8 +133,23 @@ function Build-RunnerArgs {
     return $flags
 }
 
+function Get-LaunchProvenance {
+    param([string] $Target, [bool] $WindowMode)
+    return @{
+        Launcher = "powershell_v1"
+        Mode = if ($WindowMode) { "interactive_child" } else { "inline" }
+        InteractiveChild = if ($WindowMode) { "true" } else { "false" }
+        Target = $Target
+    }
+}
+
 function Build-RemoteCommand {
-    param([psobject] $Spec, [string[]] $RunnerArgs, [string] $RemotePython)
+    param(
+        [psobject] $Spec,
+        [string[]] $RunnerArgs,
+        [string] $RemotePython,
+        [hashtable] $LaunchProvenance
+    )
     if (-not $Spec.remote_repo) {
         throw "launch spec has no remote_repo (configs/environments/autodl.json missing 'repo')."
     }
@@ -142,15 +157,20 @@ function Build-RemoteCommand {
     Assert-SafeToken -Token $Spec.stage_launcher -Kind "stage launcher path"
     Assert-SafeToken -Token $RemotePython -Kind "remote python"
     foreach ($arg in $RunnerArgs) { Assert-SafeToken -Token $arg -Kind "runner argument" }
-    $inner = "cd {0} && export PYTHONPATH=src PYTHONUTF8=1 LANG=C.UTF-8 LC_ALL=C.UTF-8 && {1} {2} {3}" -f `
-        $Spec.remote_repo, $RemotePython, $Spec.stage_launcher, ($RunnerArgs -join " ")
+    foreach ($value in $LaunchProvenance.Values) { Assert-SafeToken -Token $value -Kind "launch provenance" }
+    $inner = ("cd {0} && export PYTHONPATH=src PYTHONUTF8=1 LANG=C.UTF-8 LC_ALL=C.UTF-8 " +
+        "AIC_EXPERIMENT_LAUNCHER={1} AIC_EXPERIMENT_LAUNCH_MODE={2} " +
+        "AIC_EXPERIMENT_INTERACTIVE_CHILD={3} AIC_EXPERIMENT_LAUNCH_TARGET={4} && {5} {6} {7}") -f `
+        $Spec.remote_repo, $LaunchProvenance.Launcher, $LaunchProvenance.Mode, `
+        $LaunchProvenance.InteractiveChild, $LaunchProvenance.Target, `
+        $RemotePython, $Spec.stage_launcher, ($RunnerArgs -join " ")
     return "bash -lc '$inner'"
 }
 
 function Show-LaunchHeader {
     param(
         [psobject] $Spec, [string] $SshHost, [string] $TargetOverride,
-        [string] $RemotePython, [string] $ResolvedCommand
+        [string] $RemotePython, [string] $ResolvedCommand, [hashtable] $LaunchProvenance
     )
     $target = $Spec.target
     if ($TargetOverride) { $target = "$target (override: $TargetOverride)" }
@@ -167,6 +187,8 @@ function Show-LaunchHeader {
     }
     Write-Host (" Runner     : {0}" -f $Spec.stage_launcher)
     Write-Host (" Config     : {0}" -f $Spec.config)
+    Write-Host (" Launch     : {0} / {1} / interactive_child={2}" -f `
+        $LaunchProvenance.Launcher, $LaunchProvenance.Mode, $LaunchProvenance.InteractiveChild)
     Write-Host (" Command    : {0}" -f $ResolvedCommand)
     Write-Host "=================================================================="
 }
@@ -309,13 +331,15 @@ function Invoke-ExperimentRun {
     $spec = $specResult.Data
     $target = $Spec.target
     if ($TargetOverride) { $target = $TargetOverride.ToUpper() }
+    $launchProvenance = Get-LaunchProvenance -Target $target -WindowMode $WindowMode
 
     # Resolve the concrete command without executing it.
     $remotePython = if ($env:AIC_AUTODL_PYTHON) { $env:AIC_AUTODL_PYTHON } else { "python" }
     try {
         $runnerArgs = Build-RunnerArgs -Experiment $Spec.experiment -Resume:$Resume -DryRun:$DryRun -ValidateOnly:$ValidateOnly
         if ($target -eq "AUTODL") {
-            $resolvedCommand = "ssh <host> " + (Build-RemoteCommand -Spec $Spec -RunnerArgs $runnerArgs -RemotePython $remotePython)
+            $resolvedCommand = "ssh <host> " + (Build-RemoteCommand -Spec $Spec -RunnerArgs $runnerArgs `
+                -RemotePython $remotePython -LaunchProvenance $launchProvenance)
         } else {
             $resolvedCommand = "& {0} {1} {2}" -f $Context.PythonPath, $Spec.stage_launcher, ($runnerArgs -join " ")
         }
@@ -333,7 +357,7 @@ function Invoke-ExperimentRun {
             $sshDisplay = "{0}   (candidate; not verified in dry-run)" -f ($candidates -join ", ")
         }
         Show-LaunchHeader -Spec $Spec -SshHost $sshDisplay -TargetOverride $TargetOverride `
-            -RemotePython $remotePython -ResolvedCommand $resolvedCommand
+            -RemotePython $remotePython -ResolvedCommand $resolvedCommand -LaunchProvenance $launchProvenance
         Write-Host " DRY RUN: launch spec resolved; the experiment was NOT executed."
         Write-SuccessBanner -ExperimentName $Spec.experiment -CloseDelaySec $Context.CloseDelaySec -WindowMode $WindowMode
         return 0
@@ -360,11 +384,12 @@ function Invoke-ExperimentRun {
     }
 
     Show-LaunchHeader -Spec $Spec -SshHost $sshHost -TargetOverride $TargetOverride `
-        -RemotePython $remotePython -ResolvedCommand $resolvedCommand
+        -RemotePython $remotePython -ResolvedCommand $resolvedCommand -LaunchProvenance $launchProvenance
 
     $exitCode = 0
     if ($target -eq "AUTODL") {
-        $remoteCommand = Build-RemoteCommand -Spec $Spec -RunnerArgs $runnerArgs -RemotePython $remotePython
+        $remoteCommand = Build-RemoteCommand -Spec $Spec -RunnerArgs $runnerArgs `
+            -RemotePython $remotePython -LaunchProvenance $launchProvenance
         Write-Host "[launcher] streaming remote output (Ctrl+C interrupts; resume with -Resume) ..."
         $exitCode = Start-StreamingProcess -FilePath "ssh" `
             -ArgumentList @("-o", "ConnectTimeout=15", $sshHost, $remoteCommand) `
@@ -374,6 +399,10 @@ function Invoke-ExperimentRun {
         $env:PYTHONPATH = Join-Path $Context.RepoRoot "src"
         $env:PYTHONUTF8 = "1"
         $env:PYTHONIOENCODING = "utf-8"
+        $env:AIC_EXPERIMENT_LAUNCHER = $launchProvenance.Launcher
+        $env:AIC_EXPERIMENT_LAUNCH_MODE = $launchProvenance.Mode
+        $env:AIC_EXPERIMENT_INTERACTIVE_CHILD = $launchProvenance.InteractiveChild
+        $env:AIC_EXPERIMENT_LAUNCH_TARGET = $launchProvenance.Target
         $launcherPath = Join-Path $Context.RepoRoot ($Spec.stage_launcher -replace "/", "\")
         $exitCode = Start-StreamingProcess -FilePath $Context.PythonPath `
             -ArgumentList (@($launcherPath) + $runnerArgs) `
