@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 
 from aic_video_highlight.experiment_runtime.artifacts import build_artifact_manifest
-from aic_video_highlight.experiment_runtime.hashing import canonical_sha256, file_sha256
+from aic_video_highlight.experiment_runtime.hashing import canonical_sha256
 from aic_video_highlight.experiment_runtime.io import atomic_write_json
 from aic_video_highlight.experiment_runtime.paths import EnvironmentPaths
 from aic_video_highlight.experiment_runtime.progress import ProgressReporter
@@ -137,14 +137,14 @@ def load_frozen_manifest(config: dict, bindings: list[InputBinding]) -> dict:
     binding = next(b for b in bindings if b.name == "stage5_4_smoke_manifest")
     if not binding.path.is_file():
         raise FrozenInputError(f"frozen manifest missing: {binding.path}")
-    actual_sha = file_sha256(binding.path)
-    if actual_sha != expected_sha:
-        raise FrozenInputError(
-            f"frozen manifest sha mismatch: expected {expected_sha}, got {actual_sha}"
-        )
     manifest = json.loads(binding.path.read_text(encoding="utf-8"))
     if manifest.get("manifest_sha256") != expected_sha:
         raise FrozenInputError("frozen manifest internal sha mismatch")
+    content_sha = canonical_sha256({k: v for k, v in manifest.items() if k != "manifest_sha256"})
+    if content_sha != expected_sha:
+        raise FrozenInputError(
+            f"frozen manifest sha mismatch: expected {expected_sha}, got canonical content {content_sha}"
+        )
     return manifest
 
 
