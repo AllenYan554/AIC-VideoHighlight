@@ -2,9 +2,9 @@
   "experiment_id": "stage5_4_formal",
   "stage": "stage5",
   "run_type": "FORMAL_TEMPORAL_COMPOSITION",
-  "status_note": "DRAFT preflight configuration; execution is prohibited until the bound protocol status is PREREGISTERED_BEFORE_FORMAL",
+  "status_note": "PREREGISTERED_BEFORE_FORMAL; registered for a future explicitly authorized executor only; this preparation round must not run Formal",
   "protocol": "configs/experiments/stage5/stage5_4_formal_protocol.json",
-  "protocol_sha256": null,
+  "protocol_sha256": "990afcfe697d82bf89573d08b81217a7b9c91fc4d3b60d8a4d63081e32581e51",
   "output_directory": "outputs/stage5/stage5_4_formal/",
   "temporal_smoothing": {
     "method": "ema_crop_center_v1",

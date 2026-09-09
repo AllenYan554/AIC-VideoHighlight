@@ -1,11 +1,12 @@
 {
   "protocol_id": "stage5_4_formal",
   "title": "Stage 5.4 Temporal Composition Stabilization — Formal Preregistration (TS-0 vs TS-1)",
-  "status": "DRAFT",
+  "status": "PREREGISTERED_BEFORE_FORMAL",
   "created": "2026-09-09",
   "preregistration": {
     "timing": "All decision gates are selected before Stage 5.4 Formal; no Formal aggregate result exists or may be read during preparation.",
-    "formal_execution_head": null,
+    "engineering_preflight_head": "b1b047655db2d9b3d30111aba9271ae9be6f9a31",
+    "formal_execution_head_policy": "The future run_manifest git_head must equal the final preregistration commit reported with this protocol; any later code change requires STOP and a new preregistration.",
     "post_preregistration_code_changes_required": 0,
     "post_smoke_engineering_diff_audit": "PASS",
     "engineering_recovery_commits": ["af63f43", "ec1732d", "2d0dd6c", "9fb79a3"],
