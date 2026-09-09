@@ -196,7 +196,12 @@ def build_video_records(
             strata_thresholds,
             frozen_boxes,
         )
-        mismatches.extend(crosscheck_manifest_entry(entry, composed))
+        frame_mismatches = crosscheck_manifest_entry(entry, composed)
+        mismatches.extend(frame_mismatches)
+        # TS-0 is the Stage 5.3 FINAL FROZEN CMP-1; its regression evidence is the
+        # per-frame cross-check against the SHA-pinned manifest identity (the
+        # frozen CMP-1 must reproduce it exactly, model-blind).
+        composed["ts0_frozen_regression"] = bool(frame_mismatches)
         composed_records.append(composed)
 
     # observations_from_records consumes the merged record schema; the TS-1 side
@@ -293,7 +298,7 @@ def build_video_records(
                     "fallback": bool(ts0["fallback"]),
                     "subject_visible_fraction": ts0["subject_visible_fraction"],
                     "subject_center_inside": ts0["subject_center_inside"],
-                    "frozen_regression": bool(ts0["frozen_regression"]),
+                    "frozen_regression": bool(composed["ts0_frozen_regression"]),
                 },
                 "ts1": ts1,
                 "geometry_valid": geometry,
