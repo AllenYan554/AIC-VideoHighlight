@@ -160,6 +160,12 @@ def crosscheck_manifest_entry(manifest_entry: dict, composed: dict) -> list[str]
         mismatches.append(f"{key} ambiguous")
     if manifest_entry["horizontal_center_offset"] != composed["horizontal_center_offset"]:
         mismatches.append(f"{key} offset")
+    if manifest_entry["subject_center_x"] is None or manifest_entry["subject_center_y"] is None:
+        # The model-blind builder stores a null subject center exactly on fallback
+        # frames (no valid sanitized subject); coordinates are not comparable there.
+        if not bool(composed["cmp1"]["fallback"]):
+            mismatches.append(f"{key} subject_center_null_vs_nonfallback")
+        return mismatches
     xyxy = composed["sanitized"]["xyxy"]
     recomputed_center_x = round((float(xyxy[0]) + float(xyxy[2])) / 2.0, 6)
     recomputed_center_y = round((float(xyxy[1]) + float(xyxy[3])) / 2.0, 6)
