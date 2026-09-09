@@ -14,12 +14,13 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import json
+import shutil
 import sys
 import time
 from pathlib import Path
 
 from aic_video_highlight.experiment_runtime.artifacts import build_artifact_manifest
-from aic_video_highlight.experiment_runtime.hashing import canonical_sha256
+from aic_video_highlight.experiment_runtime.hashing import canonical_sha256, file_sha256
 from aic_video_highlight.experiment_runtime.io import atomic_write_json
 from aic_video_highlight.experiment_runtime.paths import EnvironmentPaths
 from aic_video_highlight.experiment_runtime.progress import ProgressReporter
@@ -49,6 +50,7 @@ from aic_video_highlight.spatial_composition.temporal_diagnostics import (
     crop_geometry_valid,
     observations_from_records,
     spatial_guardrail_metrics,
+    summarize_multi_subject_rows,
     temporal_multi_subject_diagnostic,
     temporal_stability_metrics,
 )
@@ -94,8 +96,9 @@ def resolve_bindings(config: dict, environment: EnvironmentPaths) -> list[InputB
                 format=entry.get("format", "json"),
             )
         )
+    manifest_input = config.get("manifest", {}).get("input_name", "stage5_4_smoke_manifest")
     required = {
-        "stage5_4_smoke_manifest",
+        manifest_input,
         "stage5_1_predictions",
         "video_metadata_cache",
         "dev166_index",
@@ -126,15 +129,14 @@ def policy_config_from(config: dict) -> SubjectPolicyConfig:
 
 
 def load_frozen_manifest(config: dict, bindings: list[InputBinding]) -> dict:
-    """Load and byte-verify the frozen smoke manifest (SHA must be pinned)."""
+    """Load and canonical-content-verify the configured frozen frame manifest."""
     expected_sha = config["manifest"].get("expected_manifest_sha256")
     if not expected_sha:
         raise FrozenInputError(
-            "stage5_4 smoke manifest SHA is not pinned: set "
-            "configs/experiments/stage5/stage5_4_smoke.json manifest.expected_manifest_sha256 "
-            "from the stage5_4_manifest build output before running the smoke"
+            f"{config['experiment_id']} frame manifest SHA is not pinned"
         )
-    binding = next(b for b in bindings if b.name == "stage5_4_smoke_manifest")
+    input_name = config.get("manifest", {}).get("input_name", "stage5_4_smoke_manifest")
+    binding = next(b for b in bindings if b.name == input_name)
     if not binding.path.is_file():
         raise FrozenInputError(f"frozen manifest missing: {binding.path}")
     manifest = json.loads(binding.path.read_text(encoding="utf-8"))
@@ -148,18 +150,38 @@ def load_frozen_manifest(config: dict, bindings: list[InputBinding]) -> dict:
     return manifest
 
 
+def load_manifest_binding(spec: dict, bindings: list[InputBinding]) -> dict:
+    """Load a secondary identity manifest with the same canonical SHA contract."""
+    input_name = spec["input_name"]
+    binding = next(b for b in bindings if b.name == input_name)
+    if not binding.path.is_file():
+        raise FrozenInputError(f"frozen manifest missing: {binding.path}")
+    manifest = json.loads(binding.path.read_text(encoding="utf-8"))
+    expected = spec["expected_manifest_sha256"]
+    actual = canonical_sha256({key: value for key, value in manifest.items() if key != "manifest_sha256"})
+    if manifest.get("manifest_sha256") != expected or actual != expected:
+        raise FrozenInputError(
+            f"{input_name} canonical identity mismatch: expected {expected}, got {actual}"
+        )
+    return manifest
+
+
 def crosscheck_manifest_entry(manifest_entry: dict, composed: dict) -> list[str]:
     """The recomputed frozen TS-0 must reproduce the frozen manifest model-blind fields."""
     mismatches: list[str] = []
     key = f"{composed['video_id']}:{composed['frame']}"
     if manifest_entry["stratum"] != composed["stratum"]:
         mismatches.append(f"{key} stratum")
-    if bool(manifest_entry["cmp1_fallback"]) != bool(composed["cmp1"]["fallback"]):
+    if "stage5_2_status" in manifest_entry and manifest_entry["stage5_2_status"] != composed["stage5_2_status"]:
+        mismatches.append(f"{key} stage5_2_status")
+    if "cmp1_fallback" in manifest_entry and bool(manifest_entry["cmp1_fallback"]) != bool(composed["cmp1"]["fallback"]):
         mismatches.append(f"{key} fallback")
-    if bool(manifest_entry["ambiguous"]) != bool(composed["ambiguous"]):
+    if "ambiguous" in manifest_entry and bool(manifest_entry["ambiguous"]) != bool(composed["ambiguous"]):
         mismatches.append(f"{key} ambiguous")
     if manifest_entry["horizontal_center_offset"] != composed["horizontal_center_offset"]:
         mismatches.append(f"{key} offset")
+    if "subject_center_x" not in manifest_entry or "subject_center_y" not in manifest_entry:
+        return mismatches
     if manifest_entry["subject_center_x"] is None or manifest_entry["subject_center_y"] is None:
         # The model-blind builder stores a null subject center exactly on fallback
         # frames (no valid sanitized subject); coordinates are not comparable there.
@@ -184,6 +206,7 @@ def build_video_records(
     alpha: float,
     tw: float,
     th: float,
+    frozen_ts0_by_frame: dict[int, list[int]] | None = None,
 ) -> tuple[list[dict], list[str]]:
     """TS-0 composition + TS-1 smoothing for one manifest video."""
     manifest_by_frame = {int(entry["frame"]): entry for entry in video["frames"]}
@@ -203,6 +226,15 @@ def build_video_records(
             frozen_boxes,
         )
         frame_mismatches = crosscheck_manifest_entry(entry, composed)
+        if frozen_ts0_by_frame is not None:
+            expected_bbox = frozen_ts0_by_frame.get(int(entry["frame"]))
+            actual_bbox = [
+                int(composed["cmp1"]["x"]),
+                int(composed["cmp1"]["y"]),
+                int(composed["cmp1"]["w"]),
+            ]
+            if expected_bbox != actual_bbox:
+                frame_mismatches.append(f"{video['video_id']}:{entry['frame']} ts0_crop")
         mismatches.extend(frame_mismatches)
         # TS-0 is the Stage 5.3 FINAL FROZEN CMP-1; its regression evidence is the
         # per-frame cross-check against the SHA-pinned manifest identity (the
@@ -454,6 +486,302 @@ def summary_payload(values: list[float]) -> dict:
     }
 
 
+def build_analysis_set_identity(
+    manifest: dict, dataset_name: str, definition: str, include_video_ids: set[str]
+) -> dict:
+    """Canonical whole-video analysis-set identity derived from a frozen frame manifest."""
+    videos_by_id = {str(video["video_id"]): video for video in manifest["videos"]}
+    unknown = sorted(include_video_ids - set(videos_by_id))
+    if unknown:
+        raise ValueError(f"analysis set contains unknown video_ids: {unknown}")
+    video_ids = sorted(include_video_ids)
+    frame_keys = [
+        [video_id, int(frame["frame"])]
+        for video_id in video_ids
+        for frame in videos_by_id[video_id]["frames"]
+    ]
+    identity_payload = {
+        "dataset": dataset_name,
+        "definition": definition,
+        "video_ids": video_ids,
+        "frame_keys": frame_keys,
+    }
+    return {
+        "name": dataset_name,
+        "definition": definition,
+        "video_count": len(video_ids),
+        "frame_count": len(frame_keys),
+        "video_ids": video_ids,
+        "identity_sha256": canonical_sha256(identity_payload),
+    }
+
+
+def validate_formal_contract(config: dict, protocol: dict, manifest: dict, smoke_manifest: dict) -> dict:
+    """Validate preregistered Formal identities without executing TS-1 or producing results."""
+    if config.get("experiment_id") != "stage5_4_formal":
+        raise ValueError("formal contract validator requires stage5_4_formal")
+    if protocol.get("protocol_id") != "stage5_4_formal":
+        raise ValueError("formal protocol_id mismatch")
+    if protocol.get("status") not in {"DRAFT", "PREREGISTERED_BEFORE_FORMAL"}:
+        raise ValueError("formal protocol status is invalid")
+    if float(config["temporal_smoothing"]["alpha"]) != 0.5:
+        raise ValueError("Formal alpha must remain exactly 0.5")
+    if config["temporal_smoothing"].get("reset_rules") != [
+        "NEW_VIDEO", "FRAME_GAP_GT_1", "FALLBACK"
+    ]:
+        raise ValueError("Formal reset rules drifted")
+    if manifest.get("manifest_sha256") != config["manifest"]["expected_manifest_sha256"]:
+        raise ValueError("Stage 5.3 Formal manifest identity mismatch")
+    if int(manifest.get("video_count", -1)) != int(config["manifest"]["expected_video_count"]):
+        raise ValueError("Frozen Dev166 video count mismatch")
+    if int(manifest.get("frame_count", -1)) != int(config["manifest"]["expected_frame_count"]):
+        raise ValueError("Frozen Dev166 frame count mismatch")
+    if smoke_manifest.get("manifest_sha256") != config["smoke_binding"]["expected_manifest_sha256"]:
+        raise ValueError("Stage 5.4 Smoke manifest identity mismatch")
+
+    full_spec = config["analysis_sets"]["full_dev166"]
+    confirm_spec = config["analysis_sets"]["confirmatory_dev142"]
+    all_video_ids = {str(video["video_id"]) for video in manifest["videos"]}
+    smoke_video_ids = {str(video["video_id"]) for video in smoke_manifest["videos"]}
+    configured_exclusions = set(confirm_spec["excluded_smoke_video_ids"])
+    if configured_exclusions != smoke_video_ids:
+        raise ValueError("configured Smoke24 video identity does not match frozen smoke manifest")
+    if not smoke_video_ids <= all_video_ids:
+        raise ValueError("Smoke24 is not a subset of Frozen Dev166")
+    confirmatory_ids = all_video_ids - smoke_video_ids
+    full = build_analysis_set_identity(
+        manifest, full_spec["name"], full_spec["definition"], all_video_ids
+    )
+    confirmatory = build_analysis_set_identity(
+        manifest, confirm_spec["name"], confirm_spec["definition"], confirmatory_ids
+    )
+    for spec, actual, label in (
+        (full_spec, full, "Frozen Dev166"),
+        (confirm_spec, confirmatory, "Confirmatory Dev142"),
+    ):
+        for key in ("video_count", "frame_count"):
+            if actual[key] != int(spec[f"expected_{key}"]):
+                raise ValueError(f"{label} {key} mismatch")
+        if actual["identity_sha256"] != spec["identity_sha256"]:
+            raise ValueError(f"{label} identity SHA mismatch")
+    if set(confirmatory["video_ids"]) & smoke_video_ids:
+        raise ValueError("Confirmatory Dev142 overlaps Smoke24")
+    if int(config["heldout_lock"].get("allowed_access", -1)) != 0:
+        raise ValueError("Heldout access must be zero")
+    forbidden_input_tokens = ("heldout", "hard", "official_test", "official-test")
+    for name, entry in config["inputs"].items():
+        candidate = f"{name} {entry.get('path', '')}".lower()
+        if any(token in candidate for token in forbidden_input_tokens):
+            raise ValueError(f"forbidden dataset input configured: {name}")
+    return {
+        "validation": "PASS",
+        "protocol_status": protocol["status"],
+        "formal_manifest_sha256": manifest["manifest_sha256"],
+        "smoke_manifest_sha256": smoke_manifest["manifest_sha256"],
+        "full_dev166": full,
+        "confirmatory_dev142": confirmatory,
+        "confirmatory_smoke_overlap": 0,
+        "heldout_access": 0,
+    }
+
+
+def _relative_reduction(control: float, treatment: float) -> float | None:
+    if control == 0.0:
+        return None
+    return (control - treatment) / control
+
+
+def _gate(value: float | None, threshold: float, *, minimum: bool = True) -> dict:
+    passed = value is not None and (value >= threshold if minimum else value <= threshold)
+    return {"value": None if value is None else round(value, 6), "threshold": threshold, "pass": passed}
+
+
+def _evaluate_one_analysis_set(metrics: dict, gate_config: dict) -> dict:
+    temporal = metrics["temporal_stability_pooled"]
+    spatial = metrics["spatial_guardrails"]
+    benefit = gate_config["temporal_benefit"]
+    guardrail = gate_config["spatial_regression_guardrails"]
+    displacement_reduction = _relative_reduction(
+        float(temporal["ts0_displacement"]["mean"]),
+        float(temporal["ts1_displacement"]["mean"]),
+    )
+    acceleration_reduction = _relative_reduction(
+        float(temporal["ts0_acceleration"]["mean"]),
+        float(temporal["ts1_acceleration"]["mean"]),
+    )
+    p95_control = float(temporal["ts0_displacement"]["p95"])
+    p95_treatment = float(temporal["ts1_displacement"]["p95"])
+    p95_regression = (p95_treatment - p95_control) / p95_control if p95_control else (
+        0.0 if p95_treatment == 0.0 else float("inf")
+    )
+    jump0 = temporal["ts0_displacement"]["large_jump_ratios_descriptive_only"]
+    jump1 = temporal["ts1_displacement"]["large_jump_ratios_descriptive_only"]
+    jump_nonincrease = {
+        f">{float(threshold):.2f}": {
+            "ts0": jump0[f">{float(threshold):.2f}"],
+            "ts1": jump1[f">{float(threshold):.2f}"],
+            "pass": jump1[f">{float(threshold):.2f}"] <= jump0[f">{float(threshold):.2f}"],
+        }
+        for threshold in benefit["large_jump_nonincrease_thresholds"]
+    }
+    gt020_reduction = _relative_reduction(float(jump0[">0.20"]), float(jump1[">0.20"]))
+    gt020_pass = (
+        float(jump1[">0.20"]) == 0.0
+        if float(jump0[">0.20"]) == 0.0
+        else gt020_reduction >= float(benefit["minimum_gt_0_20_relative_reduction"])
+    )
+    temporal_results = {
+        "mean_displacement_relative_reduction": _gate(
+            displacement_reduction, float(benefit["minimum_mean_displacement_relative_reduction"])
+        ),
+        "mean_acceleration_relative_reduction": _gate(
+            acceleration_reduction, float(benefit["minimum_mean_acceleration_relative_reduction"])
+        ),
+        "p95_displacement_relative_regression": _gate(
+            p95_regression, float(benefit["maximum_p95_displacement_relative_regression"]), minimum=False
+        ),
+        "large_jump_nonincrease": {
+            "values": jump_nonincrease,
+            "pass": all(item["pass"] for item in jump_nonincrease.values()),
+        },
+        "gt_0_20_relative_reduction": {
+            "value": None if gt020_reduction is None else round(gt020_reduction, 6),
+            "threshold": benefit["minimum_gt_0_20_relative_reduction"],
+            "pass": gt020_pass,
+        },
+    }
+    spatial_results = {
+        "mean_visible_fraction_delta": _gate(
+            float(spatial["ts1"]["mean"]) - float(spatial["ts0"]["mean"]),
+            float(guardrail["minimum_mean_visible_fraction_delta"]),
+        ),
+        "visible_ge_0_90_delta": _gate(
+            float(spatial["ts1"]["thresholds"][">=0.90"])
+            - float(spatial["ts0"]["thresholds"][">=0.90"]),
+            float(guardrail["minimum_visible_ge_0_90_delta"]),
+        ),
+        "subject_center_containment_delta": _gate(
+            float(spatial["ts1"]["subject_center_inside_rate"])
+            - float(spatial["ts0"]["subject_center_inside_rate"]),
+            float(guardrail["minimum_subject_center_containment_delta"]),
+        ),
+        "strong_off_center_mean_visible_delta": _gate(
+            float(spatial["strata"]["strongly_off_center"]["ts1_visible"]["mean"])
+            - float(spatial["strata"]["strongly_off_center"]["ts0_visible"]["mean"]),
+            float(guardrail["minimum_strong_off_center_mean_visible_delta"]),
+        ),
+    }
+    return {
+        "temporal_benefit": temporal_results,
+        "spatial_regression_guardrails": spatial_results,
+        "pass": all(item["pass"] for item in temporal_results.values())
+        and all(item["pass"] for item in spatial_results.values()),
+    }
+
+
+def evaluate_formal_scientific_gates(analysis_metrics: dict, gate_config: dict) -> dict:
+    """Apply the same preregistered gates to Full Dev166 and Confirmatory Dev142."""
+    required = ("full_dev166", "confirmatory_dev142")
+    results = {name: _evaluate_one_analysis_set(analysis_metrics[name], gate_config) for name in required}
+    return {"analysis_sets": results, "all_pass": all(item["pass"] for item in results.values())}
+
+
+def validate_formal_frozen_dependencies(
+    config: dict, bindings: list[InputBinding], inputs, manifest: dict
+) -> dict:
+    """Read-only identity checks for frozen Stage 5.1/5.2/5.3 dependencies."""
+    by_name = {binding.name: binding for binding in bindings}
+    raw_dir = by_name["stage5_2_raw_detector"].path
+    if not raw_dir.is_dir():
+        raise FrozenInputError(f"raw shard dir missing: {raw_dir}")
+    expected_video_ids = {str(video["video_id"]) for video in manifest["videos"]}
+    raw_video_ids = {path.stem for path in raw_dir.glob("*.jsonl")}
+    if raw_video_ids != expected_video_ids:
+        raise FrozenInputError("Stage 5.2 raw shard video identity mismatch vs Frozen Dev166")
+
+    summary = json.loads(by_name["stage5_2_full_dev_summary"].path.read_text(encoding="utf-8"))
+    expected_summary = {
+        "videos": int(manifest["video_count"]),
+        "frames": int(manifest["frame_count"]),
+        "missing": 0,
+        "extra": 0,
+        "duplicates": 0,
+        "model_error_frames": 0,
+    }
+    for key, expected in expected_summary.items():
+        if summary.get(key) != expected:
+            raise FrozenInputError(f"Stage 5.2 frozen summary mismatch: {key}")
+    semantic = summary.get("semantic_hashes", {})
+    if semantic.get("policy_v1_decisions") != config["expected_policy_semantic_sha256"]:
+        raise FrozenInputError("Stage 5.2 policy semantic SHA mismatch in frozen summary")
+    if semantic.get("raw_candidates") != config["expected_raw_semantic_sha256"]:
+        raise FrozenInputError("Stage 5.2 raw semantic SHA mismatch in frozen summary")
+    if inputs.input_hashes.get("stage5_2_policy_artifact") != config["expected_policy_semantic_sha256"]:
+        raise FrozenInputError("loaded Stage 5.2 policy semantic SHA mismatch")
+
+    stage53 = json.loads(by_name["stage5_3_final_freeze"].path.read_text(encoding="utf-8"))
+    stage52 = json.loads(by_name["stage5_2_final_freeze"].path.read_text(encoding="utf-8"))
+    if stage53.get("status") != "FINAL_FROZEN" or stage52.get("status") != "FINAL_FROZEN":
+        raise FrozenInputError("Stage 5.2/5.3 freeze status mismatch")
+    if stage53.get("bindings", {}).get("formal_manifest_semantic_sha256") != manifest["manifest_sha256"]:
+        raise FrozenInputError("Stage 5.3 freeze does not bind the configured Formal manifest")
+    if stage52.get("artifact_verification", {}).get("semantic_sha256", {}).get("raw_candidates") != config[
+        "expected_raw_semantic_sha256"
+    ]:
+        raise FrozenInputError("Stage 5.2 freeze raw semantic identity mismatch")
+    return {
+        "stage5_3_freeze_status": stage53["status"],
+        "stage5_3_formal_manifest_sha256": manifest["manifest_sha256"],
+        "stage5_2_freeze_status": stage52["status"],
+        "stage5_2_policy_semantic_sha256": semantic["policy_v1_decisions"],
+        "stage5_2_raw_semantic_sha256": semantic["raw_candidates"],
+        "stage5_2_raw_shards": len(raw_video_ids),
+        "frozen_frames": summary["frames"],
+    }
+
+
+def load_frozen_ts0_predictions(bindings: list[InputBinding], manifest: dict) -> dict[str, dict[int, list[int]]]:
+    """Load byte-pinned Stage 5.3 CMP-1 crops and verify exact Formal frame identity."""
+    binding = next((item for item in bindings if item.name == "stage5_3_frozen_cmp1"), None)
+    if binding is None:
+        raise FrozenInputError("stage5_3_frozen_cmp1 binding is required for Formal")
+    records = [
+        json.loads(line)
+        for line in binding.path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    by_video: dict[str, dict[int, list[int]]] = {}
+    for record in records:
+        video_id = str(record["video_id"])
+        if video_id in by_video:
+            raise FrozenInputError(f"duplicate Stage 5.3 CMP-1 video: {video_id}")
+        by_video[video_id] = {
+            int(item["frame"]): [int(value) for value in item["bboxes"]]
+            for item in record["predictions"]
+        }
+    expected = {
+        (str(video["video_id"]), int(frame["frame"]))
+        for video in manifest["videos"]
+        for frame in video["frames"]
+    }
+    actual = {(video_id, frame) for video_id, frames in by_video.items() for frame in frames}
+    if expected != actual or len(by_video) != int(manifest["video_count"]):
+        raise FrozenInputError("Stage 5.3 frozen CMP-1 frame identity mismatch")
+    if any(len(bbox) != 3 for frames in by_video.values() for bbox in frames.values()):
+        raise FrozenInputError("Stage 5.3 frozen CMP-1 bbox contract mismatch")
+    return by_video
+
+
+def build_analysis_metrics(records: list[dict]) -> dict:
+    pooled = pooled_distributions(records)
+    return {
+        "videos": len({record["video_id"] for record in records}),
+        "frames": len(records),
+        "temporal_stability_pooled": {key: summary_payload(values) for key, values in pooled.items()},
+        "spatial_guardrails": spatial_guardrail_metrics(records),
+    }
+
+
 def run(args) -> int:
     config = json.loads(args.config.read_text(encoding="utf-8"))
     environment = EnvironmentPaths.from_json(args.environment)
@@ -484,22 +812,59 @@ def run(args) -> int:
     if args.validate_only:
         try:
             manifest = load_frozen_manifest(config, bindings)
-            load_frozen_inputs(
+            inputs = load_frozen_inputs(
                 [b for b in bindings if b.format != "raw_shard_dir"],
                 include_raw=False,
                 policy_semantic_expectation=config.get("expected_policy_semantic_sha256"),
             )
-            result = {
-                "manifest_id": manifest["manifest_id"],
-                "manifest_sha256": manifest["manifest_sha256"],
-                "videos": manifest["video_count"],
-                "frames": manifest["frame_count"],
-                "validation": "PASS",
-            }
-        except FrozenInputError as exc:
+            if config["experiment_id"] == "stage5_4_formal":
+                protocol_path = Path(config["protocol"])
+                protocol = json.loads(protocol_path.read_text(encoding="utf-8"))
+                smoke_manifest = load_manifest_binding(config["smoke_binding"], bindings)
+                contract = validate_formal_contract(config, protocol, manifest, smoke_manifest)
+                frozen = validate_formal_frozen_dependencies(config, bindings, inputs, manifest)
+                frozen_ts0 = load_frozen_ts0_predictions(bindings, manifest)
+                frozen["stage5_3_cmp1_videos"] = len(frozen_ts0)
+                frozen["stage5_3_cmp1_frames"] = sum(len(frames) for frames in frozen_ts0.values())
+                pinned_protocol_sha = config.get("protocol_sha256")
+                actual_protocol_sha = file_sha256(protocol_path)
+                if pinned_protocol_sha is not None and pinned_protocol_sha != actual_protocol_sha:
+                    raise FrozenInputError("formal protocol file SHA does not match config binding")
+                result = {
+                    **contract,
+                    "frozen_inputs": frozen,
+                    "protocol_sha256": actual_protocol_sha,
+                    "execution_ready": protocol["status"] == "PREREGISTERED_BEFORE_FORMAL"
+                    and pinned_protocol_sha == actual_protocol_sha,
+                    "gpu_requirement": "NONE",
+                    "output_directory": str(paths.output),
+                }
+            else:
+                result = {
+                    "manifest_id": manifest["manifest_id"],
+                    "manifest_sha256": manifest["manifest_sha256"],
+                    "videos": manifest["video_count"],
+                    "frames": manifest["frame_count"],
+                    "validation": "PASS",
+                }
+        except (FrozenInputError, ValueError, KeyError, json.JSONDecodeError) as exc:
             result = {"validation": "FAIL", "reason": str(exc)}
         print(json.dumps(result, ensure_ascii=False))
         return 0 if result.get("validation") == "PASS" else 2
+
+    if config["experiment_id"] == "stage5_4_formal":
+        protocol_path = Path(config["protocol"])
+        protocol = json.loads(protocol_path.read_text(encoding="utf-8"))
+        actual_protocol_sha = file_sha256(protocol_path)
+        if protocol.get("status") != "PREREGISTERED_BEFORE_FORMAL" or config.get(
+            "protocol_sha256"
+        ) != actual_protocol_sha:
+            print(
+                "EXPERIMENT FAILED\n\nReason:\nFormal protocol is not SHA-bound as "
+                "PREREGISTERED_BEFORE_FORMAL\n\nResume available:\nNO",
+                file=sys.stderr,
+            )
+            return 2
 
     try:
         context.start(resume=args.resume)
@@ -519,6 +884,22 @@ def run(args) -> int:
             include_raw=False,
             policy_semantic_expectation=config.get("expected_policy_semantic_sha256"),
         )
+        if config["experiment_id"] == "stage5_4_formal":
+            smoke_manifest = load_manifest_binding(config["smoke_binding"], bindings)
+            formal_contract = validate_formal_contract(
+                config,
+                json.loads(Path(config["protocol"]).read_text(encoding="utf-8")),
+                manifest,
+                smoke_manifest,
+            )
+            frozen_dependency_audit = validate_formal_frozen_dependencies(
+                config, bindings, inputs, manifest
+            )
+            frozen_ts0 = load_frozen_ts0_predictions(bindings, manifest)
+        else:
+            formal_contract = None
+            frozen_dependency_audit = None
+            frozen_ts0 = None
         manifest_video_ids = {video["video_id"] for video in manifest["videos"]}
         manifest_frame_keys = {
             (video["video_id"], int(entry["frame"]))
@@ -540,34 +921,54 @@ def run(args) -> int:
         total_frames = int(manifest["frame_count"])
         reporter = ProgressReporter(config["experiment_id"], total_frames, paths.logs)
         frames_done = 0
+        videos_done = 0
+        invalid_total = 0
         all_mismatches: list[str] = []
         for video in manifest["videos"]:
             video_id = video["video_id"]
             if shard_store.is_complete(video_id):
                 frames_done += int(video["frame_count"])
+                videos_done += 1
                 reporter.update(
                     frames_done,
                     current_video=video_id,
                     current_shard=video_id,
-                    display={"frames": f"{frames_done}/{total_frames}", "resumed": "yes"},
+                    errors=len(all_mismatches),
+                    display={
+                        "videos": f"{videos_done}/{manifest['video_count']}",
+                        "frames": f"{frames_done}/{total_frames}",
+                        "current_sequence": video_id,
+                        "invalid": invalid_total,
+                        "resumed": "yes",
+                    },
                 )
                 continue
             video_records, mismatches = build_video_records(
-                video, slim_inputs, target_ratio, strata, alpha, tw, th
+                video,
+                slim_inputs,
+                target_ratio,
+                strata,
+                alpha,
+                tw,
+                th,
+                None if frozen_ts0 is None else frozen_ts0[video_id],
             )
             all_mismatches.extend(mismatches)
             shard_store.write(video_id, video_records)
             frames_done += len(video_records)
+            videos_done += 1
             invalid = sum(1 for record in video_records if not all(record["geometry_valid"].values()))
+            invalid_total += invalid
             reporter.update(
                 frames_done,
                 current_video=video_id,
                 current_shard=video_id,
-                errors=len(mismatches),
+                errors=len(all_mismatches),
                 display={
+                    "videos": f"{videos_done}/{manifest['video_count']}",
                     "frames": f"{frames_done}/{total_frames}",
-                    "sequences": manifest["video_count"],
-                    "invalid": invalid,
+                    "current_sequence": video_id,
+                    "invalid": invalid_total,
                 },
             )
 
@@ -580,7 +981,16 @@ def run(args) -> int:
 
         machine = paths.output / "machine"
         diagnostics_dir = machine / "diagnostics"
+        snapshots_dir = paths.output / "snapshots"
         machine.mkdir(parents=True, exist_ok=True)
+        diagnostics_dir.mkdir(parents=True, exist_ok=True)
+        snapshots_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(args.config, snapshots_dir / "config.json")
+        shutil.copyfile(Path(config["protocol"]), snapshots_dir / "protocol.json")
+        for progress_name in ("progress.json", "progress.jsonl"):
+            source = paths.logs / progress_name
+            if source.is_file():
+                shutil.copyfile(source, paths.output / progress_name)
 
         gate = engineering_gate(manifest, records, all_mismatches)
         temporal_by_video = {
@@ -595,7 +1005,14 @@ def run(args) -> int:
         deterministic_records: list[dict] = []
         for video in manifest["videos"]:
             video_records, _ = build_video_records(
-                video, slim_inputs, target_ratio, strata, alpha, tw, th
+                video,
+                slim_inputs,
+                target_ratio,
+                strata,
+                alpha,
+                tw,
+                th,
+                None if frozen_ts0 is None else frozen_ts0[video["video_id"]],
             )
             deterministic_records.extend(video_records)
         deterministic_records.sort(key=lambda record: (record["video_id"], record["frame"]))
@@ -620,7 +1037,38 @@ def run(args) -> int:
         gates = evaluate_gates(
             gate, deterministic_pass, artifact_modified, multi_subject.get("ambiguous_frames") is not None
         )
+        if config["experiment_id"] == "stage5_4_formal":
+            gates["protocol_config_snapshots_generated"] = all(
+                (snapshots_dir / name).is_file() for name in ("config.json", "protocol.json")
+            )
+            confirmatory_ids = set(formal_contract["confirmatory_dev142"]["video_ids"])
+            confirmatory_records = [
+                record for record in records if record["video_id"] in confirmatory_ids
+            ]
+            analysis_metrics = {
+                "full_dev166": build_analysis_metrics(records),
+                "confirmatory_dev142": build_analysis_metrics(confirmatory_records),
+            }
+            analysis_metrics["full_dev166"]["multi_subject_observation_only"] = {
+                key: value for key, value in multi_subject.items() if key != "rows"
+            }
+            confirmatory_multi_subject = summarize_multi_subject_rows(
+                [row for row in multi_subject["rows"] if row["video_id"] in confirmatory_ids]
+            )
+            analysis_metrics["confirmatory_dev142"]["multi_subject_observation_only"] = {
+                key: value for key, value in confirmatory_multi_subject.items() if key != "rows"
+            }
+            scientific_gates = evaluate_formal_scientific_gates(
+                analysis_metrics, config["decision_gates"]
+            )
+        else:
+            analysis_metrics = None
+            scientific_gates = None
         wall_sec = time.monotonic() - started
+        engineering_pass = all(gates.values())
+        overall_pass = engineering_pass and (
+            scientific_gates is None or scientific_gates["all_pass"]
+        )
 
         atomic_write_json(machine / "summary.json", {
             "schema_version": "aic.machine-summary/v1",
@@ -632,14 +1080,24 @@ def run(args) -> int:
             "ts0": "stage5_3_final_frozen_cmp1",
             "ts1": {**config["temporal_smoothing"]},
             "manifest_coverage": manifest.get("coverage", {}),
+            "analysis_set_identities": None if formal_contract is None else {
+                "full_dev166": formal_contract["full_dev166"],
+                "confirmatory_dev142": formal_contract["confirmatory_dev142"],
+            },
+            "frozen_dependency_audit": frozen_dependency_audit,
         })
-        atomic_write_json(machine / "metrics.json", {
+        metrics_payload = {
             "schema_version": "aic.machine-metrics/v1",
-            "metric_role": "DESCRIPTIVE_ONLY / no promotion gate in Stage 5.4 v1",
+            "metric_role": "PREREGISTERED_FORMAL_GATES"
+            if analysis_metrics is not None
+            else "DESCRIPTIVE_ONLY / no promotion gate in Stage 5.4 smoke",
             "temporal_stability_by_video": temporal_by_video,
             "temporal_stability_pooled": {key: summary_payload(values) for key, values in pooled.items()},
             "spatial_guardrails": guardrails,
-        })
+        }
+        if analysis_metrics is not None:
+            metrics_payload["analysis_sets"] = analysis_metrics
+        atomic_write_json(machine / "metrics.json", metrics_payload)
         atomic_write_json(machine / "runtime.json", {
             "schema_version": "aic.machine-runtime/v1",
             "wall_sec": round(wall_sec, 3),
@@ -650,8 +1108,9 @@ def run(args) -> int:
         })
         atomic_write_json(machine / "validation.json", {
             "schema_version": "aic.machine-validation/v1",
-            "status": "PASS" if all(gates.values()) else "FAIL",
+            "status": "PASS" if overall_pass else "FAIL",
             "gates": gates,
+            "scientific_gates": scientific_gates,
             "engineering_gate": gate,
             "deterministic_replay": deterministic_pass,
             "stage5_2_artifact_modified": artifact_modified,
@@ -665,19 +1124,23 @@ def run(args) -> int:
             machine / "validation.json",
             machine / "runtime.json",
             diagnostics_dir / "multi_subject_diagnostic.json",
+            snapshots_dir / "config.json",
+            snapshots_dir / "protocol.json",
+            paths.output / "progress.json",
+            paths.output / "progress.jsonl",
         ]
         build_artifact_manifest(paths.output, artifact_files, machine / "artifact_manifest.json", created_by=config["experiment_id"])
         render_raw_report(machine, paths.output / "experiment_raw_report.md", config["experiment_id"])
         write_ai_report_inputs(paths.output)
         context.set_status(
-            "COMPLETED" if all(gates.values()) else "VALIDATION_FAILED",
-            validation="PASS" if all(gates.values()) else "FAIL",
+            "COMPLETED" if overall_pass else "VALIDATION_FAILED",
+            validation="PASS" if overall_pass else "FAIL",
         )
 
-        print(f"\n{'=' * 50}\nEXPERIMENT {'COMPLETE' if all(gates.values()) else 'VALIDATION FAILED'}\n{'=' * 50}")
+        print(f"\n{'=' * 50}\nEXPERIMENT {'COMPLETE' if overall_pass else 'VALIDATION FAILED'}\n{'=' * 50}")
         print(f"Gates: {json.dumps(gates, indent=2)}")
         print(f"Raw report:\n{paths.output / 'experiment_raw_report.md'}")
-        return 0 if all(gates.values()) else 2
+        return 0 if overall_pass else 2
     except KeyboardInterrupt:
         if reporter is not None:
             reporter.interrupt()

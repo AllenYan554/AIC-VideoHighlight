@@ -8,8 +8,9 @@ Registered experiments:
 - stage5_4_manifest       : deterministic model-blind Stage 5.4 smoke manifest builder (AutoDL, CPU)
 - stage5_4_smoke          : Stage 5.4 temporal smoothing development smoke, TS-0 vs TS-1
                             (AutoDL no-card, CPU; requires the frozen manifest SHA pinned
-                            in configs/experiments/stage5/stage5_4_smoke.json;
-                            stage5_4_formal is reserved for a future preregistration)
+                            in configs/experiments/stage5/stage5_4_smoke.json)
+- stage5_4_formal         : preregistered Stage 5.4 Formal over Frozen Dev166
+                            plus Confirmatory Dev142 (AutoDL CPU; DEFAULT NOT RUN)
 
 Environment auto-selection: on Windows the default environment is
 configs/environments/windows_local.json, otherwise configs/environments/autodl.json.
@@ -18,6 +19,7 @@ configs/environments/windows_local.json, otherwise configs/environments/autodl.j
 from __future__ import annotations
 
 import argparse
+import os
 import platform
 import subprocess
 import sys
@@ -29,6 +31,7 @@ RUNNERS = {
     "stage5_3_formal": "scripts/experiments/stage5/run_stage5_3_composition.py",
     "stage5_4_manifest": "scripts/experiments/stage5/build_stage5_4_smoke_manifest.py",
     "stage5_4_smoke": "scripts/experiments/stage5/run_stage5_4_temporal.py",
+    "stage5_4_formal": "scripts/experiments/stage5/run_stage5_4_temporal.py",
 }
 
 CONFIGS = {
@@ -37,6 +40,7 @@ CONFIGS = {
     "stage5_3_formal": "configs/experiments/stage5/stage5_3_formal.json",
     "stage5_4_manifest": "configs/experiments/stage5/stage5_4_manifest.json",
     "stage5_4_smoke": "configs/experiments/stage5/stage5_4_smoke.json",
+    "stage5_4_formal": "configs/experiments/stage5/stage5_4_formal.json",
 }
 
 # Launch metadata consumed by scripts/experiments/registry.py (single source of
@@ -49,10 +53,14 @@ LAUNCH = {
     "stage5_3_formal": {"target": "AUTODL", "gpu": "NONE"},
     "stage5_4_manifest": {"target": "AUTODL", "gpu": "NONE"},
     "stage5_4_smoke": {"target": "AUTODL", "gpu": "NONE"},
+    "stage5_4_formal": {"target": "AUTODL", "gpu": "NONE"},
 }
 
 
 def default_environment() -> Path:
+    override = os.environ.get("AIC_EXPERIMENT_ENVIRONMENT")
+    if override:
+        return Path(override)
     if platform.system() == "Windows":
         return Path("configs/environments/windows_local.json")
     return Path("configs/environments/autodl.json")

@@ -49,13 +49,14 @@ def test_list_matches_stage_registry(registry, stage5):
 
 
 def test_describe_autodl_spec(registry):
-    spec = registry.describe("stage5_3_formal")
+    spec = registry.describe("stage5_4_formal")
     assert spec["schema_version"] == "aic.experiment-launch-spec/v1"
-    assert spec["experiment"] == "stage5_3_formal"
+    assert spec["experiment"] == "stage5_4_formal"
     assert spec["target"] == "AUTODL"
     assert spec["gpu"] == "NONE"
     assert spec["stage_launcher"] == "scripts/experiments/stage5/run.py"
-    assert spec["canonical_args"] == ["--experiment", "stage5_3_formal"]
+    assert spec["canonical_args"] == ["--experiment", "stage5_4_formal"]
+    assert spec["config"] == "configs/experiments/stage5/stage5_4_formal.json"
     assert spec["environment_config"] == "configs/environments/autodl.json"
     assert spec["remote_repo"] == "/root/autodl-tmp/AIC-VideoHighlight-run"
     assert spec["supports"] == {"resume": True, "dry_run": True, "validate_only": True}

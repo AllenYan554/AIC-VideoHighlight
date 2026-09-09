@@ -102,12 +102,13 @@ try {
 }
 
 $listData = (Get-RegistryList -Context $context).Data
-Check "U11 registry list has three experiments" ($listData.experiments.Count -eq 3)
+Check "U11 registry list has six experiments" ($listData.experiments.Count -eq 6)
 $gpuByExperiment = @{}
 foreach ($entry in $listData.experiments) { $gpuByExperiment[$entry.experiment] = $entry }
 Check "U11b stage5_3_formal targets AUTODL" ($gpuByExperiment["stage5_3_formal"].target -eq "AUTODL")
 Check "U11c smoke/tiny_fake target WINDOWS" ($gpuByExperiment["stage5_3_smoke"].target -eq "WINDOWS" -and $gpuByExperiment["stage5_infra_tiny_fake"].target -eq "WINDOWS")
 Check "U11d launch spec exposes gpu requirement" ((Get-LaunchSpec -Context $context -Name "stage5_3_formal").Data.gpu -eq "NONE")
+Check "U11e stage5_4_formal targets AUTODL with no GPU" ($gpuByExperiment["stage5_4_formal"].target -eq "AUTODL" -and $gpuByExperiment["stage5_4_formal"].gpu -eq "NONE")
 
 # ---------------------------------------------------------------------------
 # Behavioral tests (real child processes).
@@ -119,6 +120,7 @@ Check "B1b -Help mentions usage" ($helpResult.Out -match "Usage:")
 $listResult = Invoke-LauncherCaptured -ArgString "-List" -Tag "list"
 Check "B2 -List exits 0" ($listResult.ExitCode -eq 0) ("exit=" + $listResult.ExitCode)
 Check "B2b -List shows all registered experiments" ($listResult.Out -match "stage5_3_formal" -and $listResult.Out -match "stage5_infra_tiny_fake")
+Check "B2c -List shows stage5_4_formal" ($listResult.Out -match "stage5_4_formal")
 
 $unknown = Invoke-LauncherCaptured -ArgString "stage5_9_bogus -Inline" -Tag "unknown"
 Check "B3 unknown experiment exits non-zero" ($unknown.ExitCode -ne 0) ("exit=" + $unknown.ExitCode)
@@ -129,6 +131,10 @@ $dry = Invoke-LauncherCaptured -ArgString "stage5_3_formal -DryRun -Inline" -Tag
 Check "B4 dry-run exits 0 without executing" ($dry.ExitCode -eq 0) ("exit=" + $dry.ExitCode)
 Check "B4b dry-run shows AUTODL target and GPU requirement" ($dry.Out -match "Execution  : AUTODL" -and $dry.Out -match "GPU        : NONE")
 Check "B4c dry-run shows remote command but does not ssh" ($dry.Out -match [regex]::Escape("bash -lc 'cd /root/autodl-tmp/AIC-VideoHighlight-run") -and $dry.Out -match "DRY RUN")
+
+$dry54 = Invoke-LauncherCaptured -ArgString "stage5_4_formal -DryRun -Inline" -Tag "dry_stage54_autodl"
+Check "B4d stage5_4_formal dry-run exits 0" ($dry54.ExitCode -eq 0) ("exit=" + $dry54.ExitCode)
+Check "B4e stage5_4_formal dry-run is AUTODL and GPU NONE" ($dry54.Out -match "Execution  : AUTODL" -and $dry54.Out -match "GPU        : NONE" -and $dry54.Out -match "DRY RUN")
 
 $dryLocal = Invoke-LauncherCaptured -ArgString "stage5_infra_tiny_fake -DryRun -Inline" -Tag "dry_windows"
 Check "B5 dry-run WINDOWS target shows local command" ($dryLocal.ExitCode -eq 0 -and $dryLocal.Out -match [regex]::Escape("run.py --experiment stage5_infra_tiny_fake --dry-run"))
@@ -188,9 +194,31 @@ Check "B9 parent exits after spawning child window" ($parentDone -and $parent.Ex
 Check "B9b spawned child carries -Child flag (recursion protected)" $childSeen
 
 # B10: real local WINDOWS run with resume, UTF-8 progress bar, Chinese paths.
-$real = Invoke-LauncherCaptured -ArgString "stage5_infra_tiny_fake -Inline -Resume" -Tag "real_local"
+# Isolate runtime state so an old strict run identity from another HEAD cannot
+# affect this launcher behavior test.
+$runtimeRoot = Join-Path $tmp "runtime"
+$testEnvironment = Join-Path $tmp "environment.json"
+$environmentPayload = @{
+    name = "launcher-test"
+    repo = $repoRoot
+    datasets = (Join-Path $runtimeRoot "datasets")
+    models = (Join-Path $runtimeRoot "models")
+    hf_cache = (Join-Path $runtimeRoot "hf-cache")
+    outputs = (Join-Path $runtimeRoot "outputs")
+    logs = (Join-Path $runtimeRoot "logs")
+    cache = (Join-Path $runtimeRoot "cache")
+    tmp = (Join-Path $runtimeRoot "tmp")
+    archive = (Join-Path $runtimeRoot "archive")
+} | ConvertTo-Json
+[System.IO.File]::WriteAllText($testEnvironment, $environmentPayload, [System.Text.UTF8Encoding]::new($false))
+$env:AIC_EXPERIMENT_ENVIRONMENT = $testEnvironment
+try {
+    $real = Invoke-LauncherCaptured -ArgString "stage5_infra_tiny_fake -Inline -Resume" -Tag "real_local"
+} finally {
+    Remove-Item Env:AIC_EXPERIMENT_ENVIRONMENT -ErrorAction SilentlyContinue
+}
 Check "B10 local resume run exits 0" ($real.ExitCode -eq 0) ("exit=" + $real.ExitCode)
-$envJson = Get-Content (Join-Path $repoRoot "configs\environments\windows_local.json") -Raw -Encoding UTF8 | ConvertFrom-Json
+$envJson = Get-Content $testEnvironment -Raw -Encoding UTF8 | ConvertFrom-Json
 $statusPath = Join-Path $envJson.outputs "stage5\stage5_infra_tiny_fake\status.json"
 $manifestPath = Join-Path $envJson.outputs "stage5\stage5_infra_tiny_fake\run_manifest.json"
 Check "B10b runtime status COMPLETED" ((Test-Path $statusPath) -and ((Get-Content $statusPath -Raw -Encoding UTF8) -match "COMPLETED"))

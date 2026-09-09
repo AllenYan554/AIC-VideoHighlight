@@ -1,0 +1,171 @@
+{
+  "protocol_id": "stage5_4_formal",
+  "title": "Stage 5.4 Temporal Composition Stabilization — Formal Preregistration (TS-0 vs TS-1)",
+  "status": "DRAFT",
+  "created": "2026-09-09",
+  "preregistration": {
+    "timing": "All decision gates are selected before Stage 5.4 Formal; no Formal aggregate result exists or may be read during preparation.",
+    "formal_execution_head": null,
+    "post_preregistration_code_changes_required": 0,
+    "post_smoke_engineering_diff_audit": "PASS",
+    "engineering_recovery_commits": ["af63f43", "ec1732d", "2d0dd6c", "9fb79a3"],
+    "engineering_diff_conclusion": "The four commits change loader canonical-SHA verification, diagnostics schema adaptation, frozen-regression evidence plumbing, and null-center cross-check semantics only. They do not change TS-0, TS-1, EMA, alpha, reset rules, geometry, floor/clamp, fallback, dataset, subject, frame selection, or scientific metric definitions."
+  },
+  "research_question": "Does fixed alpha=0.5 EMA crop-center stabilization materially reduce frame-to-frame temporal jitter relative to frozen Stage 5.3 CMP-1, while keeping the preregistered spatial-quality regressions within small tolerances?",
+  "frozen_dependencies": {
+    "stage5_3_final_freeze": {
+      "path": "configs/stage5_3_final_freeze.json",
+      "file_sha256": "2b7081443cbb0e6ed0fd73d49217f6d4ff071a1e094146bbfd0c78b5696beb49",
+      "status": "FINAL_FROZEN",
+      "git_head_at_freeze": "5330a14bbe49db7ee2131163e78fee83d1596671",
+      "formal_manifest_semantic_sha256": "2af7d66468fc8d5546f2fabf20aba2f799a17d76ce7c8f4c281fb930539cb24d",
+      "frozen_cmp1_predictions_sha256": "dce61c4ce1e83358a02a0c4a0ef38666eae2726fa116826980506997005580b1",
+      "final_formal_execution_head": "c0b331064debb3ed1a623e6620df6bce650446e2"
+    },
+    "stage5_2_final_freeze": {
+      "path": "configs/stage5_2_final_freeze.json",
+      "file_sha256": "4d407b2578e92a6b02820651de369f5fa6728cbda6f8b94efdf54689d49cc03a",
+      "status": "FINAL_FROZEN",
+      "model_revision": "df939e661d8c52e80608d1ec566561aabd25a4e7",
+      "weights_sha256": "5263d5521eff3e356f6cd8a371fd5dfb891725beda5f713674f79669115cdc64",
+      "raw_candidates_semantic_sha256": "44ae9383d20fe0afd290c10f8fb78c5bcd2ee5b0709fb7aedf61dbd83d52f399",
+      "policy_v1_semantic_sha256": "222258d1d7960639697bd6c3f36339443c85a27bee9dcee7742f24fda238871d"
+    },
+    "stage5_1": {
+      "predictions_sha256": "ca44cc2831e935e82fa7b05820b1269d7f2cc0d360c030b5847a192ede11b9a5",
+      "metadata_cache_sha256": "52e46f16cfe5012aa68cfb8d7440f4d53e31b7cc133add7e29b78d648a9d5675",
+      "dev166_index_sha256": "b541ade5c05e066dd5163f5d1cf2f7deb8780613589839000b55b1c55803a04e"
+    }
+  },
+  "smoke_evidence": {
+    "role": "DESCRIPTIVE_ONLY; supports proceeding to Formal but is not a Formal substitute and is not used to tune alpha or gates repeatedly.",
+    "execution_head": "9fb79a3de9659b5e4b7e2fc690f02c242f76b7dd",
+    "manifest_sha256": "2909f7a831a1f90fb149f0b07033586ab2678ead398180d3715c2ee077e2d766",
+    "videos": 24,
+    "frames": 1080,
+    "engineering_gates": "13/13 PASS",
+    "temporal": {
+      "mean_displacement": [0.021252, 0.012552],
+      "p95_displacement": [0.151685, 0.065543],
+      "gt_0_20_ratio": [0.0395, 0.0068],
+      "gt_0_30_ratio": [0.0218, 0.0],
+      "mean_acceleration": [0.040153, 0.016252]
+    },
+    "spatial_deltas": {
+      "mean_visible_fraction": -0.0147,
+      "visible_ge_0_90": -0.0291,
+      "subject_center_containment": -0.0132,
+      "strong_off_center_mean_visible": -0.0259
+    }
+  },
+  "scientific_variables": {
+    "ts0": "Stage 5.3 FINAL FROZEN CMP-1, no smoothing",
+    "ts1": "ema_crop_center_v1 over the sanitized primary-subject center, re-placed with frozen Stage 5.3 floor/clamp geometry",
+    "alpha": 0.5,
+    "reset_rules": {
+      "NEW_VIDEO": "EMA state never crosses video_id boundaries",
+      "FRAME_GAP_GT_1": "reset when current frozen frame id minus previous frozen frame id is greater than 1",
+      "FALLBACK": "current fallback emits frozen center crop and clears state; the next non-fallback frame restarts from its own frozen center"
+    },
+    "unchanged": [
+      "crop width",
+      "crop height",
+      "target ratio 9:16",
+      "frame selection",
+      "primary subject",
+      "fallback placement",
+      "Stage 5.3 geometry",
+      "floor and clamp convention"
+    ]
+  },
+  "analysis_sets": {
+    "full_dev166": {
+      "videos": 166,
+      "frames": 51256,
+      "identity_sha256": "6d2c14877201ebf8fc6e8c11531f3a201d5e382f5ec5eb496f1d70f7c66d31c3"
+    },
+    "confirmatory_dev142": {
+      "definition": "Frozen Dev166 minus all 24 whole video_ids in the SHA-frozen Stage 5.4 Smoke24 manifest",
+      "videos": 142,
+      "frames": 43820,
+      "identity_sha256": "d00f99a044fc67a7ae484185cab5e8f94928ec3be350e2b27ac26250b72b7434",
+      "smoke_overlap": 0,
+      "heldout_overlap": 0,
+      "heldout_overlap_evidence": "set-theoretic inheritance from the frozen Dev166 split contract; Heldout is not opened or enumerated",
+      "role": "confirmatory development subset; NOT Heldout, NOT official validation, and NOT official test"
+    }
+  },
+  "metrics": {
+    "primary_temporal": {
+      "normalized_displacement": "|cx_t - cx_(t-1)| / W over adjacent non-fallback frozen frame pairs; mean, median, P90, P95, max",
+      "large_jump_ratios": ["> 0.10", "> 0.20", "> 0.30"],
+      "temporal_acceleration": "absolute change in consecutive signed crop-center displacements / W over adjacent non-fallback triplets; mean, median, P90, P95, max"
+    },
+    "spatial_guardrails": ["mean visible fraction", "visible fraction >= 0.90", "subject-center containment"],
+    "center_offset_strata": ["near < 0.10", "moderate 0.10 to < 0.25", "strong >= 0.25"],
+    "multi_subject": {
+      "metrics": ["all-secondary-contained", "at-least-one-secondary-contained", "primary+all-secondary-contained"],
+      "role": "OBSERVATION_ONLY"
+    }
+  },
+  "decision_rule": {
+    "application": "All gates below are evaluated independently on Full Dev166 and Confirmatory Dev142; both analysis sets must pass. No gate may be changed after Formal begins.",
+    "temporal_benefit_gates": {
+      "mean_displacement": "TS-1 relative reduction >= 20%",
+      "mean_acceleration": "TS-1 relative reduction >= 30%",
+      "p95_displacement": "TS-1 relative regression <= 0%; any increase fails",
+      "large_jump_nonincrease": "TS-1 ratio must be <= TS-0 at each of >0.10, >0.20, and >0.30",
+      "large_jump_material_benefit": "At >0.20, relative reduction must be >=25%; if TS-0 is zero, TS-1 must also be zero"
+    },
+    "spatial_regression_guardrails": {
+      "mean_visible_fraction_delta": ">= -0.03",
+      "visible_ge_0_90_delta": ">= -0.05",
+      "subject_center_containment_delta": ">= -0.02",
+      "strong_off_center_mean_visible_delta": ">= -0.05"
+    },
+    "rationale": [
+      "20% displacement and 30% acceleration reductions represent practically material stabilization rather than numerical noise.",
+      "P95 and every preregistered large-jump threshold cannot regress, protecting tail behavior.",
+      "The >0.20 jump gate requires a simple 25% relative improvement without using a smoke-decimal boundary.",
+      "Spatial tolerances are round absolute percentage-point limits: small losses are allowed only in exchange for material temporal benefit; strong off-center subjects receive an explicit guardrail.",
+      "The same gates on Smoke-excluded Dev142 limit development feedback bias."
+    ]
+  },
+  "engineering_gates": {
+    "all_must_pass": [
+      "missing = 0; extra = 0; duplicates = 0",
+      "invalid crop = 0; out-of-bounds = 0; ratio violations = 0",
+      "crop size unchanged on every frame",
+      "fallback placement unchanged on every fallback frame",
+      "TS-0 frozen regression = 0",
+      "Stage 5.3 manifest canonical SHA and byte SHA verified",
+      "Stage 5.2 policy semantic SHA verified and frozen summary raw semantic SHA matches",
+      "deterministic replay = PASS",
+      "Heldout access = 0",
+      "GPU/Qwen/RT-DETR/SAM calls = 0",
+      "protocol and config snapshots included in artifact manifest"
+    ]
+  },
+  "runtime_contract": {
+    "reuse": ["RunContext", "ShardStore", "ProgressReporter", "run_manifest", "status.json", "progress.json", "progress.jsonl", "artifact_manifest", "experiment_raw_report.md", "AI_REPORT_INPUTS.md"],
+    "progress": ["videos", "frames", "current video", "current sequence", "elapsed", "ETA", "errors", "invalid"],
+    "output_root": "/root/autodl-tmp/outputs/stage5/stage5_4_formal/",
+    "predefined_outputs": ["run_manifest.json", "status.json", "progress.json/jsonl", "shards", "machine/validation.json", "machine/summary.json", "machine/metrics.json", "machine/diagnostics", "machine/artifact_manifest.json", "experiment_raw_report.md", "AI_REPORT_INPUTS.md", "snapshots/config.json", "snapshots/protocol.json"]
+  },
+  "limitations": [
+    "There is no official composition ground truth; spatial visible-fraction and weak-reference evidence cannot establish official competition-score improvement.",
+    "The weak spatial reference is diagnostic only and not a promotion gate.",
+    "Confirmatory Dev142 is still a development subset, not Heldout.",
+    "Multi-subject diagnostics are observation only and cannot authorize a union/fusion policy."
+  ],
+  "interpretation_boundary": [
+    "A PASS supports fixed-alpha temporal stabilization on frozen Dev166 under these metrics only.",
+    "A FAIL may not be repaired by changing gates, alpha, dataset, or exclusions after Formal.",
+    "No claim about official test performance, causal video quality, or generalization to Heldout is permitted."
+  ],
+  "resources_forbidden": ["Hard", "Heldout", "official test", "GPU inference", "Qwen", "vLLM", "RT-DETR inference", "SAM", "Kalman", "ByteTrack", "DeepSORT", "RAFT", "optical flow", "CMP-2", "Stage 5.5"],
+  "references": [
+    "Kassis, T., Agarwal, V., He, Y., Patel, D., & Brueckner, A. M. (2026). Scientific Agent Skills: A Library of Procedural Knowledge for Research Agents. arXiv:2609.00065. https://doi.org/10.48550/arXiv.2609.00065"
+  ],
+  "next_step_gate": "A separate future Formal Executor may run stage5_4_formal only after this protocol is committed as PREREGISTERED_BEFORE_FORMAL and Windows, AutoDL, and origin/master are at the same execution HEAD."
+}

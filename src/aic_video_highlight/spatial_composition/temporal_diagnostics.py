@@ -305,6 +305,8 @@ def temporal_multi_subject_diagnostic(
         ts1_rect = crop_rect_from_xywh(
             int(merged["ts1"]["x"]), int(merged["ts1"]["y"]), int(merged["ts1"]["w"]), float(merged["ts1"]["h"])
         )
+        primary_center_x = (primary.box[0] + primary.box[2]) / 2
+        primary_center_y = (primary.box[1] + primary.box[3]) / 2
         secondary_centers = []
         for candidate in contenders:
             center_x = (candidate.box[0] + candidate.box[2]) / 2
@@ -325,6 +327,10 @@ def temporal_multi_subject_diagnostic(
                 "video_id": video_id,
                 "frame": frame,
                 "primary_class": primary.label,
+                "primary_center_inside_ts0_crop": ts0_rect[0] <= primary_center_x < ts0_rect[2]
+                and ts0_rect[1] <= primary_center_y < ts0_rect[3],
+                "primary_center_inside_ts1_crop": ts1_rect[0] <= primary_center_x < ts1_rect[2]
+                and ts1_rect[1] <= primary_center_y < ts1_rect[3],
                 "secondary_count": len(secondary_centers),
                 "secondary_centers_inside_ts0_crop": sum(
                     1 for item in secondary_centers if item["inside_ts0_crop"]
@@ -334,7 +340,25 @@ def temporal_multi_subject_diagnostic(
                 ),
             }
         )
+    return summarize_multi_subject_rows(rows)
+
+
+def summarize_multi_subject_rows(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """Summarize observation-only secondary and primary+secondary containment."""
+    rows = list(rows)
     relevant = [row for row in rows if row["secondary_count"]]
+
+    def primary_and_all(side: str) -> float | None:
+        if not relevant:
+            return None
+        hits = sum(
+            1
+            for row in relevant
+            if row[f"primary_center_inside_{side}_crop"]
+            and row[f"secondary_centers_inside_{side}_crop"] == row["secondary_count"]
+        )
+        return round(hits / len(relevant), 6)
+
     return {
         "tag": "MULTI_SUBJECT_DIAGNOSTIC / observation only / TS-0 (CMP-1) vs TS-1 / no union or fusion policy",
         "ambiguous_frames": len(rows),
@@ -347,6 +371,8 @@ def temporal_multi_subject_diagnostic(
         ),
         "at_least_one_inside_ts0_rate": _rate(relevant, "secondary_centers_inside_ts0_crop", at_least_one=True),
         "at_least_one_inside_ts1_rate": _rate(relevant, "secondary_centers_inside_ts1_crop", at_least_one=True),
+        "primary_and_all_secondaries_inside_ts0_rate": primary_and_all("ts0"),
+        "primary_and_all_secondaries_inside_ts1_rate": primary_and_all("ts1"),
         "rows": rows,
     }
 

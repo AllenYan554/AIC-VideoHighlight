@@ -8,6 +8,7 @@ from aic_video_highlight.spatial_composition.temporal_diagnostics import (
     crop_geometry_valid,
     observations_from_records,
     spatial_guardrail_metrics,
+    summarize_multi_subject_rows,
     temporal_stability_metrics,
 )
 from scripts.experiments.stage5.run_stage5_4_temporal import engineering_gate, pooled_distributions
@@ -179,3 +180,30 @@ def test_engineering_gate_counts_identity_size_and_fallback():
     assert not gate_broken["crop_size_unchanged"]
     assert gate_broken["missing"] == 1
     assert gate_broken["manifest_crosscheck_mismatches"] == 1
+
+
+def test_multi_subject_summary_includes_primary_plus_all_secondaries_observation():
+    rows = [
+        {
+            "video_id": "a",
+            "frame": 0,
+            "primary_center_inside_ts0_crop": True,
+            "primary_center_inside_ts1_crop": False,
+            "secondary_count": 2,
+            "secondary_centers_inside_ts0_crop": 2,
+            "secondary_centers_inside_ts1_crop": 2,
+        },
+        {
+            "video_id": "a",
+            "frame": 1,
+            "primary_center_inside_ts0_crop": True,
+            "primary_center_inside_ts1_crop": True,
+            "secondary_count": 1,
+            "secondary_centers_inside_ts0_crop": 0,
+            "secondary_centers_inside_ts1_crop": 1,
+        },
+    ]
+    summary = summarize_multi_subject_rows(rows)
+    assert summary["primary_and_all_secondaries_inside_ts0_rate"] == 0.5
+    assert summary["primary_and_all_secondaries_inside_ts1_rate"] == 0.5
+    assert summary["tag"].startswith("MULTI_SUBJECT_DIAGNOSTIC")
