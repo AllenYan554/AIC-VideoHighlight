@@ -1,0 +1,90 @@
+{
+  "freeze_id": "stage5_3_final_freeze",
+  "title": "Stage 5.3 Target-Ratio Spatial Composition FINAL FREEZE (CMP-0 / CMP-1)",
+  "status": "FINAL_FROZEN",
+  "created": "2026-09-09",
+  "git_head_at_freeze": "5330a14bbe49db7ee2131163e78fee83d1596671",
+  "statement": "Target-Ratio Spatial Composition (CMP-0 Frozen Center Crop vs CMP-1 Primary-Subject-Aware Shifted Crop) is frozen after a fully PASSED Formal run over the frozen Dev166 artifact. Stage 5.4+ consumes CMP-1 read-only as TS-0; no scientific semantic may change.",
+  "frozen_components": [
+    "CMP-0 definition: stage5_1_frozen_center_crop (frozen compute_center_crop geometry, unchanged)",
+    "CMP-1 definition: primary_subject_shifted_max_ratio_crop_v1 (primary-bbox sanitize + subject re-centring of the frozen maximal legal target-ratio crop)",
+    "crop size semantics: crop size equals the Stage 5.1 maximal legal target-ratio crop; only crop position differs between CMP-0 and CMP-1",
+    "placement semantics: ideal_x = floor(cx - crop_w/2), ideal_y = floor(cy - crop_h/2), clamped into [0, W-crop_w] x [0, floor(H - derived_h)]",
+    "floor / clamp semantics: strict int [x, y, w] official contract; constrained dimension floored; exact Fraction derived height h = w * th / tw; sanitize clamps raw primary xyxy into [0,W]x[0,H]",
+    "target-ratio contract: target_ratio [9, 16]; derived height never exceeds the frame height (official out-of-bounds rule)",
+    "fallback behavior: PRIMARY_ABSENT / INVALID_SANITIZED_SUBJECT -> FALLBACK_CENTER_CROP (CMP-0 crop); frozen Stage 5.2 CENTER_CROP_FALLBACK frames receive no CMP-1 shift and are not reclassified",
+    "center-offset strata: near_center |cx/W - 0.5| < 0.10; moderately_off_center 0.10 <= o < 0.25; strongly_off_center >= 0.25 (model-blind, frozen before composition)",
+    "Stage 5.2 frozen dependency (Subject Localization Mainline, configs/stage5_2_final_freeze.json)",
+    "Stage 5.1 frozen dependency (Official Output Contract / Center Crop frame set, configs/stage5_1_center_crop_protocol.json FINAL_FROZEN)"
+  ],
+  "bindings": {
+    "formal_protocol_sha256": "282b1b7ea214878d7bc9560857385ae537ff1a96290adefc2108ddf8bc8b9b88",
+    "formal_protocol_path": "configs/experiments/stage5/stage5_3_formal_protocol.json",
+    "formal_config_sha256": "8df9089def21ed58801ad13755192d2826e0a856f2b400a8b66ffbcc687d7ea7",
+    "formal_config_path": "configs/experiments/stage5/stage5_3_formal.json",
+    "formal_manifest_semantic_sha256": "2af7d66468fc8d5546f2fabf20aba2f799a17d76ce7c8f4c281fb930539cb24d",
+    "preregistration_head": "38a9acf",
+    "attempt_01_execution_head": "7a4978f40379444f7ca5500dad671021ec33bae4",
+    "final_formal_execution_head": "c0b331064debb3ed1a623e6620df6bce650446e2",
+    "engineering_fix_commit": "c0b331064debb3ed1a623e6620df6bce650446e2",
+    "weak_spatial_reference_sha256": "702f0bf1c74c33b3240a1d24409640d7b4bab8d62a4b84a1857838c6dcb5d5e2",
+    "stage5_2_freeze_config": "configs/stage5_2_final_freeze.json",
+    "stage5_2_model_revision": "df939e661d8c52e80608d1ec566561aabd25a4e7",
+    "stage5_2_weights_sha256": "5263d5521eff3e356f6cd8a371fd5dfb891725beda5f713674f79669115cdc64",
+    "stage5_2_policy_version": "primary_subject_policy_v1_person_priority",
+    "stage5_2_raw_candidates_semantic_sha256": "44ae9383d20fe0afd290c10f8fb78c5bcd2ee5b0709fb7aedf61dbd83d52f399",
+    "stage5_2_policy_v1_semantic_sha256": "222258d1d7960639697bd6c3f36339443c85a27bee9dcee7742f24fda238871d",
+    "stage5_2_crop_diagnostics_semantic_sha256": "f62b0160151d9b68a44d16df3626d89171e56961038bcd9c0c1f4d7203bc59d2",
+    "stage5_1_predictions_sha256": "ca44cc2831e935e82fa7b05820b1269d7f2cc0d360c030b5847a192ede11b9a5",
+    "stage5_1_metadata_cache_sha256": "52e46f16cfe5012aa68cfb8d7440f4d53e31b7cc133add7e29b78d648a9d5675",
+    "stage5_1_dev166_index_sha256": "b541ade5c05e066dd5163f5d1cf2f7deb8780613589839000b55b1c55803a04e"
+  },
+  "formal_evidence": {
+    "canonical_output_root": "/root/autodl-tmp/outputs/recovery_attempt_02/stage5/stage5_3_formal",
+    "recovery_method": "FULL_RERUN",
+    "dataset": {
+      "full_dev_videos": 166,
+      "full_dev_frames": 51256,
+      "frames_with_sanitized_primary_subject": 42595,
+      "fallback_frames": 8661,
+      "confirmatory_dev136_videos": 136,
+      "confirmatory_dev136_frames": 42078
+    },
+    "validation_status": "PASS",
+    "engineering_gates": "15/15 PASS (frame identity complete, missing/extra/duplicate/invalid_crop/out_of_bounds/ratio_violations/sanitized_invalid/cmp0_frozen_regression all 0)",
+    "deterministic_replay": "PASS",
+    "cross_attempt_determinism": "Attempt 01 vs Attempt 02: 166/166 scientific data shards byte-identical, 0 mismatch",
+    "heldout_access": 0,
+    "main_results": {
+      "mean_visible_fraction_cmp0_to_cmp1": [0.439133, 0.690777],
+      "visible_ge_0_90_cmp0_to_cmp1": [0.089658, 0.344148],
+      "subject_center_containment_cmp0_to_cmp1": [0.637047, 1.0],
+      "center_offset_strata_delta": {
+        "near_center": 0.014989,
+        "moderately_off_center": 0.266124,
+        "strongly_off_center": 0.884147
+      },
+      "confirmatory_dev136_overall_delta": 0.250844
+    },
+    "local_evidence": "D:\\CDUT\\硕士\\2026-09 AIC\\实验记录\\Stage5_逐帧高光预测与空间构图\\04_Target_Ratio_Spatial_Composition\\formal\\"
+  },
+  "known_limitations": [
+    "multi-subject secondary retention trade-off: CMP-1 is primary-subject-aware, secondary-only containment drops 0.275220 -> 0.173211; no CMP-2 / union policy authorized",
+    "8,661 frozen fallback frames (16.90%) produce no CMP-1 shift; BOX_TOO_LARGE hypothetical visibility 0.318467 supports keeping frozen fallback",
+    "weak-reference IoU CMP-0 (0.646003) > CMP-1 (0.486791): weak reference is DIAGNOSTIC_ONLY / NOT_FOR_MODEL_SELECTION / NOT_OFFICIAL_GT"
+  ],
+  "forbidden_after_freeze": [
+    "CMP-0 / CMP-1 geometry, sanitization, rounding, clamp or ratio changes",
+    "fallback reclassification",
+    "Stage 5.1 / 5.2 artifact modification or re-inference",
+    "composition re-run over the frozen Full Dev artifact",
+    "multi-subject union production policy",
+    "zoom / scale changes",
+    "Heldout392 access"
+  ],
+  "heldout_lock": {
+    "heldout392": "ABSOLUTELY_LOCKED",
+    "allowed_access": 0
+  },
+  "consumer": "Stage 5.4 Temporal Composition Stabilization consumes the frozen CMP-1 per-frame crops read-only as temporal control baseline TS-0."
+}
