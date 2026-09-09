@@ -199,7 +199,15 @@ def build_video_records(
         mismatches.extend(crosscheck_manifest_entry(entry, composed))
         composed_records.append(composed)
 
-    observations = observations_from_records(composed_records)
+    # observations_from_records consumes the merged record schema; the TS-1 side
+    # does not exist yet at this point, so expose the frozen TS-0 (CMP-1) under
+    # the "ts0" key contract expected by the diagnostics module.
+    observations = observations_from_records(
+        [
+            {"frame": composed["frame"], "ts0": composed["cmp1"], "sanitized": composed["sanitized"]}
+            for composed in composed_records
+        ]
+    )
     width, height = int(video["image_width"]), int(video["image_height"])
     smoothed = smooth_video_sequence(width, height, tw, th, observations, alpha=alpha)
     smoothed_by_frame = {item.frame: item for item in smoothed}
