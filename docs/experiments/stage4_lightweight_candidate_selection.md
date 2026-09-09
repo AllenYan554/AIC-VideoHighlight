@@ -47,29 +47,29 @@ development metrics，不能称为官方 Ground Truth 或最终质量。
 以下用占位路径说明调用关系；Formal 应使用 protocol 中锁定的真实 hashes 和 role。
 
 ```powershell
-python scripts/run_candidate_selection.py validate-roles `
+python scripts/experiments/stage4/run_candidate_selection.py validate-roles `
   --cache-dir <FORMAL_431/cache_build_a> `
   --role-dir <Stage4.3/00_PROTOCOL>
 
-python scripts/run_candidate_selection.py select `
+python scripts/experiments/stage4/run_candidate_selection.py select `
   --cache-dir <FORMAL_431/cache_build_a> `
   --role-manifest <Stage4.3/00_PROTOCOL/dev_tune_166.json> `
   --protocol configs/stage4_3_selection_protocol.json `
   --selector SEL-1 --parameter 0.80 `
   --output <new-selection-result.json>
 
-python scripts/run_candidate_selection.py validate-selection `
+python scripts/experiments/stage4/run_candidate_selection.py validate-selection `
   --cache-dir <FORMAL_431/cache_build_a> `
   --role-manifest <role-manifest.json> `
   --selection-result <selection-result.json>
 
-python scripts/run_candidate_selection.py replay `
+python scripts/experiments/stage4/run_candidate_selection.py replay `
   --cache-dir <FORMAL_431/cache_build_a> `
   --role-manifest <role-manifest.json> `
   --selection-result <selection-result.json> `
   --output <new-selected-predictions.jsonl>
 
-python scripts/run_candidate_selection.py evaluate `
+python scripts/experiments/stage4/run_candidate_selection.py evaluate `
   --cache-dir <FORMAL_431/cache_build_a> `
   --role-manifest <role-manifest.json> `
   --selection-result <selection-result.json> `
@@ -77,14 +77,14 @@ python scripts/run_candidate_selection.py evaluate `
   --frozen-predictions <Stage3-frozen-predictions.jsonl> `
   --output <new-evaluation.json>
 
-python scripts/run_candidate_selection.py assess `
+python scripts/experiments/stage4/run_candidate_selection.py assess `
   --baseline-evaluation <SEL-0-evaluation.json> `
   --candidate-evaluation <candidate-evaluation.json> `
   --protocol configs/stage4_3_selection_protocol.json `
   --phase dev `
   --output <new-assessment.json>
 
-python scripts/run_candidate_selection.py freeze-dev-parameter `
+python scripts/experiments/stage4/run_candidate_selection.py freeze-dev-parameter `
   --baseline-evaluation <SEL-0-evaluation.json> `
   --candidate-evaluation <grid-evaluation-1.json> `
   --candidate-evaluation <grid-evaluation-2.json> `

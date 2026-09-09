@@ -54,20 +54,20 @@ Recall、F1、Temporal IoU、reference coverage、Audit36、reviewer 或 adjudic
 ## CLI
 
 ```powershell
-python scripts/run_candidate_cache.py export `
+python scripts/experiments/stage4/run_candidate_cache.py export `
   --source dev=<DEV_EXPERIMENT_DIR> `
   --source hard=<HARD_EXPERIMENT_DIR> `
   --output-dir <CACHE_DIR>
 
-python scripts/run_candidate_cache.py validate `
+python scripts/experiments/stage4/run_candidate_cache.py validate `
   --cache-dir <CACHE_DIR> `
   --report <VALIDATION_REPORT_JSON>
 
-python scripts/run_candidate_cache.py replay `
+python scripts/experiments/stage4/run_candidate_cache.py replay `
   --cache-dir <CACHE_DIR> `
   --output <REPLAYED_PREDICTIONS_JSONL>
 
-python scripts/run_candidate_cache.py compare `
+python scripts/experiments/stage4/run_candidate_cache.py compare `
   --cache-dir <CACHE_DIR> `
   --source dev=<DEV_EXPERIMENT_DIR> `
   --source hard=<HARD_EXPERIMENT_DIR> `

@@ -769,7 +769,7 @@ def test_protocol_loader_rejects_wrong_status_with_valid_semantic_hash(tmp_path:
     ],
 )
 def test_cli_runtime_overrides_are_assertions_not_method_changes(model, timeout, message):
-    from scripts.run_boundary_refinement import _build_br1_runtime
+    from scripts.experiments.stage4.run_boundary_refinement import _build_br1_runtime
 
     protocol = load_boundary_protocol(PROTOCOL_PATH)
     args = argparse.Namespace(

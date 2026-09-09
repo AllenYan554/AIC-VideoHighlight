@@ -5,6 +5,14 @@ PowerShell window, resolves the experiment from the Python experiment registry
 (single source of truth), streams the canonical runner's output live, closes the
 window automatically on success, and keeps it open on failure.
 
+## Layout
+
+Stage-specific experiment entrypoints live in `scripts/experiments/<stage>/`
+(one subdirectory per research stage; each has a README describing its scripts).
+Generic utilities (`setup/`, `tools/`, `analysis/`, `validation/` and the
+non-stage helpers in `scripts/`) stay outside this directory. See
+`docs/infrastructure/DIRECTORY_STANDARD.md` for the repository-wide standard.
+
 ## Launch
 
 ```powershell

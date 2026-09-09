@@ -63,7 +63,7 @@ bash remote/serve_qwen_vllm.sh
 source .venv/bin/activate
 python scripts/smoke_text.py
 python scripts/smoke_video.py --video /root/autodl-tmp/datasets/sample.mp4
-python scripts/run_highlight_retrieval.py \
+python scripts/experiments/stage1/run_highlight_retrieval.py \
   --video /root/autodl-tmp/datasets/sample.mp4 \
   --config configs/highlight_retrieval.yaml \
   --output outputs/highlight_retrieval_result.json \

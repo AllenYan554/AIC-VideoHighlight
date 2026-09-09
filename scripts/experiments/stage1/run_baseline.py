@@ -288,7 +288,7 @@ def main() -> int:
     args = parse_args()
     if args.retry_failed and not args.resume:
         raise SystemExit("--retry-failed requires --resume")
-    project_root = Path(__file__).resolve().parents[1]
+    project_root = Path(__file__).resolve().parents[3]
     output_dir = args.output_dir.expanduser().resolve()
     raw_dir = output_dir / "raw"
     samples_dir = output_dir / "samples"

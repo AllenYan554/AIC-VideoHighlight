@@ -19,7 +19,7 @@ from aic_video_highlight.highlight_retrieval.dense_temporal_localization import 
     validate_dense_localization_payload,
 )
 from aic_video_highlight.highlight_retrieval.candidate_cache import semantic_sha256
-from scripts import run_dense_temporal_localization as dense_cli
+from scripts.experiments.stage4 import run_dense_temporal_localization as dense_cli
 
 
 def run_cli_command_with_fakes(monkeypatch, command: str) -> str:
