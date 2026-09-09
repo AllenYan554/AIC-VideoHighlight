@@ -1,0 +1,93 @@
+{
+  "protocol_id": "stage5_4_smoke",
+  "title": "Stage 5.4 Temporal Composition Stabilization — Development Smoke (TS-0 vs TS-1, EMA crop-center v1)",
+  "status": "DEVELOPMENT_DRAFT",
+  "created": "2026-09-09",
+  "research_question": "Do consecutive frozen CMP-1 crops show temporal position jumps, and can a deterministic crop-center smoothing reduce temporal jitter without an unacceptable regression in subject visibility?",
+  "scope": {
+    "in_scope": [
+      "TS-0 = Stage 5.3 FINAL FROZEN CMP-1 crops (temporal control baseline, no smoothing)",
+      "TS-1 = deterministic EMA smoothing of the crop center (alpha = 0.5, development baseline fixed; no sweep this round)",
+      "temporal stability metrics (normalized displacement, acceleration; descriptive only)",
+      "spatial quality guardrails inherited from Stage 5.3 (visible fraction, visible >= 0.90, subject-center containment)",
+      "center-offset strata guardrail (near / moderate / strong)",
+      "multi-subject diagnostic (observation only)",
+      "validate-only / dry-run / synthetic tests this round"
+    ],
+    "out_of_scope": [
+      "Stage 5.4 Formal", "Dev166 full formal run", "Heldout392",
+      "RT-DETR re-inference", "GPU", "Qwen", "SAM", "tracking (DeepSORT/ByteTrack)",
+      "optical flow", "CMP-2", "zoom / scale changes", "multi-subject union policy",
+      "alpha sweeps", "new scene-cut detectors", "Frame Calibration", "Stage 5.5"
+    ]
+  },
+  "ts0_definition": {
+    "name": "TS-0_frozen_cmp1",
+    "definition": "Stage 5.3 FINAL FROZEN CMP-1 per-frame crops (primary_subject_shifted_max_ratio_crop_v1), recomputed deterministically from the hash-verified frozen Stage 5.1/5.2 artifacts; fallback frames keep the frozen center crop",
+    "freeze_binding": "configs/stage5_3_final_freeze.json",
+    "role": "temporal control baseline"
+  },
+  "ts1_definition": {
+    "name": "TS-1_ema_crop_center_v1",
+    "method": "exponential moving average over the sanitized primary subject center (pre-clamp target of the frozen placement), re-placed each frame with the exact Stage 5.3 frozen floor/clamp convention and re-clamped into legal frame bounds",
+    "alpha": 0.5,
+    "alpha_policy": "development baseline fixed at 0.5; no alpha sweep and no smoke-driven alpha selection in this round",
+    "unchanged": [
+      "crop width", "crop height", "target ratio", "frame selection",
+      "primary subject", "fallback semantics", "Stage 5.2 policy", "Stage 5.1 frame set"
+    ],
+    "changed": "temporal continuity of the crop center / placement only"
+  },
+  "reset_rules": {
+    "new_video": "state never crosses videos (one video per smoothing call)",
+    "frozen_temporal_segment_boundary": "the frozen Stage 5.1/5.2 identity carries no segment ids; frozen temporal discontinuities are observable as frame-id gaps, so a segment boundary is handled by the frame-gap rule",
+    "frame_gap": "reset when the gap between consecutive frozen frame ids is greater than 1",
+    "fallback": "reset when the current or the previous frame is a frozen fallback frame (FALLBACK_CENTER_CROP); fallback frames always emit the frozen center crop and clear the EMA state",
+    "forbidden": "no new pixel-level scene-cut detector in this round"
+  },
+  "geometry_contract": {
+    "placement": "EMA center re-placed with floor(center - crop/2) and clamped into [0, W-crop_w] x [0, floor(H - derived_h)] exactly as the frozen Stage 5.3 contract",
+    "invariants": [
+      "crop width unchanged", "crop height unchanged", "target ratio unchanged",
+      "invalid crop = 0", "out of bounds = 0", "ratio violation = 0"
+    ]
+  },
+  "metrics": {
+    "temporal_stability": {
+      "displacement": "|cx_t - cx_(t-1)| / W; mean / median / P90 / P95 / max + large jump ratios",
+      "acceleration": "|(cx_t - cx_(t-1)) - (cx_(t-1) - cx_(t-2))| / W",
+      "comparison_set": "paired transitions/triplets: consecutive frozen frames (gap == 1), both non-fallback; TS-1 smoothed-only subset reported separately",
+      "role": "DESCRIPTIVE_ONLY / no promotion gate is derived from temporal metrics in v1"
+    },
+    "spatial_guardrails": "mean visible fraction, visible >= 0.90, subject-center containment; TS-0 vs TS-1; large regression is unacceptable",
+    "strata": "near / moderate / strong deltas; smoothing must not hurt off-center subjects",
+    "multi_subject": "observation only; check whether TS-1 further degrades secondary retention vs TS-0"
+  },
+  "interpretation_boundary": [
+    "Stage 5.4 is not 'the stronger the smoothing the better'; temporal jitter must decrease without an unacceptable subject-visibility regression",
+    "there is no official composition GT: no claim may be made that TS-1 improves the official competition score"
+  ],
+  "smoke_manifest": {
+    "manifest_id": "stage5_4_smoke_manifest_v1",
+    "builder_experiment": "stage5_4_manifest",
+    "model_blind": true,
+    "sha_policy": "built deterministically on the full frozen Dev166 frame identity by stage5_4_manifest, then SHA-frozen into configs/experiments/stage5/stage5_4_smoke.json before the smoke run; the smoke runner refuses to start while expected_manifest_sha256 is null",
+    "expected_scale": "about 20-32 videos and 500-1500 frames depending on the real structure of the frozen dense sequences"
+  },
+  "engineering_gates": {
+    "all_must_pass": [
+      "manifest sha pinned and verified",
+      "frame identity complete vs the frozen manifest (missing = 0, extra = 0, duplicate = 0)",
+      "TS-1 crop width equals TS-0 crop width on every frame",
+      "TS-1 derived height equals the exact target-ratio height on every frame",
+      "invalid crop = 0", "out of bounds = 0", "ratio violation = 0",
+      "fallback frames emit the frozen center crop (placement unchanged)",
+      "TS-0 frozen regression = 0 (TS-0 equals the Stage 5.3 frozen CMP-1 semantics)",
+      "deterministic replay = PASS",
+      "Stage 5.1/5.2 artifacts unmodified",
+      "Heldout access = 0"
+    ]
+  },
+  "resources_forbidden": ["RT-DETR", "GPU", "Qwen", "vLLM", "SAM", "tracking", "optical flow", "Heldout392"],
+  "next_step_gate": "Stage 5.4 Formal may only be preregistered after this smoke completes with all engineering gates PASS and guardrails reviewed"
+}

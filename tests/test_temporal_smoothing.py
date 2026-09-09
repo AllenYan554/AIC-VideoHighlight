@@ -1,0 +1,281 @@
+"""Stage 5.4 TS-1 temporal crop-center smoothing tests (frozen Stage 5.3 contract)."""
+
+from __future__ import annotations
+
+from fractions import Fraction
+
+import pytest
+
+from aic_video_highlight.spatial_composition.center_crop import compute_center_crop, derived_height
+from aic_video_highlight.spatial_composition.composition_metrics import (
+    crop_rect_from_xywh,
+    subject_center_inside_crop,
+    subject_visible_fraction,
+)
+from aic_video_highlight.spatial_composition.subject_shifted_crop import (
+    PLACEMENT_FALLBACK_CENTER_CROP,
+    sanitize_primary_bbox,
+)
+from aic_video_highlight.spatial_composition.temporal_smoothing import (
+    DEFAULT_EMA_ALPHA,
+    PLACEMENT_TS1_SMOOTHED,
+    RESET_FALLBACK,
+    RESET_FRAME_GAP,
+    SmoothedFrame,
+    TemporalObservation,
+    acceleration_norm,
+    displacement_norm,
+    large_jump_ratios,
+    place_crop_from_center,
+    smooth_video_sequence,
+    temporal_summary,
+    transition_pairs,
+    transition_triplets,
+)
+
+# 16:9-shaped test frame with horizontal slack under a 9:16 target.
+W, H = 1600, 900
+TW, TH = 9, 16
+CENTER_BOX = compute_center_crop(W, H, TW, TH)
+CROP_W = CENTER_BOX.w
+MAX_X = W - CROP_W
+
+
+def obs(frame: int, cx: float, cy: float = 450.0, fallback: bool = False) -> TemporalObservation:
+    return TemporalObservation(frame=frame, fallback=fallback, ideal_center_x=cx, ideal_center_y=cy)
+
+
+def assert_geometry_valid(frames: list[SmoothedFrame], width: int = W, height: int = H) -> None:
+    for item in frames:
+        assert item.w > 0
+        assert 0 <= item.x and item.x + item.w <= width
+        assert 0 <= item.y and float(item.y + item.h) <= height
+
+
+# 1. constant crop -> unchanged
+def test_constant_crop_unchanged():
+    observations = [obs(frame, 800.0) for frame in range(5)]
+    smoothed = smooth_video_sequence(W, H, TW, TH, observations)
+    assert all(item.matches_ts0_placement for item in smoothed)
+    assert [item.x for item in smoothed] == [place_crop_from_center(W, H, TW, TH, (800.0, 450.0))[0]] * 5
+    assert [item.ema_center_x for item in smoothed] == [800.0] * 5
+
+
+# 2. simple linear movement
+def test_linear_movement_smooths_toward_lag():
+    observations = [obs(0, 500.0), obs(1, 560.0), obs(2, 620.0), obs(3, 680.0)]
+    smoothed = smooth_video_sequence(W, H, TW, TH, observations)
+    assert [item.ema_center_x for item in smoothed] == [500.0, 530.0, 575.0, 627.5]
+    ts0 = [displacement_norm(500.0 + 60.0 * index, 500.0 + 60.0 * (index + 1), W) for index in range(3)]
+    ts1 = [displacement_norm(a.ema_center_x, b.ema_center_x, W) for a, b in zip(smoothed, smoothed[1:])]
+    assert max(ts1) < max(ts0)
+    assert smoothed[1].ema_center_x == DEFAULT_EMA_ALPHA * 560.0 + (1 - DEFAULT_EMA_ALPHA) * 500.0
+
+
+# 3. alternating jitter
+def test_alternating_jitter_is_damped():
+    observations = [obs(0, 500.0), obs(1, 700.0), obs(2, 500.0), obs(3, 700.0)]
+    smoothed = smooth_video_sequence(W, H, TW, TH, observations)
+    ts0 = [displacement_norm(500.0, 700.0, W)] * 3
+    ts1 = [displacement_norm(a.ema_center_x, b.ema_center_x, W) for a, b in zip(smoothed, smoothed[1:])]
+    assert max(ts1) < max(ts0)
+    assert sum(ts1) / len(ts1) < sum(ts0) / len(ts0)
+
+
+# 4. left/right clamp
+def test_clamp_left_and_right_keeps_crop_in_bounds():
+    left = smooth_video_sequence(W, H, TW, TH, [obs(0, 100.0)])
+    right = smooth_video_sequence(W, H, TW, TH, [obs(0, 1550.0)])
+    assert left[0].x == 0 and left[0].clamped_x
+    assert right[0].x == MAX_X and right[0].clamped_x
+    assert_geometry_valid(left + right)
+
+
+# 5. video boundary reset (fresh state per call)
+def test_video_boundary_reset_no_state_leakage():
+    first = smooth_video_sequence(W, H, TW, TH, [obs(0, 500.0), obs(1, 900.0)])
+    second = smooth_video_sequence(W, H, TW, TH, [obs(0, 400.0)])
+    assert first[-1].ema_center_x == 700.0
+    assert second[0].ema_center_x == 400.0
+    assert second[0].reset_reason is None
+
+
+# 6+7. frozen segment discontinuity / frame gap reset
+def test_frame_gap_reset_starts_fresh_run():
+    observations = [obs(0, 500.0), obs(1, 700.0), obs(2, 900.0), obs(10, 300.0), obs(11, 340.0)]
+    smoothed = smooth_video_sequence(W, H, TW, TH, observations)
+    assert smoothed[3].reset_reason == RESET_FRAME_GAP
+    assert smoothed[3].ema_center_x == 300.0
+    assert smoothed[4].ema_center_x == 0.5 * 340.0 + 0.5 * 300.0
+    assert all(item.reset_reason != RESET_FRAME_GAP for item in smoothed[:3])
+
+
+# 8. fallback reset (current or previous frame fallback)
+def test_fallback_resets_state_and_emits_frozen_center_crop():
+    observations = [obs(0, 500.0), obs(1, 640.0), obs(2, 700.0, fallback=True), obs(3, 800.0), obs(4, 860.0)]
+    smoothed = smooth_video_sequence(W, H, TW, TH, observations)
+    assert smoothed[2].placement_status == PLACEMENT_FALLBACK_CENTER_CROP
+    assert (smoothed[2].x, smoothed[2].y) == (CENTER_BOX.x, CENTER_BOX.y)
+    assert smoothed[2].reset_reason == RESET_FALLBACK
+    assert smoothed[2].ema_center_x is None
+    assert smoothed[3].reset_reason == RESET_FALLBACK
+    assert smoothed[3].ema_center_x == 800.0
+    assert smoothed[4].reset_reason is None
+    assert smoothed[4].ema_center_x == 0.5 * 860.0 + 0.5 * 800.0
+
+
+def test_leading_fallback_and_consecutive_fallbacks_do_not_double_reset():
+    observations = [obs(0, 500.0, fallback=True), obs(1, 600.0, fallback=True), obs(2, 700.0)]
+    smoothed = smooth_video_sequence(W, H, TW, TH, observations)
+    assert smoothed[0].reset_reason is None
+    assert smoothed[1].reset_reason is None
+    assert smoothed[2].reset_reason == RESET_FALLBACK
+    assert smoothed[2].ema_center_x == 700.0
+
+
+# 9. one-frame sequence
+def test_one_frame_sequence_equals_ts0():
+    smoothed = smooth_video_sequence(W, H, TW, TH, [obs(7, 640.0)])
+    assert len(smoothed) == 1
+    assert smoothed[0].matches_ts0_placement
+    assert smoothed[0].reset_reason is None
+
+
+# 10. two-frame sequence
+def test_two_frame_sequence_applies_single_ema_step():
+    smoothed = smooth_video_sequence(W, H, TW, TH, [obs(0, 500.0), obs(1, 600.0)])
+    assert smoothed[0].ema_center_x == 500.0
+    assert smoothed[1].ema_center_x == 550.0
+    assert smoothed[1].reset_reason is None
+
+
+# 11. deterministic replay
+def test_deterministic_replay_identical_outputs():
+    observations = [obs(0, 500.0), obs(1, 700.0, fallback=True), obs(2, 900.0), obs(3, 300.0), obs(9, 400.0)]
+    first = smooth_video_sequence(W, H, TW, TH, observations)
+    second = smooth_video_sequence(W, H, TW, TH, list(reversed(observations)))
+    assert first == second
+
+
+# 12. width / height unchanged
+def test_crop_width_and_height_unchanged_including_fallback():
+    observations = [obs(0, 500.0), obs(1, 700.0, fallback=True), obs(2, 900.0)]
+    smoothed = smooth_video_sequence(W, H, TW, TH, observations)
+    assert all(item.w == CROP_W for item in smoothed)
+    assert all(item.crop_w == CROP_W and item.crop_h == H for item in smoothed)
+    assert all(item.h == derived_height(CROP_W, TW, TH) for item in smoothed)
+
+
+# 13. ratio unchanged
+def test_target_ratio_contract_holds_for_every_frame():
+    observations = [obs(0, 500.0), obs(1, 1300.0), obs(2, 700.0, fallback=True)]
+    smoothed = smooth_video_sequence(W, H, TW, TH, observations)
+    for item in smoothed:
+        assert item.h == Fraction(item.w) * Fraction(str(float(TH))) / Fraction(str(float(TW)))
+        assert float(item.y + item.h) <= H
+
+
+# 14. frame identity unchanged
+def test_frame_identity_preserved_and_sorted():
+    observations = [obs(23, 900.0), obs(3, 500.0), obs(11, 700.0, fallback=True)]
+    smoothed = smooth_video_sequence(W, H, TW, TH, observations)
+    assert [item.frame for item in smoothed] == [3, 11, 23]
+
+
+def test_duplicate_frame_ids_rejected():
+    with pytest.raises(ValueError, match="duplicate frame ids"):
+        smooth_video_sequence(W, H, TW, TH, [obs(5, 500.0), obs(5, 600.0)])
+
+
+# 15. invalid = 0
+def test_no_invalid_or_out_of_bounds_crops():
+    centers = [100.0, 300.0, 1550.0, 800.0, 640.0, 20.0, 1590.0]
+    observations = [obs(index * 2, value) for index, value in enumerate(centers)]
+    observations.insert(3, obs(7, 700.0, fallback=True))
+    smoothed = smooth_video_sequence(W, H, TW, TH, observations)
+    assert len(smoothed) == len(observations)
+    assert_geometry_valid(smoothed)
+    assert all(item.placement_status in (PLACEMENT_TS1_SMOOTHED, PLACEMENT_FALLBACK_CENTER_CROP) for item in smoothed)
+
+
+# 16. visibility metric compatibility
+def test_visibility_metric_on_smoothed_crops():
+    subject = sanitize_primary_bbox((560.0, 400.0, 700.0, 520.0), W, H)
+    observations = [obs(0, 630.0), obs(1, 630.0)]
+    smoothed = smooth_video_sequence(W, H, TW, TH, observations)
+    ts1_rect = crop_rect_from_xywh(smoothed[0].x, smoothed[0].y, smoothed[0].w, float(smoothed[0].h))
+    ts0_x, ts0_y, _, _, _, _ = place_crop_from_center(W, H, TW, TH, (630.0, 450.0))
+    ts0_rect = crop_rect_from_xywh(ts0_x, ts0_y, CROP_W, float(derived_height(CROP_W, TW, TH)))
+    assert subject_visible_fraction(subject, ts1_rect) == subject_visible_fraction(subject, ts0_rect)
+    assert subject_center_inside_crop(subject, ts1_rect)
+
+
+# 17. displacement metric
+def test_displacement_metric_and_summary():
+    assert displacement_norm(500.0, 620.0, 1600) == pytest.approx(0.075)
+    values = [0.05, 0.01, 0.2, 0.31, 0.07]
+    summary = temporal_summary(values)
+    assert summary["n"] == 5
+    assert summary["mean"] == pytest.approx(0.128, abs=1e-6)
+    assert summary["median"] == pytest.approx(0.07)
+    assert summary["p90"] == pytest.approx(0.31)
+    assert summary["p95"] == pytest.approx(0.31)
+    assert summary["max"] == pytest.approx(0.31)
+    assert large_jump_ratios(values)[">0.10"] == pytest.approx(0.4)
+    assert temporal_summary([])["n"] == 0
+
+
+# 18. acceleration metric
+def test_acceleration_metric_detects_direction_flips():
+    assert acceleration_norm(60.0, -120.0, 1600) == pytest.approx(180.0 / 1600.0)
+    assert acceleration_norm(60.0, 60.0, 1600) == 0.0
+
+
+def test_transition_pairs_and_triplets_respect_gap_and_fallback():
+    observations = [obs(0, 500.0), obs(1, 560.0), obs(2, 620.0, fallback=True), obs(3, 700.0), obs(10, 800.0)]
+    pairs = transition_pairs(observations)
+    assert (0, 1) in pairs
+    assert all(2 not in pair and 3 not in pair for pair in pairs)
+    triplets = transition_triplets(observations)
+    assert triplets == []
+
+
+# 19. multi-subject diagnostic compatibility (rect containment over TS-0 vs TS-1)
+def test_multi_subject_containment_computable_for_ts0_and_ts1():
+    secondary_center = (1500.0, 450.0)
+    ts0_x, ts0_y, _, _, _, _ = place_crop_from_center(W, H, TW, TH, (500.0, 450.0))
+    smoothed = smooth_video_sequence(W, H, TW, TH, [obs(0, 500.0), obs(1, 500.0)])
+    ts1_rect = crop_rect_from_xywh(smoothed[-1].x, smoothed[-1].y, smoothed[-1].w, float(smoothed[-1].h))
+    ts0_rect = crop_rect_from_xywh(ts0_x, ts0_y, CROP_W, float(derived_height(CROP_W, TW, TH)))
+
+    def contains(rect, point) -> bool:
+        return rect[0] <= point[0] < rect[2] and rect[1] <= point[1] < rect[3]
+
+    assert contains(ts1_rect, secondary_center) == contains(ts0_rect, secondary_center)
+
+
+# 20. 9:16 target
+def test_9_16_target_crop_size():
+    assert CROP_W == (H * TW) // TH == 506
+    smoothed = smooth_video_sequence(W, H, TW, TH, [obs(0, 800.0)])
+    assert smoothed[0].w == 506 and smoothed[0].h == Fraction(506 * 16, 9)
+    assert_geometry_valid(smoothed)
+
+
+# 21. 16:9 target (vertical slack on a 9:16 frame)
+def test_16_9_target_vertical_smoothing():
+    fw, fh = 1080, 1920
+    observations = [obs(0, 540.0, 700.0), obs(1, 540.0, 1300.0)]
+    smoothed = smooth_video_sequence(fw, fh, 16, 9, observations)
+    assert smoothed[0].w == fw
+    assert smoothed[1].ema_center_y == 0.5 * 1300.0 + 0.5 * 700.0
+    assert_geometry_valid(smoothed, width=fw, height=fh)
+
+
+def test_alpha_one_reproduces_ts0_and_alpha_validated():
+    observations = [obs(0, 500.0), obs(1, 700.0), obs(2, 300.0)]
+    alpha_one = smooth_video_sequence(W, H, TW, TH, observations, alpha=1.0)
+    assert all(item.matches_ts0_placement for item in alpha_one)
+    for bad in (0.0, -0.5, 1.5, float("nan")):
+        with pytest.raises(ValueError, match="alpha"):
+            smooth_video_sequence(W, H, TW, TH, observations, alpha=bad)

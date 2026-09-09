@@ -5,6 +5,11 @@ Registered experiments:
 - stage5_infra_tiny_fake  : CPU infrastructure acceptance (synthetic)
 - stage5_3_smoke          : CPU development smoke for target-ratio composition (CMP-0 vs CMP-1)
 - stage5_3_formal         : FORMAL composition baseline (registered, DEFAULT NOT RUN)
+- stage5_4_manifest       : deterministic model-blind Stage 5.4 smoke manifest builder (AutoDL, CPU)
+- stage5_4_smoke          : Stage 5.4 temporal smoothing development smoke, TS-0 vs TS-1
+                            (AutoDL no-card, CPU; requires the frozen manifest SHA pinned
+                            in configs/experiments/stage5/stage5_4_smoke.json;
+                            stage5_4_formal is reserved for a future preregistration)
 
 Environment auto-selection: on Windows the default environment is
 configs/environments/windows_local.json, otherwise configs/environments/autodl.json.
@@ -22,12 +27,16 @@ RUNNERS = {
     "stage5_infra_tiny_fake": "scripts/experiments/run_tiny_fake.py",
     "stage5_3_smoke": "scripts/experiments/stage5/run_stage5_3_composition.py",
     "stage5_3_formal": "scripts/experiments/stage5/run_stage5_3_composition.py",
+    "stage5_4_manifest": "scripts/experiments/stage5/build_stage5_4_smoke_manifest.py",
+    "stage5_4_smoke": "scripts/experiments/stage5/run_stage5_4_temporal.py",
 }
 
 CONFIGS = {
     "stage5_infra_tiny_fake": "configs/experiments/stage5/stage5_infra_tiny_fake.json",
     "stage5_3_smoke": "configs/experiments/stage5/stage5_3_smoke.json",
     "stage5_3_formal": "configs/experiments/stage5/stage5_3_formal.json",
+    "stage5_4_manifest": "configs/experiments/stage5/stage5_4_manifest.json",
+    "stage5_4_smoke": "configs/experiments/stage5/stage5_4_smoke.json",
 }
 
 # Launch metadata consumed by scripts/experiments/registry.py (single source of
@@ -38,6 +47,8 @@ LAUNCH = {
     "stage5_infra_tiny_fake": {"target": "WINDOWS", "gpu": "NONE"},
     "stage5_3_smoke": {"target": "WINDOWS", "gpu": "NONE"},
     "stage5_3_formal": {"target": "AUTODL", "gpu": "NONE"},
+    "stage5_4_manifest": {"target": "AUTODL", "gpu": "NONE"},
+    "stage5_4_smoke": {"target": "AUTODL", "gpu": "NONE"},
 }
 
 

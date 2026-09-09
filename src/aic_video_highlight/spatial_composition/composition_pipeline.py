@@ -130,6 +130,26 @@ def load_raw_shard_dir(path: Path) -> dict[tuple[str, int], dict[str, Any]]:
     return frames
 
 
+def load_raw_shard_dir_subset(
+    path: Path, video_ids: Sequence[str]
+) -> dict[tuple[str, int], dict[str, Any]]:
+    """Load frozen raw detector records for a subset of videos (per-video shards)."""
+    if not path.is_dir():
+        raise FrozenInputError(f"raw shard dir missing: {path}")
+    frames: dict[tuple[str, int], dict[str, Any]] = {}
+    for video_id in sorted(set(video_ids)):
+        shard = path / f"{video_id}.jsonl"
+        if not shard.is_file():
+            raise FrozenInputError(f"raw shard missing for video: {shard}")
+        for line in shard.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                record = json.loads(line)
+                frames[(record["video_id"], int(record["frame"]))] = record
+    if not frames:
+        raise FrozenInputError(f"raw shard subset empty: {sorted(set(video_ids))}")
+    return frames
+
+
 def verify_shard_dir_integrity(
     output_dir: Path,
     expected_keys: Mapping[str, set[int]],

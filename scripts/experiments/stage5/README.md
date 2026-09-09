@@ -5,6 +5,12 @@
   [`../registry.py`](../registry.py) and the unified PowerShell launcher.
 - `run_stage5_3_composition.py`: target-ratio composition runner (CMP-0 vs CMP-1;
   `stage5_3_smoke` / `stage5_3_formal`).
+- `build_stage5_4_smoke_manifest.py`: deterministic model-blind Stage 5.4 smoke manifest
+  builder over the full frozen Dev166 frame identity (`stage5_4_manifest`; AutoDL, CPU).
+- `run_stage5_4_temporal.py`: Stage 5.4 temporal smoothing development smoke, TS-0 (frozen
+  CMP-1) vs TS-1 (EMA crop-center alpha 0.5) (`stage5_4_smoke`; AutoDL no-card, CPU;
+  refuses to start until the frozen manifest SHA is pinned in its config).
+  `stage5_4_formal` is reserved for a future preregistration and is NOT registered yet.
 
 Standalone frozen-stage CLIs (experiments already executed and frozen; not registry
 members):
