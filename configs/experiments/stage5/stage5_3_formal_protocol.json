@@ -1,9 +1,40 @@
 {
   "protocol_id": "stage5_3_formal",
   "title": "Stage 5.3 Target-Ratio Spatial Composition — Formal Baseline (CMP-0 vs CMP-1, Dev166 frozen Full Dev artifact)",
-  "status": "DRAFT_AWAITING_SMOKE_EVIDENCE",
+  "status": "PREREGISTERED_BEFORE_FORMAL",
   "created": "2026-09-08",
-  "preregistration_policy": "Config and protocol are frozen as DRAFT; final PREREGISTERED_BEFORE_FORMAL status is set only after stage5_3_smoke primary gates PASS and the user explicitly requests the formal run. The agent must never start the formal run autonomously.",
+  "preregistration": {
+    "preregistered_at": "2026-09-09",
+    "git_head_at_preregistration": "38a9acf",
+    "precondition": "stage5_3_smoke DEVELOPMENT_SMOKE_COMPLETE (14/14 engineering gates PASS); no Formal result existed or was read at preregistration time",
+    "stage5_2_freeze_identity": {
+      "freeze_config": "configs/stage5_2_final_freeze.json",
+      "formal_protocol_sha256": "8c8f2bd4fb60f4002efc067134d3d0352b371561b84cb9b3deb7250e030c703e",
+      "full_dev_execution_config_sha256": "936e7d195af26951bc37d621b97cb8ae0f3de897cd9d16fe818f596e888045df",
+      "model_revision": "df939e661d8c52e80608d1ec566561aabd25a4e7",
+      "weights_sha256": "5263d5521eff3e356f6cd8a371fd5dfb891725beda5f713674f79669115cdc64",
+      "policy_version": "primary_subject_policy_v1_person_priority",
+      "stage5_1_predictions_sha256": "ca44cc2831e935e82fa7b05820b1269d7f2cc0d360c030b5847a192ede11b9a5",
+      "metadata_cache_sha256": "52e46f16cfe5012aa68cfb8d7440f4d53e31b7cc133add7e29b78d648a9d5675",
+      "raw_candidates_semantic_sha256": "44ae9383d20fe0afd290c10f8fb78c5bcd2ee5b0709fb7aedf61dbd83d52f399",
+      "policy_v1_semantic_sha256": "222258d1d7960639697bd6c3f36339443c85a27bee9dcee7742f24fda238871d",
+      "crop_diagnostics_semantic_sha256": "f62b0160151d9b68a44d16df3626d89171e56961038bcd9c0c1f4d7203bc59d2",
+      "record_count": 51256,
+      "video_count": 166,
+      "artifact_audit": "2026-09-09 AutoDL preflight: 166 shards intact, merge 51,256 frames missing/extra/duplicate=0, semantic hashes byte-verified, model_error=0"
+    },
+    "smoke_evidence_binding": {
+      "smoke_manifest_id": "stage5_3_smoke_manifest_v1",
+      "smoke_manifest_sha256": "97b54d29bc8dc7c3241097c595f8377615fc24efe0235d2678de3e39b2b23c74",
+      "smoke_gates": "14/14 PASS",
+      "weak_reference_sha256": "702f0bf1c74c33b3240a1d24409640d7b4bab8d62a4b84a1857838c6dcb5d5e2"
+    },
+    "interpretation_boundary": [
+      "this experiment verifies geometry validity, subject visibility, off-center benefit, near-center behaviour, multi-subject risk, fallback behaviour and determinism",
+      "it does NOT and cannot claim that CMP-1 improves the official competition score",
+      "weak-reference IoU is diagnostic only and never a promotion gate"
+    ]
+  },
   "research_questions": {
     "Q1": "Does CMP-1 keep 100% engineering validity over all 51,256 frozen frames (frame identity, in-bounds, exact target ratio)?",
     "Q2": "In which model-blind geometry strata does CMP-1 improve subject visibility over CMP-0 across Dev166, and by how much?",
@@ -42,7 +73,21 @@
       "strongly_off_center": ">= 0.25",
       "no_subject": "Stage 5.2 fallback or sanitized-invalid frames"
     },
-    "frozen_before_composition": true
+    "frozen_before_composition": true,
+    "inherits": "identical thresholds to the frozen stage5_3_smoke_manifest_v1"
+  },
+  "confirmatory_dev136": {
+    "name": "Dev136_confirmatory",
+    "definition": "Dev166 minus the 30 whole video_ids of stage5_3_smoke_manifest_v1 (SHA 97b54d29bc8dc7c3241097c595f8377615fc24efe0235d2678de3e39b2b23c74)",
+    "expected_video_count": 136,
+    "role": "confirmatory development subset for post-hoc analysis / NOT Heldout / NOT official validation / NOT official GT",
+    "registered_before_formal": true
+  },
+  "diagnostics": {
+    "multi_subject_diagnostic": "per ambiguous frame: primary class, composition class (person+person / person+other / nonperson_multi), secondary count, secondary centers, secondary-center containment per CMP-0/CMP-1, all-contained / at-least-one-contained ratios; observation only",
+    "fallback_reason_diagnostic": "per frozen fallback reason (BOX_TOO_LARGE / LOW_CONFIDENCE / BOX_TOO_SMALL / FULL_FRAME_LIKE / NO_DETECTION / other frozen reasons): count, ratio, trigger class distribution, trigger bbox area ratio; observation only, no reclassification",
+    "full_frame_subject_diagnostic": "BOX_TOO_LARGE frames with mirrored trigger candidate and hypothetical CMP-1 visibility; observation only",
+    "weak_reference_diagnostic": "weak IoU CMP-0 vs CMP-1, paired win/tie/loss; DIAGNOSTIC_ONLY / NOT official GT / NOT for model selection"
   },
   "primary_engineering_gates": {
     "all_must_pass": [
@@ -51,7 +96,9 @@
       "out-of-bounds = 0",
       "ratio violations = 0",
       "missing = 0",
+      "extra = 0",
       "duplicate = 0",
+      "unknown video = 0",
       "sanitized invalid unhandled = 0",
       "deterministic replay = PASS",
       "Stage 5.1 frozen regression = 0",

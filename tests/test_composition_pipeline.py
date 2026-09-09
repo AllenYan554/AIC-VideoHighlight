@@ -19,6 +19,7 @@ from aic_video_highlight.spatial_composition.composition_pipeline import (
     compose_frame,
     crosscheck_mirror_against_artifact,
     engineering_gate,
+    fallback_reason_diagnostic,
     load_frozen_inputs,
     mirror_reliable_candidate,
     multi_subject_diagnostic,
@@ -341,12 +342,30 @@ def test_mirror_crosscheck_and_diagnostics(tmp_path):
 
     multi = multi_subject_diagnostic(inputs, TARGET_RATIO, POLICY_CONFIG)
     assert multi["ambiguous_frames"] == 1
-    assert multi["rows"][0]["secondary_count"] == 1
+    row = multi["rows"][0]
+    assert row["secondary_count"] == 1
+    assert row["composition"] == "person+person"
+    assert row["secondary_centers"][0]["inside_cmp0_crop"] is False
+    assert row["secondary_centers"][0]["inside_cmp1_crop"] is False
+    assert "person+person" in multi["composition_summary"]
 
     mirrored, invalid_count = mirror_reliable_candidate(
         inputs.raw_frames[(VIDEO_A, 0)]["candidates"], POLICY_CONFIG
     )
     assert mirrored.label == "person" and invalid_count == 0
+
+
+def test_fallback_reason_diagnostic_reports_counts_and_classes(tmp_path):
+    bindings = synthetic_inputs(tmp_path)
+    inputs = load_frozen_inputs(bindings)
+    diagnostic = fallback_reason_diagnostic(inputs, TARGET_RATIO, POLICY_CONFIG)
+    assert diagnostic["fallback_frames"] == 2
+    no_detection = diagnostic["reasons"]["NO_DETECTION"]
+    assert no_detection["count"] == 1 and no_detection["trigger_candidate_found"] == 0
+    too_large = diagnostic["reasons"]["BOX_TOO_LARGE"]
+    assert too_large["count"] == 1 and too_large["trigger_candidate_found"] == 1
+    assert too_large["class_distribution"] == {"person": 1}
+    assert too_large["bbox_area_ratio"]["mean"] == pytest.approx(1.0)
 
 
 def test_gate_detects_tampered_frozen_predictions(tmp_path):

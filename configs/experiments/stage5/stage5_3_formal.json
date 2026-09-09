@@ -2,7 +2,7 @@
   "experiment_id": "stage5_3_formal",
   "stage": "stage5",
   "run_type": "FORMAL_BASELINE",
-  "status_note": "REGISTERED_NOT_RUN: default NOT RUN; preregistration completes only after stage5_3_smoke gates PASS and human confirmation",
+  "status_note": "PREREGISTERED_BEFORE_FORMAL: registered for a human-executed run only; the agent must not start it",
   "protocol": "configs/experiments/stage5/stage5_3_formal_protocol.json",
   "composition": {
     "cmp0": "stage5_1_frozen_center_crop",
@@ -39,22 +39,39 @@
     "base": "datasets",
     "path": "aic_highlight_dev"
   },
+  "confirmatory_subset": {
+    "name": "Dev136_confirmatory",
+    "definition": "Dev166 minus the 30 video_ids of the frozen stage5_3_smoke_manifest_v1 (whole video_ids excluded, not just the 450 smoke frames)",
+    "expected_video_count": 136,
+    "role": "confirmatory development subset / NOT Heldout / NOT official validation / NOT official GT",
+    "smoke_manifest_sha256": "97b54d29bc8dc7c3241097c595f8377615fc24efe0235d2678de3e39b2b23c74",
+    "excluded_video_ids": [
+      "qvh_000001_9x16", "qvh_000002_9x16", "qvh_000016_9x16", "qvh_000019_9x16",
+      "qvh_000030_9x16", "qvh_000040_9x16", "qvh_000053_9x16", "qvh_000063_9x16",
+      "qvh_000088_9x16", "qvh_000093_9x16", "qvh_000105_9x16", "qvh_000116_9x16",
+      "qvh_000131_9x16", "qvh_000158_9x16", "qvh_000163_9x16", "qvh_000190_9x16",
+      "qvh_000225_9x16", "qvh_000248_9x16", "qvh_000307_9x16", "qvh_000364_9x16",
+      "qvh_000399_9x16", "qvh_000491_9x16", "qvh_000502_9x16", "qvh_000581_9x16",
+      "qvh_000610_9x16", "qvh_000641_9x16", "qvh_000748_9x16", "qvh_000769_9x16",
+      "qvh_000842_9x16", "qvh_000928_9x16"
+    ]
+  },
   "inputs": {
     "stage5_1_predictions": {
       "base": "outputs",
-      "path": "stage5_1_dev_baseline/predictions_runA.jsonl",
+      "path": "stage5/stage5_1_dev_baseline/predictions_runA.jsonl",
       "sha256": "ca44cc2831e935e82fa7b05820b1269d7f2cc0d360c030b5847a192ede11b9a5",
       "format": "jsonl"
     },
     "video_metadata_cache": {
       "base": "outputs",
-      "path": "stage5_1_dev_baseline/metadata_cache.json",
+      "path": "stage5/stage5_1_dev_baseline/metadata_cache.json",
       "sha256": "52e46f16cfe5012aa68cfb8d7440f4d53e31b7cc133add7e29b78d648a9d5675",
       "format": "json"
     },
     "dev166_index": {
       "base": "outputs",
-      "path": "stage5_1_dev_baseline/dev166_stage5_index.jsonl",
+      "path": "stage5/stage5_1_dev_baseline/dev166_stage5_index.jsonl",
       "sha256": "b541ade5c05e066dd5163f5d1cf2f7deb8780613589839000b55b1c55803a04e",
       "format": "jsonl"
     },
@@ -75,7 +92,7 @@
       "path": "stage5_3_inputs/dev166_weak_spatial_reference.jsonl",
       "sha256": "702f0bf1c74c33b3240a1d24409640d7b4bab8d62a4b84a1857838c6dcb5d5e2",
       "format": "jsonl",
-      "sync_note": "lightweight 747KB file; must be synced from the Windows archive to AutoDL outputs/stage5_3_inputs/ before the formal run"
+      "sync_note": "synced byte-identically from the Windows archive (Stage 5.2 formal weak-reference manifest, seed_weak_training_label_v1, DIAGNOSTIC_ONLY / NOT_FOR_MODEL_SELECTION); SHA reverified on AutoDL"
     }
   },
   "heldout_lock": {

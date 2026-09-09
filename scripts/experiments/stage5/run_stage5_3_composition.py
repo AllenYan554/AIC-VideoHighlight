@@ -35,6 +35,7 @@ from aic_video_highlight.spatial_composition.composition_pipeline import (
     engineering_gate,
     load_frozen_inputs,
     load_raw_shard_dir,
+    fallback_reason_diagnostic,
     mirror_reliable_candidate,
     multi_subject_diagnostic,
     verify_input_bindings,
@@ -261,11 +262,13 @@ def run(args) -> int:
         crosscheck = {"compared": 0, "mismatches": 0}
         box_too_large = {"rows": []}
         multi_subject = {"rows": []}
+        fallback_reasons_diag = {"reasons": {}}
         if inputs.raw_frames:
             policy_config = policy_config_from(config)
             crosscheck = crosscheck_mirror_against_artifact(inputs, policy_config)
             box_too_large = box_too_large_diagnostic(inputs, target_ratio, policy_config)
             multi_subject = multi_subject_diagnostic(inputs, target_ratio, policy_config)
+            fallback_reasons_diag = fallback_reason_diagnostic(inputs, target_ratio, policy_config)
         else:
             raw_binding = next(b for b in bindings if b.name == "stage5_2_raw_detector")
             raw_frames = load_raw_shard_dir(raw_binding.path)
@@ -278,6 +281,7 @@ def run(args) -> int:
             crosscheck = crosscheck_mirror_against_artifact(inputs_with_raw, policy_config)
             box_too_large = box_too_large_diagnostic(inputs_with_raw, target_ratio, policy_config)
             multi_subject = multi_subject_diagnostic(inputs_with_raw, target_ratio, policy_config)
+            fallback_reasons_diag = fallback_reason_diagnostic(inputs_with_raw, target_ratio, policy_config)
 
         temporal_frames = {
             video_id: {int(pred["frame"]) for pred in record["predictions"]}
@@ -363,6 +367,7 @@ def run(args) -> int:
         })
         atomic_write_json(diagnostics_dir / "multi_subject_diagnostic.json", multi_subject)
         atomic_write_json(diagnostics_dir / "box_too_large_diagnostic.json", box_too_large)
+        atomic_write_json(diagnostics_dir / "fallback_reason_diagnostic.json", fallback_reasons_diag)
 
         manifest_artifact = paths.output / "manifest" / "stage5_3_smoke_manifest_v1.json"
         artifact_files = [

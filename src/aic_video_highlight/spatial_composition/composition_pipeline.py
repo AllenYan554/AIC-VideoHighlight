@@ -44,6 +44,8 @@ from aic_video_highlight.spatial_composition.subject_shifted_crop import (
     stage5_1_crop_height,
 )
 from aic_video_highlight.spatial_localization.subject_localization import (
+    REASON_LOW_CONFIDENCE,
+    REASON_NO_DETECTION,
     STATUS_PRIMARY,
     SubjectCandidate,
     SubjectPolicyConfig,
@@ -909,31 +911,44 @@ def multi_subject_diagnostic(
         ]
         sanitized = sanitize_primary_bbox(list(primary.box), width, height)
         tw, th = float(target_ratio[0]), float(target_ratio[1])
+        center = compute_center_crop(width, height, tw, th)
+        cmp0_rect = crop_rect_from_xywh(center.x, center.y, center.w, _fraction_to_float(derived_height(center.w, tw, th)))
         if sanitized.valid:
             shifted = compute_subject_shifted_crop(width, height, tw, th, (sanitized.center_x, sanitized.center_y))
-            crop_rect = crop_rect_from_xywh(shifted.x, shifted.y, shifted.w, _fraction_to_float(shifted.h))
+            cmp1_rect = crop_rect_from_xywh(shifted.x, shifted.y, shifted.w, _fraction_to_float(shifted.h))
         else:
-            center = compute_center_crop(width, height, tw, th)
-            crop_rect = crop_rect_from_xywh(center.x, center.y, center.w, _fraction_to_float(derived_height(center.w, tw, th)))
-        secondary_centers = [
-            {
-                "label": candidate.label,
-                "center_x_norm": round(((candidate.box[0] + candidate.box[2]) / 2) / width, 6),
-                "center_y_norm": round(((candidate.box[1] + candidate.box[3]) / 2) / height, 6),
-                "inside_cmp1_crop": crop_rect[0] <= (candidate.box[0] + candidate.box[2]) / 2 < crop_rect[2]
-                and crop_rect[1] <= (candidate.box[1] + candidate.box[3]) / 2 < crop_rect[3],
-            }
-            for candidate in contenders
-        ]
+            cmp1_rect = cmp0_rect
+        secondary_centers = []
+        for candidate in contenders:
+            center_x = (candidate.box[0] + candidate.box[2]) / 2
+            center_y = (candidate.box[1] + candidate.box[3]) / 2
+            secondary_centers.append(
+                {
+                    "label": candidate.label,
+                    "center_x_norm": round(center_x / width, 6),
+                    "center_y_norm": round(center_y / height, 6),
+                    "inside_cmp0_crop": cmp0_rect[0] <= center_x < cmp0_rect[2]
+                    and cmp0_rect[1] <= center_y < cmp0_rect[3],
+                    "inside_cmp1_crop": cmp1_rect[0] <= center_x < cmp1_rect[2]
+                    and cmp1_rect[1] <= center_y < cmp1_rect[3],
+                }
+            )
+        secondary_labels = {item["label"] for item in secondary_centers}
+        if primary.label == "person":
+            composition = "person+person" if secondary_labels <= {"person"} else "person+other"
+        else:
+            composition = "nonperson_multi"
         rows.append(
             {
                 "video_id": video_id,
                 "frame": frame,
                 "primary_class": primary.label,
                 "primary_score": primary.score,
+                "composition": composition,
                 "stored_ambiguous_candidate_count": int(record.get("ambiguous_candidate_count", 0)),
                 "secondary_count": len(secondary_centers),
                 "secondary_centers": secondary_centers,
+                "secondary_centers_inside_cmp0_crop": sum(1 for item in secondary_centers if item["inside_cmp0_crop"]),
                 "secondary_centers_inside_cmp1_crop": sum(1 for item in secondary_centers if item["inside_cmp1_crop"]),
                 "primary_secondary_span_x_norm": round(
                     (
@@ -948,15 +963,127 @@ def multi_subject_diagnostic(
             }
         )
     secondary_counts = [row["secondary_count"] for row in rows]
-    inside_counts = [row["secondary_centers_inside_cmp1_crop"] for row in rows]
+
+    def ratio(rows_subset, key, condition) -> float | None:
+        relevant = [row for row in rows_subset if row["secondary_count"]]
+        if not relevant:
+            return None
+        return round(sum(1 for row in relevant if condition(row)) / len(relevant), 6)
+
+    composition_classes = sorted({row["composition"] for row in rows})
+    composition_summary = {}
+    for composition_class in composition_classes:
+        subset = [row for row in rows if row["composition"] == composition_class]
+        composition_summary[composition_class] = {
+            "n": len(subset),
+            "secondary_count": summarize(row["secondary_count"] for row in subset).as_dict(),
+            "all_secondaries_inside_cmp0_rate": ratio(subset, "inside_cmp0_crop", lambda row: row["secondary_centers_inside_cmp0_crop"] == row["secondary_count"]),
+            "all_secondaries_inside_cmp1_rate": ratio(subset, "inside_cmp1_crop", lambda row: row["secondary_centers_inside_cmp1_crop"] == row["secondary_count"]),
+            "at_least_one_inside_cmp0_rate": ratio(subset, "inside_cmp0_crop", lambda row: row["secondary_centers_inside_cmp0_crop"] > 0),
+            "at_least_one_inside_cmp1_rate": ratio(subset, "inside_cmp1_crop", lambda row: row["secondary_centers_inside_cmp1_crop"] > 0),
+        }
     return {
         "tag": "MULTI_SUBJECT_DIAGNOSTIC / observation only / no union or fusion policy",
         "ambiguous_frames": len(rows),
         "primary_class_counts": dict(sorted(_counter(row["primary_class"] for row in rows).items())),
+        "composition_summary": composition_summary,
         "secondary_count": summarize(secondary_counts).as_dict(),
-        "secondary_inside_cmp1_crop": summarize(inside_counts).as_dict(),
+        "secondary_inside_cmp0_crop": summarize(row["secondary_centers_inside_cmp0_crop"] for row in rows).as_dict(),
+        "secondary_inside_cmp1_crop": summarize(row["secondary_centers_inside_cmp1_crop"] for row in rows).as_dict(),
+        "all_secondaries_inside_cmp0_frames": sum(
+            1 for row in rows if row["secondary_count"] and row["secondary_centers_inside_cmp0_crop"] == row["secondary_count"]
+        ),
         "all_secondaries_inside_cmp1_frames": sum(
             1 for row in rows if row["secondary_count"] and row["secondary_centers_inside_cmp1_crop"] == row["secondary_count"]
         ),
+        "at_least_one_secondary_inside_cmp1_frames": sum(1 for row in rows if row["secondary_centers_inside_cmp1_crop"] > 0),
         "rows": rows,
+    }
+
+
+def mirror_best_possible_candidate(
+    candidates: Sequence[Mapping[str, Any]],
+    config: SubjectPolicyConfig,
+) -> SubjectCandidate | None:
+    """Best possible-tier candidate (possible_score <= score < reliable_score) for LOW_CONFIDENCE diagnostics."""
+    pool = [
+        SubjectCandidate(tuple(float(v) for v in item["box_xyxy"]), float(item["score"]), int(item["label_id"]), str(item["label"]))
+        for item in candidates
+        if candidate_is_valid(tuple(float(v) for v in item["box_xyxy"]))
+    ]
+    possible = [candidate for candidate in pool if config.possible_score <= candidate.score < config.reliable_score]
+    if not possible:
+        return None
+    possible.sort(key=lambda candidate: (-candidate.score, -candidate.area()))
+    return possible[0]
+
+
+def fallback_reason_diagnostic(
+    inputs: FrozenInputs,
+    target_ratio: Sequence[int | float],
+    policy_config: SubjectPolicyConfig,
+) -> dict[str, Any]:
+    """Per-reason observation of frozen Stage 5.2 fallbacks: count/ratio/class/area.
+
+    Observation only: no zoom, no SAM, no reclassification, no new fallback policy.
+    """
+    total = len(inputs.policy_records)
+    reasons: dict[str, dict[str, Any]] = {}
+    for record in inputs.policy_records:
+        frame_reasons = list(record.get("fallback_reasons", []))
+        if record["status"] == STATUS_PRIMARY or not frame_reasons:
+            continue
+        video_id = record["video_id"]
+        frame = int(record["frame"])
+        meta = inputs.metadata[video_id]
+        width, height = int(meta["width"]), int(meta["height"])
+        raw_frame = inputs.raw_frames[(video_id, frame)]
+        for reason in frame_reasons:
+            bucket = reasons.setdefault(
+                reason,
+                {"count": 0, "class_counts": {}, "area_ratios": [], "trigger_found": 0, "rows": []},
+            )
+            bucket["count"] += 1
+            if reason == REASON_NO_DETECTION:
+                trigger = None
+            elif reason == REASON_LOW_CONFIDENCE:
+                trigger = mirror_best_possible_candidate(raw_frame["candidates"], policy_config)
+            else:
+                trigger, _ = mirror_reliable_candidate(raw_frame["candidates"], policy_config)
+            if trigger is None:
+                bucket["rows"].append({"video_id": video_id, "frame": frame, "trigger_found": False})
+                continue
+            bucket["trigger_found"] += 1
+            bucket["class_counts"][trigger.label] = bucket["class_counts"].get(trigger.label, 0) + 1
+            area_ratio = round(trigger.area() / float(width * height), 6)
+            bucket["area_ratios"].append(area_ratio)
+            bucket["rows"].append(
+                {
+                    "video_id": video_id,
+                    "frame": frame,
+                    "trigger_found": True,
+                    "class": trigger.label,
+                    "score": trigger.score,
+                    "bbox_area_ratio": area_ratio,
+                }
+            )
+    summary: dict[str, Any] = {}
+    for reason, bucket in sorted(reasons.items()):
+        summary[reason] = {
+            "count": bucket["count"],
+            "ratio_of_all_frames": round(bucket["count"] / total, 6),
+            "trigger_candidate_found": bucket["trigger_found"],
+            "class_distribution": dict(sorted(bucket["class_counts"].items())),
+            "bbox_area_ratio": summarize(bucket["area_ratios"]).as_dict(),
+        }
+    return {
+        "tag": "FALLBACK_REASON_DIAGNOSTIC / observation only / frozen Stage 5.2 semantics untouched",
+        "total_frames": total,
+        "fallback_frames": sum(bucket["count"] for bucket in reasons.values()),
+        "frames_with_multiple_reasons": sum(
+            1
+            for record in inputs.policy_records
+            if record["status"] != STATUS_PRIMARY and len(list(record.get("fallback_reasons", []))) > 1
+        ),
+        "reasons": summary,
     }
