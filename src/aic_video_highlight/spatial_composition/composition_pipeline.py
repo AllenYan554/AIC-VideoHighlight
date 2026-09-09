@@ -323,7 +323,7 @@ def build_manifest(
             "stage5_1_predictions_sha256": inputs.input_hashes["stage5_1_predictions"],
             "video_metadata_cache_sha256": inputs.input_hashes["video_metadata_cache"],
             "stage5_2_policy_artifact_sha256": inputs.input_hashes["stage5_2_policy_artifact"],
-            "stage5_2_raw_detector_sha256": inputs.input_hashes["stage5_2_raw_detector"],
+            "stage5_2_raw_detector_sha256": inputs.input_hashes.get("stage5_2_raw_detector", "DEFERRED_NOT_LOADED"),
             "weak_spatial_reference_sha256": inputs.input_hashes["weak_spatial_reference"],
         },
     }
