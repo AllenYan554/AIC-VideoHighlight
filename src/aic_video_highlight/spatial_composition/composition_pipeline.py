@@ -108,6 +108,13 @@ def load_policy_shard_dir(path: Path) -> list[dict[str, Any]]:
     return records
 
 
+def policy_shard_semantic_sha(records: Sequence[Mapping[str, Any]]) -> str:
+    """Semantic hash of merged policy records using the frozen full-dev hash convention."""
+    from aic_video_highlight.spatial_localization.full_dev import canonical_sha
+
+    return canonical_sha(records)
+
+
 def load_raw_shard_dir(path: Path) -> dict[tuple[str, int], dict[str, Any]]:
     """Load frozen Stage 5.2 raw detector records from the canonical shard layout."""
     if not path.is_dir():
@@ -154,11 +161,12 @@ def load_frozen_inputs(
     for binding in bindings:
         if binding.format == "policy_shard_dir":
             policy_records = tuple(load_policy_shard_dir(binding.path))
-            if policy_semantic_expectation and canonical_sha256(list(policy_records)) != policy_semantic_expectation:
+            semantic = policy_shard_semantic_sha(policy_records)
+            if policy_semantic_expectation and semantic != policy_semantic_expectation:
                 raise FrozenInputError(
-                    f"policy artifact semantic mismatch: expected {policy_semantic_expectation}"
+                    f"policy artifact semantic mismatch: expected {policy_semantic_expectation}, got {semantic}"
                 )
-            hashes[binding.name] = canonical_sha256(list(policy_records))
+            hashes[binding.name] = semantic
             continue
         if not binding.path.is_file():
             raise FrozenInputError(f"frozen input missing: {binding.name} -> {binding.path}")
