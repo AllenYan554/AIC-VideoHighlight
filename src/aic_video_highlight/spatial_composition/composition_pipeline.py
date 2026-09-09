@@ -159,7 +159,11 @@ def load_frozen_inputs(
     hashes: dict[str, str] = {}
     policy_records: tuple[dict[str, Any], ...] = ()
     for binding in bindings:
-        if binding.format == "policy_shard_dir":
+        if binding.format in ("policy_shard_dir", "raw_shard_dir"):
+            if not binding.path.is_dir():
+                raise FrozenInputError(f"frozen shard dir missing: {binding.name} -> {binding.path}")
+            if binding.format == "raw_shard_dir":
+                continue
             policy_records = tuple(load_policy_shard_dir(binding.path))
             semantic = policy_shard_semantic_sha(policy_records)
             if policy_semantic_expectation and semantic != policy_semantic_expectation:
