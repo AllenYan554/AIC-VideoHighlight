@@ -33,7 +33,7 @@
   },
   "manifest": {
     "manifest_id": "stage5_4_smoke_manifest_v1",
-    "expected_manifest_sha256": null,
+    "expected_manifest_sha256": "2909f7a831a1f90fb149f0b07033586ab2678ead398180d3715c2ee077e2d766",
     "manifest_sha_policy": "built deterministically by stage5_4_manifest over the full frozen Dev166 frame identity; the canonical SHA-256 must be pinned here before the smoke run — the smoke runner refuses to start while this is null"
   },
   "inputs": {
