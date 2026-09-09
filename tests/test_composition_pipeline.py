@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from scripts.experiments.stage5.run_stage5_3_composition import load_deferred_raw_inputs
 from aic_video_highlight.experiment_runtime.hashing import canonical_sha256, file_sha256
 from aic_video_highlight.spatial_composition.composition_pipeline import (
     FrozenInputError,
@@ -192,6 +193,34 @@ def test_load_verifies_hashes_and_cross_checks(tmp_path):
     tampered = [InputBinding(b.name, b.path, "0" * 64, b.format) for b in bindings]
     with pytest.raises(FrozenInputError):
         load_frozen_inputs(tampered)
+
+
+def test_deferred_raw_loading_rehydrates_inputs_for_diagnostics(tmp_path):
+    bindings = synthetic_inputs(tmp_path)
+    raw_binding = next(b for b in bindings if b.name == "stage5_2_raw_detector")
+    raw_rows = json.loads(raw_binding.path.read_text(encoding="utf-8"))["frames"]
+    raw_dir = tmp_path / "raw_detector"
+    raw_dir.mkdir()
+    (raw_dir / "synthetic.jsonl").write_text(
+        "\n".join(json.dumps(row) for row in raw_rows) + "\n",
+        encoding="utf-8",
+    )
+    deferred_bindings = [
+        InputBinding(binding.name, raw_dir, "", "raw_shard_dir")
+        if binding.name == "stage5_2_raw_detector"
+        else binding
+        for binding in bindings
+    ]
+
+    inputs = load_deferred_raw_inputs(deferred_bindings)
+
+    assert len(inputs.raw_frames) == len(raw_rows)
+    assert crosscheck_mirror_against_artifact(inputs, POLICY_CONFIG) == {
+        "compared": 6,
+        "mismatches": 0,
+    }
+    assert multi_subject_diagnostic(inputs, TARGET_RATIO, POLICY_CONFIG)["ambiguous_frames"] == 1
+    assert fallback_reason_diagnostic(inputs, TARGET_RATIO, POLICY_CONFIG)["fallback_frames"] == 2
 
 
 def test_manifest_is_deterministic_and_model_blind(tmp_path):

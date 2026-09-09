@@ -117,6 +117,17 @@ def load_shard_records(shard_root: Path) -> list[dict]:
     return records
 
 
+def load_deferred_raw_inputs(bindings: list[InputBinding]):
+    """Attach deferred raw-detector shards to the frozen composition inputs."""
+    raw_binding = next(b for b in bindings if b.name == "stage5_2_raw_detector")
+    raw_frames = load_raw_shard_dir(raw_binding.path)
+    inputs_without_raw = load_frozen_inputs(
+        [b for b in bindings if b.format != "raw_shard_dir"],
+        include_raw=False,
+    )
+    return dataclasses.replace(inputs_without_raw, raw_frames=raw_frames)
+
+
 def run(args) -> int:
     config = json.loads(args.config.read_text(encoding="utf-8"))
     environment = EnvironmentPaths.from_json(args.environment)
@@ -270,13 +281,7 @@ def run(args) -> int:
             multi_subject = multi_subject_diagnostic(inputs, target_ratio, policy_config)
             fallback_reasons_diag = fallback_reason_diagnostic(inputs, target_ratio, policy_config)
         else:
-            raw_binding = next(b for b in bindings if b.name == "stage5_2_raw_detector")
-            raw_frames = load_raw_shard_dir(raw_binding.path)
-            inputs_with_raw = load_frozen_inputs(
-                [b for b in bindings if b.format != "raw_shard_dir"],
-                include_raw=False,
-            )
-            inputs_with_raw = dataclasses_replace(inputs_with_raw, raw_frames=raw_frames)
+            inputs_with_raw = load_deferred_raw_inputs(bindings)
             policy_config = policy_config_from(config)
             crosscheck = crosscheck_mirror_against_artifact(inputs_with_raw, policy_config)
             box_too_large = box_too_large_diagnostic(inputs_with_raw, target_ratio, policy_config)
