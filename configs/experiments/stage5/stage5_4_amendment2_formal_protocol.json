@@ -1,0 +1,281 @@
+{
+  "protocol_id": "stage5_4_amendment2_formal",
+  "title": "Stage 5.4 Amendment 2 — Guarded / Constrained EMA v1 Formal Preregistration (TS-0 / TS-1 / TS-2 / TS-3, Full Dev166 + Confirmatory Dev142)",
+  "status": "PREREGISTERED_BEFORE_FORMAL",
+  "created": "2026-09-10",
+  "preregistration": {
+    "timing": "This protocol is frozen before any TS-3 Full Dev166 Formal aggregate exists or is read. No Formal result may be consulted during preparation; gates are not adjusted after Formal begins.",
+    "ts3_algorithm_head": "09443b2f585e2c1c73d2f868c7765b69d03ae7a8",
+    "ts3_algorithm_commit": "feat(stage5): add constrained ema temporal stabilization",
+    "formal_execution_head_policy": "The future run_manifest git_head must equal the final preregistration commit that carries this protocol and its config binding; any later code change requires STOP and a new preregistration.",
+    "post_preregistration_code_changes_required": 0,
+    "preregistration_evidence_chain": [
+      "stage5_4_formal protocol SHA 990afcfe697d82bf89573d08b81217a7b9c91fc4d3b60d8a4d63081e32581e51 (TS-1 Formal, execution head 172aef8)",
+      "stage5_4_amendment_smoke protocol SHA 25c73ba869a4bd802dedc94be24921e8d375a829cadaebf9545b74b7924439eb (TS-2 Smoke, NOT_READY_FOR_FORMAL)",
+      "stage5_4_amendment2_smoke protocol SHA 63c714264161fd9130891a044671b9d34c6032a6d75a109cbb8ef160b75c1770 (TS-3 Smoke, all gates PASS, exit 0)"
+    ]
+  },
+  "research_question": "Does the frozen parameter-free constrained EMA (TS-3, guarded_constrained_ema_v1) retain the temporal-stabilization benefit of fixed EMA (TS-1) while repairing its worst spatial lag on the full frozen Dev166, measured against TS-0 and against the TS-2 motion-adaptive ablation?",
+  "hypothesis": [
+    "H1 (temporal): TS-3 retains material temporal benefit versus TS-0 — at the level TS-1 showed on Full Dev166 (displacement mean reduction about 40%, acceleration mean reduction about 59%) and clearly above TS-2's ablated benefit (about 10%/13% on Smoke).",
+    "H2 (spatial repair): TS-3 keeps subject-center containment at 1.0 by construction and strictly reduces the TS-1 strong-off-center visibility regression (Full Dev166 TS-1 delta was -0.071204; Dev142 -0.080256); the residual strong-motion loss is expected to be nonzero because the guard repairs center containment only, not visible fraction >= 0.90.",
+    "H3 (ablation ordering): TS-3 is no worse than TS-2 on mean displacement, mean acceleration and >0.20 large jumps, while matching TS-2's containment recovery — i.e. the projection keeps the TS-2 spatial repair without returning the TS-2 temporal benefit.",
+    "H4 (guard behavior): On Full Dev166 the guard remains a low-frequency, bounded-magnitude intervention; its true activation rate and correction distribution on strong-motion frames are unknown until Formal and are reported as diagnostics only."
+  ],
+  "scope": {
+    "in_scope": [
+      "read-only consumption of the frozen Stage 5.1/5.2/5.3 Full-Dev artifacts",
+      "TS-0/TS-1/TS-2/TS-3 four-arm matched evaluation over the same frozen frame identity",
+      "Full Dev166 and Confirmatory Dev142 aggregates as independent post-processing of the same Formal output",
+      "guard activation / correction diagnostics (descriptive only)",
+      "multi-subject and fallback diagnostics (observation only)"
+    ],
+    "out_of_scope": [
+      "RT-DETR re-inference", "GPU compute", "Qwen/vLLM", "SAM", "tracking", "optical flow",
+      "alpha sweeps or adaptive alpha", "crop-size adaptation", "new reset or fallback rules",
+      "CMP-2 / multi-subject union policy", "Stage 5.5", "Heldout392", "official test",
+      "any new detector or scene-cut logic"
+    ]
+  },
+  "scientific_variables": {
+    "ts0": "Stage 5.3 FINAL FROZEN CMP-1 (primary_subject_shifted_max_ratio_crop_v1); no temporal smoothing",
+    "ts1": "ema_crop_center_v1; fixed alpha=0.5 EMA over the sanitized primary-subject center, re-placed with the frozen Stage 5.3 floor/clamp geometry",
+    "ts2": "motion_adaptive_ema_v1; unchanged ablation reference (alpha_min=0.5; linear m in (0.10, 0.20); m >= 0.20 -> alpha_t = 1.0)",
+    "ts3": "guarded_constrained_ema_v1; the exact TS-1 EMA proposal plus a parameter-free current-frame center-containment projection",
+    "only_changed_variable_vs_ts1": "output placement projection only; EMA state, alpha, input signal, reset policy, crop dimensions and all frozen composition semantics are unchanged",
+    "ts3_guard_constraint": {
+      "definition": "For every non-fallback frame the current frozen sanitized primary-subject center must lie inside the final half-open crop rectangle [x, x+Cw) x [y, y+Ch).",
+      "projection": "x3 = clip(x_ema, Lx, Ux); y3 = clip(y_ema, Ly, Uy) with Lx = max(0, floor(px - Cw) + 1), Ux = min(W - Cw, floor(px)), Ly = max(0, floor(py - Ch) + 1), Uy = min(floor(H - Ch), floor(py))",
+      "state_feedback": "corrected placement is output-only and never fed back into the EMA state",
+      "fallback": "no guard on fallback frames; frozen center crop and state clearing inherited exactly",
+      "extra_hyperparameters": []
+    },
+    "reset_rules": {
+      "NEW_VIDEO": "EMA state never crosses video_id boundaries",
+      "FRAME_GAP_GT_1": "reset when the gap between consecutive frozen frame ids is greater than 1",
+      "FALLBACK": "fallback frame emits the frozen center crop and clears state; the next non-fallback frame restarts from its own frozen center",
+      "scene_or_shot_reset": "NONE; no new reset is introduced"
+    },
+    "unchanged": [
+      "frozen frame identity and ordering",
+      "sanitized frozen primary subject and bbox",
+      "Stage 5.3 CMP-1 composition signal",
+      "fixed EMA alpha=0.5",
+      "crop width, derived crop height, target ratio 9:16",
+      "fallback placement",
+      "Stage 5.3 floor/clamp geometry"
+    ]
+  },
+  "frozen_dependencies": {
+    "stage5_3_final_freeze": {
+      "path": "configs/stage5_3_final_freeze.json",
+      "file_sha256": "2b7081443cbb0e6ed0fd73d49217f6d4ff071a1e094146bbfd0c78b5696beb49",
+      "status": "FINAL_FROZEN",
+      "git_head_at_freeze": "5330a14bbe49db7ee2131163e78fee83d1596671",
+      "formal_manifest_semantic_sha256": "2af7d66468fc8d5546f2fabf20aba2f799a17d76ce7c8f4c281fb930539cb24d",
+      "frozen_cmp1_predictions_sha256": "dce61c4ce1e83358a02a0c4a0ef38666eae2726fa116826980506997005580b1",
+      "final_formal_execution_head": "c0b331064debb3ed1a623e6620df6bce650446e2"
+    },
+    "stage5_2_final_freeze": {
+      "path": "configs/stage5_2_final_freeze.json",
+      "file_sha256": "4d407b2578e92a6b02820651de369f5fa6728cbda6f8b94efdf54689d49cc03a",
+      "status": "FINAL_FROZEN",
+      "model_revision": "df939e661d8c52e80608d1ec566561aabd25a4e7",
+      "weights_sha256": "5263d5521eff3e356f6cd8a371fd5dfb891725beda5f713674f79669115cdc64",
+      "raw_candidates_semantic_sha256": "44ae9383d20fe0afd290c10f8fb78c5bcd2ee5b0709fb7aedf61dbd83d52f399",
+      "policy_v1_semantic_sha256": "222258d1d7960639697bd6c3f36339443c85a27bee9dcee7742f24fda238871d"
+    },
+    "stage5_1": {
+      "predictions_sha256": "ca44cc2831e935e82fa7b05820b1269d7f2cc0d360c030b5847a192ede11b9a5",
+      "metadata_cache_sha256": "52e46f16cfe5012aa68cfb8d7440f4d53e31b7cc133add7e29b78d648a9d5675",
+      "dev166_index_sha256": "b541ade5c05e066dd5163f5d1cf2f7deb8780613589839000b55b1c55803a04e"
+    }
+  },
+  "smoke24_evidence_and_exclusion": {
+    "smoke_manifest": {
+      "manifest_id": "stage5_4_smoke_manifest_v1",
+      "semantic_sha256": "2909f7a831a1f90fb149f0b07033586ab2678ead398180d3715c2ee077e2d766",
+      "file_sha256": "046ebf18d4df2c05d9c51ba627001ce8fccd222d4940ffa1a593d5d8fdf1adfc",
+      "videos": 24,
+      "frames": 1080
+    },
+    "exclusion_rule": "Confirmatory Dev142 = Frozen Dev166 minus ALL 24 whole video_ids of the SHA-frozen Smoke24 manifest (whole-video exclusion, not per-frame exclusion); 166 - 24 = 142 videos.",
+    "exclusion_verified_locally": "The 24 excluded video_ids in the Formal config were byte-verified against the archived Smoke24 manifest copy (semantic and file SHA re-verified 2026-09-10).",
+    "role": "identity-only exclusion source; never used to alter any treatment",
+    "ts3_smoke_result_binding": {
+      "execution_head": "09443b2f585e2c1c73d2f868c7765b69d03ae7a8",
+      "config_sha256": "32e4a3c1c1778b32169839505e7b002696d15753977d9ec61ee6cc940721ad0f",
+      "process_exit_code": 0,
+      "engineering_gates": "18/18 PASS",
+      "temporal_gates": "5/5 PASS",
+      "spatial_gates": "4/4 PASS",
+      "mechanism_checks": "5/5 PASS",
+      "guard_activation": "10 / 756 non-fallback frames (1.32%); horizontal only; correction mean 26.4 px / max 61 px",
+      "decision": "READY_FOR_FORMAL_PREREGISTRATION (this protocol)"
+    }
+  },
+  "analysis_sets": {
+    "full_dev166": {
+      "name": "Frozen Dev166",
+      "definition": "All 166 whole video_ids and frozen Stage 5.1 frame identities in stage5_3_formal_manifest_v1",
+      "expected_video_count": 166,
+      "expected_frame_count": 51256,
+      "identity_sha256": "6d2c14877201ebf8fc6e8c11531f3a201d5e382f5ec5eb496f1d70f7c66d31c3",
+      "frame_identity_policy": "re-confirmed at run time from the frozen manifest and frozen CMP-1 artifact; never assumed from documents"
+    },
+    "confirmatory_dev142": {
+      "name": "Confirmatory Dev142",
+      "definition": "Frozen Dev166 minus all 24 whole video_ids of the SHA-frozen Stage 5.4 Smoke24 manifest",
+      "expected_video_count": 142,
+      "expected_frame_count": 43820,
+      "identity_sha256": "d00f99a044fc67a7ae484185cab5e8f94928ec3be350e2b27ac26250b72b7434",
+      "expected_smoke_overlap": 0,
+      "heldout_overlap_by_frozen_split_contract": 0,
+      "excluded_smoke_video_ids": [
+        "qvh_000016_9x16", "qvh_000029_9x16", "qvh_000048_9x16", "qvh_000057_9x16",
+        "qvh_000082_9x16", "qvh_000083_9x16", "qvh_000092_9x16", "qvh_000098_9x16",
+        "qvh_000152_9x16", "qvh_000181_9x16", "qvh_000194_9x16", "qvh_000260_9x16",
+        "qvh_000371_9x16", "qvh_000383_9x16", "qvh_000522_9x16", "qvh_000550_9x16",
+        "qvh_000604_9x16", "qvh_000610_9x16", "qvh_000662_9x16", "qvh_000681_9x16",
+        "qvh_000748_9x16", "qvh_000773_9x16", "qvh_000775_9x16", "qvh_000839_9x16"
+      ],
+      "role": "confirmatory development subset; NOT Heldout, NOT official validation, NOT official test"
+    }
+  },
+  "metrics": {
+    "temporal_displacement": "|cx_t - cx_(t-1)| / W over adjacent non-fallback frozen frame pairs (gap == 1); mean, median, P90, P95, max; large jump ratios at >0.10, >0.20, >0.30 (frozen thresholds, complete reuse)",
+    "temporal_acceleration": "|(cx_t - cx_(t-1)) - (cx_(t-1) - cx_(t-2))| / W over adjacent non-fallback triplets; mean, median, P90, P95, max",
+    "comparison_sets": "paired transitions/triplets only; TS-1/TS-2/TS-3 reset steps counted over all frames and reported separately",
+    "arms": ["TS-0", "TS-1", "TS-2", "TS-3"],
+    "pairwise": ["TS-3 vs TS-0", "TS-3 vs TS-1", "TS-3 vs TS-2", "TS-1 vs TS-0", "TS-2 vs TS-0"],
+    "spatial": [
+      "mean visible fraction",
+      "median visible fraction",
+      "visible fraction >= 0.90",
+      "subject-center containment",
+      "center-offset strata (near / moderate / strong)"
+    ],
+    "spatial_warning": "containment = 1.0 is a construction guarantee of TS-3 and does NOT imply visible-fraction recovery; visible >= 0.90 and mean visible fraction are independently examined",
+    "strata_thresholds": {"near_center_lt": 0.10, "strongly_off_center_gte": 0.25, "frozen": "identical to Stage 5.4 Smoke and TS-1 Formal; no re-bucketing after Formal"},
+    "strata_output": "per analysis set, per stratum: N, TS-0/TS-1/TS-2/TS-3 mean visible fraction, and TS-1/TS-2/TS-3 delta vs TS-0"
+  },
+  "guard_formal_diagnostics": {
+    "role": "DIAGNOSTIC_ONLY; no promotion gate derives from guard diagnostics",
+    "required_outputs": [
+      "guard activation count and ratio (non-fallback frames)",
+      "horizontal / vertical / both-axis activation counts",
+      "continuous guard-run count and max consecutive guard-run length",
+      "correction magnitude mean / median / P90 / P95 / max",
+      "per-stratum activation rate and correction magnitude",
+      "per analysis set: Full Dev166 and Confirmatory Dev142"
+    ],
+    "smoke_to_full_question": "The Formal report must explicitly discuss the relation between guard frequency, correction magnitude, temporal penalty and strong-motion spatial recovery; the Smoke rate (1.32%) is not assumed to generalize."
+  },
+  "multi_subject_diagnostics": {
+    "metrics": ["all-secondary-contained", "at-least-one-secondary-contained", "primary+all-secondary-contained"],
+    "arms": ["TS-0", "TS-1", "TS-2", "TS-3"],
+    "role": "OBSERVATION_ONLY; may not be converted into a promotion gate"
+  },
+  "fallback_semantics": {
+    "inheritance": "frozen Stage 5.2/5.3 fallback semantics fully inherited; guard never acts on fallback frames",
+    "verification": "TS-1/TS-2/TS-3 fallback placement must equal TS-0 on every fallback frame",
+    "outputs": ["fallback count", "fallback ratio", "reset count by reason", "fallback reason distribution"]
+  },
+  "decision_rule": {
+    "application": "Every gate below is evaluated independently on Full Dev166 and Confirmatory Dev142; both analysis sets must pass. TS-3 is the treatment arm; TS-0 is the control. No gate may be changed after Formal begins.",
+    "frozen_stage5_4_temporal_benefit_gates_applied_to_ts3_vs_ts0": {
+      "minimum_mean_displacement_relative_reduction": 0.2,
+      "minimum_mean_acceleration_relative_reduction": 0.3,
+      "maximum_p95_displacement_relative_regression": 0.0,
+      "large_jump_nonincrease_thresholds": [0.1, 0.2, 0.3],
+      "minimum_gt_0_20_relative_reduction": 0.25
+    },
+    "frozen_stage5_4_spatial_regression_guardrails_applied_to_ts3_vs_ts0": {
+      "minimum_mean_visible_fraction_delta": -0.03,
+      "minimum_visible_ge_0_90_delta": -0.05,
+      "minimum_subject_center_containment_delta": -0.02,
+      "minimum_strong_off_center_mean_visible_delta": -0.05
+    },
+    "gate_provenance": "The thresholds are the exact values preregistered for the Stage 5.4 TS-1 Formal and reused unchanged by the TS-3 Smoke; no gate is added, removed, or relaxed for TS-3.",
+    "amendment2_mechanism_checks_per_analysis_set": [
+      "Every non-fallback TS-3 crop contains the current frozen primary-subject center.",
+      "TS-3 strong-off-center visible-fraction delta versus TS-0 is strictly better than TS-1 on the same frames.",
+      "TS-3 mean displacement is no worse than TS-2 on the same frames.",
+      "TS-3 mean acceleration is no worse than TS-2 on the same frames.",
+      "TS-3 >0.20 jump ratio is no worse than TS-2 on the same frames."
+    ],
+    "overall_decision": "PASS requires every engineering gate, every frozen temporal and spatial gate on TS-3 vs TS-0 on BOTH analysis sets, and every mechanism check on BOTH analysis sets."
+  },
+  "engineering_gates": {
+    "all_must_pass": [
+      "video identity complete vs the frozen Stage 5.3 Formal manifest (unknown video = 0)",
+      "frame identity complete over all 51256 frozen frames; missing = 0; extra = 0; duplicates = 0",
+      "manifest crosscheck mismatches = 0",
+      "invalid crop = 0; out-of-bounds = 0; ratio violations = 0 (all four arms)",
+      "crop size unchanged on every frame (TS-1/TS-2/TS-3 vs TS-0)",
+      "fallback placement unchanged on every fallback frame (TS-1/TS-2/TS-3 vs TS-0)",
+      "TS-0 frozen regression = 0 (recomputed CMP-0 equals the frozen Stage 5.1 crop)",
+      "TS-1 regression = 0 and TS-2 regression = 0 versus their frozen Smoke semantics (same algorithm, parameters and reset rules)",
+      "TS-3 deterministic replay = PASS",
+      "Stage 5.1/5.2 frozen artifacts unmodified (byte and semantic SHA re-verification)",
+      "Stage 5.3 frozen CMP-1 artifact byte-verified and frame identity exact",
+      "frozen manifest / protocol / config identity bound in run_manifest",
+      "protocol and config snapshots included in the artifact manifest",
+      "Heldout access = 0",
+      "GPU / Qwen / vLLM / RT-DETR / SAM calls = 0"
+    ]
+  },
+  "determinism": {
+    "method": "Pure CPU arithmetic over SHA-frozen inputs; an in-process replay of the full TS-0/TS-1/TS-2/TS-3 pipeline must reproduce the canonical semantic SHA of every shard record.",
+    "byte_identity": "Per-video shard JSON files are written atomically; where outputs are byte-identical across replays the file SHA-256 is additionally retained in shard status.",
+    "no_detector_rerun": "Determinism never re-runs RT-DETR; all treatment inputs are frozen artifacts."
+  },
+  "resume": {
+    "runtime": "RunContext + ShardStore with strict identity checks; completed per-video shards are reused only under the same immutable identity",
+    "rejections": ["config drift", "protocol drift", "algorithm/code drift (git head)", "manifest drift", "frozen input drift"],
+    "forbidden": ["deleting shards to fake a fresh run", "hand-editing status files", "assembling results outside ShardStore"]
+  },
+  "runtime_contract": {
+    "reuse": ["RunContext", "ShardStore", "ProgressReporter", "run_manifest", "status.json", "progress.json", "progress.jsonl", "artifact_manifest", "experiment_raw_report.md", "AI_REPORT_INPUTS.md", "snapshots/config.json", "snapshots/protocol.json"],
+    "progress": ["videos", "frames", "current video", "current sequence", "elapsed", "ETA", "errors", "invalid", "resume state"],
+    "launch_provenance": "launch_source / launch_mode / interactive_child / target are recorded in run_manifest only and never enter the scientific identity or semantic hashes",
+    "output_root": "/root/autodl-tmp/outputs/stage5/stage5_4_amendment2_formal/",
+    "output_collision": "A non-resume start refuses an existing output identity; no overwrite, reset, clean, or automatic deletion."
+  },
+  "completion_criteria": {
+    "formal_complete_requires_all_of": [
+      "all 166 per-video shards written and identity-verified",
+      "post-processing complete (aggregates, strata, guard, multi-subject, fallback diagnostics)",
+      "Full Dev166 aggregate and Confirmatory Dev142 aggregate produced",
+      "all engineering gates evaluated",
+      "all preregistered scientific gates evaluated on both analysis sets",
+      "deterministic replay PASS",
+      "artifact manifest and snapshots generated",
+      "experiment_raw_report.md and AI_REPORT_INPUTS.md generated",
+      "final process exit code recorded"
+    ],
+    "progress_semantics": "51256/51256 progress alone is NOT completion; lifecycle completion is authoritative in status.json and run_manifest.finished_at only after post-processing succeeds."
+  },
+  "final_freeze_criteria": {
+    "no_automatic_freeze": "Even on exit code 0 with every gate PASS, the executing agent must NOT enter FINAL_FROZEN or commit a freeze automatically.",
+    "human_review_required": "After Formal completes, evidence goes to human review; the executing agent may only report READY_FOR_HUMAN_REVIEW.",
+    "report_location": "The human report is written directly as amendment2_formal/experiment_report.md in the Stage 5.4 archive; existing smoke/, formal/, amendment_smoke/, amendment2_smoke/ reports are never modified."
+  },
+  "failure_semantics": {
+    "gate_fail": "A FAIL on any preregistered gate is a final result for this protocol; it may not be repaired by changing gates, alpha, the guard, datasets, or exclusions after Formal. Any next mechanism requires a new preregistration.",
+    "engineering_fail": "An engineering failure (identity, hash, drift) stops the run; resume is allowed only under the same immutable identity.",
+    "stop_conditions": "The executor must STOP without running Formal if the protocol/config identity cannot be verified, frozen inputs drift, or AutoDL and origin/master are not at the same execution HEAD."
+  },
+  "heldout_lock": {"heldout392": "ABSOLUTELY_LOCKED", "allowed_access": 0},
+  "resources_forbidden": ["Hard", "Heldout", "official test", "GPU inference", "Qwen", "vLLM", "RT-DETR inference", "SAM", "Kalman", "ByteTrack", "DeepSORT", "RAFT", "optical flow", "CMP-2", "Stage 5.5"],
+  "interpretation_boundary": [
+    "A PASS supports constrained-EMA temporal stabilization on frozen Dev166 under these metrics only; it does not claim official competition-score improvement.",
+    "TS-3 targets the TS-1-level temporal benefit plus repaired worst-case spatial lag; it is not claimed to eliminate all spatial loss, and the visible >= 0.90 regression is expected to persist partially.",
+    "No claim about Heldout or generalization beyond Dev166 is permitted.",
+    "Confirmatory Dev142 is still a development subset, not Heldout."
+  ],
+  "references": [
+    "Kassis, T., Agarwal, V., He, Y., Patel, D., & Brueckner, A. M. (2026). Scientific Agent Skills: A Library of Procedural Knowledge for Research Agents. arXiv:2609.00065. https://doi.org/10.48550/arXiv.2609.00065"
+  ],
+  "next_step_gate": "A separate future Formal Executor may run stage5_4_amendment2_formal only after this protocol is committed as PREREGISTERED_BEFORE_FORMAL, the config pins its SHA, and Windows, AutoDL, and origin/master are at the same execution HEAD with validate-only PASS."
+}

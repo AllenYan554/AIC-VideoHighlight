@@ -73,6 +73,10 @@ BASE_FIELDS = {
     "models": "models",
 }
 
+# Experiment ids that consume the Stage 5.3 frozen Full-Dev manifest and apply
+# the preregistered Formal contract (Full Dev166 + Confirmatory Dev142).
+FORMAL_EXPERIMENT_IDS = ("stage5_4_formal", "stage5_4_amendment2_formal")
+
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
@@ -659,22 +663,86 @@ def spatial_metrics_for_all_treatments(records: list[dict]) -> dict:
 
 
 def guard_projection_diagnostics(records: list[dict]) -> dict | None:
-    """Describe TS-3 intervention frequency/magnitude without changing any gate."""
+    """Describe TS-3 intervention frequency/magnitude without changing any gate.
+
+    Diagnostic only: activation counts/rates, axis split, continuous guard-run
+    length, correction-magnitude distributions and per-stratum breakdowns. None of
+    these values feeds a promotion gate in any Stage 5.4 protocol.
+    """
     eligible = [record for record in records if "ts3" in record and not record["ts0"]["fallback"]]
     if not eligible:
         return None
     guarded = [record for record in eligible if record["ts3"]["guard_applied"]]
+
+    def correction(side: str) -> dict:
+        return temporal_summary([abs(float(record["ts3"][f"guard_correction_{side}"])) for record in eligible])
+
+    horizontal_applied = sum(1 for record in guarded if float(record["ts3"]["guard_correction_x"]) != 0.0)
+    vertical_applied = sum(1 for record in guarded if float(record["ts3"]["guard_correction_y"]) != 0.0)
+    both_axes = sum(
+        1
+        for record in guarded
+        if float(record["ts3"]["guard_correction_x"]) != 0.0
+        and float(record["ts3"]["guard_correction_y"]) != 0.0
+    )
+
+    guard_run_count = 0
+    max_guard_run_length = 0
+    by_video: dict[str, list[dict]] = {}
+    for record in eligible:
+        by_video.setdefault(record["video_id"], []).append(record)
+    for video_records in by_video.values():
+        ordered = sorted(video_records, key=lambda record: int(record["frame"]))
+        active_run_length = 0
+        previous_frame = None
+        for record in ordered:
+            frame = int(record["frame"])
+            contiguous = previous_frame is not None and frame - previous_frame == 1
+            if record["ts3"]["guard_applied"]:
+                if active_run_length > 0 and contiguous:
+                    active_run_length += 1
+                else:
+                    guard_run_count += 1
+                    active_run_length = 1
+                max_guard_run_length = max(max_guard_run_length, active_run_length)
+            else:
+                active_run_length = 0
+            previous_frame = frame
+
+    strata: dict[str, dict] = {}
+    for record in eligible:
+        stratum = str(record["stratum"])
+        bucket = strata.setdefault(stratum, {"eligible": 0, "applied": 0, "corrections": []})
+        bucket["eligible"] += 1
+        if record["ts3"]["guard_applied"]:
+            bucket["applied"] += 1
+            bucket["corrections"].append(
+                abs(float(record["ts3"]["guard_correction_x"]))
+                + abs(float(record["ts3"]["guard_correction_y"]))
+            )
+    strata_payload = {
+        stratum: {
+            "eligible": bucket["eligible"],
+            "guard_applied_frames": bucket["applied"],
+            "guard_applied_rate": round(bucket["applied"] / bucket["eligible"], 6) if bucket["eligible"] else 0.0,
+            "absolute_correction_l1_px": summary_payload(bucket["corrections"]),
+        }
+        for stratum, bucket in sorted(strata.items())
+    }
+
     return {
         "role": "DIAGNOSTIC_ONLY",
         "eligible_nonfallback_frames": len(eligible),
         "guard_applied_frames": len(guarded),
         "guard_applied_rate": round(len(guarded) / len(eligible), 6),
-        "absolute_horizontal_correction": temporal_summary(
-            [abs(float(record["ts3"]["guard_correction_x"])) for record in eligible]
-        ),
-        "absolute_vertical_correction": temporal_summary(
-            [abs(float(record["ts3"]["guard_correction_y"])) for record in eligible]
-        ),
+        "absolute_horizontal_correction": correction("x"),
+        "absolute_vertical_correction": correction("y"),
+        "horizontal_applied_frames": horizontal_applied,
+        "vertical_applied_frames": vertical_applied,
+        "both_axes_applied_frames": both_axes,
+        "guard_run_count": guard_run_count,
+        "max_guard_run_length": max_guard_run_length,
+        "strata": strata_payload,
     }
 
 
@@ -819,10 +887,10 @@ def build_analysis_set_identity(
 
 
 def validate_formal_contract(config: dict, protocol: dict, manifest: dict, smoke_manifest: dict) -> dict:
-    """Validate preregistered Formal identities without executing TS-1 or producing results."""
-    if config.get("experiment_id") != "stage5_4_formal":
-        raise ValueError("formal contract validator requires stage5_4_formal")
-    if protocol.get("protocol_id") != "stage5_4_formal":
+    """Validate preregistered Formal identities without executing any treatment or producing results."""
+    if config.get("experiment_id") not in FORMAL_EXPERIMENT_IDS:
+        raise ValueError(f"formal contract validator requires one of {FORMAL_EXPERIMENT_IDS}")
+    if protocol.get("protocol_id") != config["experiment_id"]:
         raise ValueError("formal protocol_id mismatch")
     if protocol.get("status") not in {"DRAFT", "PREREGISTERED_BEFORE_FORMAL"}:
         raise ValueError("formal protocol status is invalid")
@@ -832,6 +900,28 @@ def validate_formal_contract(config: dict, protocol: dict, manifest: dict, smoke
         "NEW_VIDEO", "FRAME_GAP_GT_1", "FALLBACK"
     ]:
         raise ValueError("Formal reset rules drifted")
+    if config["experiment_id"] == "stage5_4_amendment2_formal":
+        expected_ts2 = {
+            "method": "motion_adaptive_ema_v1",
+            "alpha_min": 0.5,
+            "smoothing_ceiling_motion_norm": 0.1,
+            "full_response_motion_norm": 0.2,
+        }
+        ts2 = config["temporal_smoothing"].get("ts2", {})
+        if any(ts2.get(key) != value for key, value in expected_ts2.items()):
+            raise ValueError("Formal TS-2 ablation schedule drifted from the frozen amendment draft")
+        expected_ts3 = {
+            "method": "guarded_constrained_ema_v1",
+            "proposal": "ema_crop_center_v1 fixed alpha=0.5",
+            "constraint": "current_frozen_primary_subject_center_inside_final_crop",
+            "projection": "nearest_point_on_safe_integer_top_left_rectangle",
+            "correction_feedback_to_ema_state": False,
+        }
+        ts3 = config["temporal_smoothing"].get("ts3", {})
+        if any(ts3.get(key) != value for key, value in expected_ts3.items()):
+            raise ValueError("Formal TS-3 guard definition drifted from the frozen Smoke algorithm")
+        if ts3.get("extra_hyperparameters"):
+            raise ValueError("Formal TS-3 must remain parameter-free")
     if manifest.get("manifest_sha256") != config["manifest"]["expected_manifest_sha256"]:
         raise ValueError("Stage 5.3 Formal manifest identity mismatch")
     if int(manifest.get("video_count", -1)) != int(config["manifest"]["expected_video_count"]):
@@ -989,7 +1079,11 @@ def evaluate_formal_scientific_gates(analysis_metrics: dict, gate_config: dict) 
 
 
 def evaluate_amendment2_scientific_gates(
-    records: list[dict], pooled: dict, guardrails: dict, gate_config: dict
+    records: list[dict],
+    pooled: dict,
+    guardrails: dict,
+    gate_config: dict,
+    role: str = "AMENDMENT2_SMOKE_PROMOTION_REVIEW / frozen Stage 5.4 gates applied to TS-3",
 ) -> dict:
     """Apply frozen TS-3 gates and preregistered TS-3-vs-TS-1/TS-2 checks."""
     ts3_gate_result = _evaluate_one_analysis_set(
@@ -1036,11 +1130,37 @@ def evaluate_amendment2_scientific_gates(
         },
     }
     return {
-        "role": "AMENDMENT2_SMOKE_PROMOTION_REVIEW / frozen Stage 5.4 gates applied to TS-3",
+        "role": role,
         "ts3_vs_ts0": ts3_gate_result,
         "amendment2_mechanism_checks": mechanism_checks,
         "all_pass": ts3_gate_result["pass"]
         and all(item["pass"] for item in mechanism_checks.values()),
+    }
+
+
+def evaluate_amendment2_formal_scientific_gates(
+    analysis_set_records: dict[str, list[dict]], gate_config: dict
+) -> dict:
+    """Apply the frozen Stage 5.4 gates and Amendment 2 mechanism checks per analysis set.
+
+    Every gate is evaluated independently on Full Dev166 and Confirmatory Dev142;
+    both analysis sets must pass. The gate thresholds and mechanism checks are the
+    ones frozen before the Amendment 2 smoke; nothing is tuned from Formal output.
+    """
+    results = {}
+    for name, records in analysis_set_records.items():
+        pooled = pooled_distributions(records)
+        guardrails = spatial_metrics_for_all_treatments(records)
+        results[name] = evaluate_amendment2_scientific_gates(
+            records,
+            pooled,
+            guardrails,
+            gate_config,
+            role="AMENDMENT2_FORMAL_PREREGISTERED_GATES / frozen Stage 5.4 gates applied to TS-3",
+        )
+    return {
+        "analysis_sets": results,
+        "all_pass": all(item["all_pass"] for item in results.values()),
     }
 
 
@@ -1148,6 +1268,19 @@ def build_analysis_metrics(records: list[dict]) -> dict:
     }
 
 
+def build_analysis_metrics_all_treatments(records: list[dict]) -> dict:
+    """Analysis-set metrics for all configured treatments plus guard diagnostics."""
+    pooled = pooled_distributions(records)
+    metrics = {
+        "videos": len({record["video_id"] for record in records}),
+        "frames": len(records),
+        "temporal_stability_pooled": {key: summary_payload(values) for key, values in pooled.items()},
+        "spatial_guardrails": spatial_metrics_for_all_treatments(records),
+        "guard_projection_diagnostics": guard_projection_diagnostics(records),
+    }
+    return metrics
+
+
 def run(args) -> int:
     config = json.loads(args.config.read_text(encoding="utf-8"))
     environment = EnvironmentPaths.from_json(args.environment)
@@ -1183,7 +1316,7 @@ def run(args) -> int:
                 include_raw=False,
                 policy_semantic_expectation=config.get("expected_policy_semantic_sha256"),
             )
-            if config["experiment_id"] == "stage5_4_formal":
+            if config["experiment_id"] in FORMAL_EXPERIMENT_IDS:
                 protocol_path = Path(config["protocol"])
                 protocol = json.loads(protocol_path.read_text(encoding="utf-8"))
                 smoke_manifest = load_manifest_binding(config["smoke_binding"], bindings)
@@ -1232,7 +1365,7 @@ def run(args) -> int:
         print(json.dumps(result, ensure_ascii=False))
         return 0 if result.get("validation") == "PASS" else 2
 
-    if config["experiment_id"] == "stage5_4_formal":
+    if config["experiment_id"] in FORMAL_EXPERIMENT_IDS:
         protocol_path = Path(config["protocol"])
         protocol = json.loads(protocol_path.read_text(encoding="utf-8"))
         actual_protocol_sha = file_sha256(protocol_path)
@@ -1264,7 +1397,7 @@ def run(args) -> int:
             include_raw=False,
             policy_semantic_expectation=config.get("expected_policy_semantic_sha256"),
         )
-        if config["experiment_id"] == "stage5_4_formal":
+        if config["experiment_id"] in FORMAL_EXPERIMENT_IDS:
             smoke_manifest = load_manifest_binding(config["smoke_binding"], bindings)
             formal_contract = validate_formal_contract(
                 config,
@@ -1466,31 +1599,63 @@ def run(args) -> int:
                 else multi_subject.get("ambiguous_frames") is not None
             ),
         )
-        if config["experiment_id"] == "stage5_4_formal" or additional_sides:
+        if config["experiment_id"] in FORMAL_EXPERIMENT_IDS or additional_sides:
             gates["protocol_config_snapshots_generated"] = all(
                 (snapshots_dir / name).is_file() for name in ("config.json", "protocol.json")
             )
-        if config["experiment_id"] == "stage5_4_formal":
+        if config["experiment_id"] in FORMAL_EXPERIMENT_IDS:
             confirmatory_ids = set(formal_contract["confirmatory_dev142"]["video_ids"])
             confirmatory_records = [
                 record for record in records if record["video_id"] in confirmatory_ids
             ]
-            analysis_metrics = {
-                "full_dev166": build_analysis_metrics(records),
-                "confirmatory_dev142": build_analysis_metrics(confirmatory_records),
-            }
-            analysis_metrics["full_dev166"]["multi_subject_observation_only"] = {
-                key: value for key, value in multi_subject.items() if key != "rows"
-            }
-            confirmatory_multi_subject = summarize_multi_subject_rows(
-                [row for row in multi_subject["rows"] if row["video_id"] in confirmatory_ids]
+            if config["experiment_id"] == "stage5_4_amendment2_formal":
+                analysis_set_records = {
+                    "full_dev166": records,
+                    "confirmatory_dev142": confirmatory_records,
+                }
+                analysis_metrics = {
+                    name: build_analysis_metrics_all_treatments(set_records)
+                    for name, set_records in analysis_set_records.items()
+                }
+                scientific_gates = evaluate_amendment2_formal_scientific_gates(
+                    analysis_set_records, config["decision_gates"]
+                )
+            else:
+                analysis_metrics = {
+                    "full_dev166": build_analysis_metrics(records),
+                    "confirmatory_dev142": build_analysis_metrics(confirmatory_records),
+                }
+                scientific_gates = evaluate_formal_scientific_gates(
+                    analysis_metrics, config["decision_gates"]
+                )
+            multi_subject_by_comparison = (
+                multi_subject
+                if additional_sides
+                else {"ts0_vs_ts1": multi_subject}
             )
-            analysis_metrics["confirmatory_dev142"]["multi_subject_observation_only"] = {
-                key: value for key, value in confirmatory_multi_subject.items() if key != "rows"
-            }
-            scientific_gates = evaluate_formal_scientific_gates(
-                analysis_metrics, config["decision_gates"]
-            )
+            for comparison, payload in multi_subject_by_comparison.items():
+                if not isinstance(payload, dict) or "rows" not in payload:
+                    continue
+                full_summary = {key: value for key, value in payload.items() if key != "rows"}
+                confirmatory_summary = {
+                    key: value
+                    for key, value in summarize_multi_subject_rows(
+                        [row for row in payload["rows"] if row["video_id"] in confirmatory_ids]
+                    ).items()
+                    if key != "rows"
+                }
+                if config["experiment_id"] == "stage5_4_amendment2_formal":
+                    analysis_metrics["full_dev166"].setdefault(
+                        "multi_subject_observation_only", {}
+                    )[comparison] = full_summary
+                    analysis_metrics["confirmatory_dev142"].setdefault(
+                        "multi_subject_observation_only", {}
+                    )[comparison] = confirmatory_summary
+                else:
+                    analysis_metrics["full_dev166"]["multi_subject_observation_only"] = full_summary
+                    analysis_metrics["confirmatory_dev142"][
+                        "multi_subject_observation_only"
+                    ] = confirmatory_summary
         elif include_ts3:
             analysis_metrics = None
             scientific_gates = evaluate_amendment2_scientific_gates(

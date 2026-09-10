@@ -15,6 +15,9 @@ Registered experiments:
                             Smoke24 (AutoDL CPU; explicit future launch only)
 - stage5_4_amendment2_smoke: TS-0/TS-1/TS-2/TS-3 constrained-EMA development
                              Smoke24 (AutoDL CPU; explicit future launch only)
+- stage5_4_amendment2_formal: PREREGISTERED constrained-EMA Formal, four arms over
+                              Frozen Dev166 + Confirmatory Dev142 (AutoDL CPU;
+                              DEFAULT NOT RUN)
 
 Environment auto-selection: on Windows the default environment is
 configs/environments/windows_local.json, otherwise configs/environments/autodl.json.
@@ -38,6 +41,7 @@ RUNNERS = {
     "stage5_4_formal": "scripts/experiments/stage5/run_stage5_4_temporal.py",
     "stage5_4_amendment_smoke": "scripts/experiments/stage5/run_stage5_4_temporal.py",
     "stage5_4_amendment2_smoke": "scripts/experiments/stage5/run_stage5_4_temporal.py",
+    "stage5_4_amendment2_formal": "scripts/experiments/stage5/run_stage5_4_temporal.py",
 }
 
 CONFIGS = {
@@ -49,6 +53,7 @@ CONFIGS = {
     "stage5_4_formal": "configs/experiments/stage5/stage5_4_formal.json",
     "stage5_4_amendment_smoke": "configs/experiments/stage5/stage5_4_amendment_smoke.json",
     "stage5_4_amendment2_smoke": "configs/experiments/stage5/stage5_4_amendment2_smoke.json",
+    "stage5_4_amendment2_formal": "configs/experiments/stage5/stage5_4_amendment2_formal.json",
 }
 
 # Launch metadata consumed by scripts/experiments/registry.py (single source of
@@ -64,6 +69,7 @@ LAUNCH = {
     "stage5_4_formal": {"target": "AUTODL", "gpu": "NONE"},
     "stage5_4_amendment_smoke": {"target": "AUTODL", "gpu": "NONE"},
     "stage5_4_amendment2_smoke": {"target": "AUTODL", "gpu": "NONE"},
+    "stage5_4_amendment2_formal": {"target": "AUTODL", "gpu": "NONE"},
 }
 
 

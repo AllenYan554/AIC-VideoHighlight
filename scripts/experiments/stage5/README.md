@@ -10,7 +10,10 @@
 - `run_stage5_4_temporal.py`: Stage 5.4 temporal smoothing development smoke, TS-0 (frozen
   CMP-1) vs TS-1 (EMA crop-center alpha 0.5) (`stage5_4_smoke`; AutoDL no-card, CPU;
   refuses to start until the frozen manifest SHA is pinned in its config).
-  `stage5_4_formal` is reserved for a future preregistration and is NOT registered yet.
+- `run_stage5_4_temporal.py` also serves the preregistered Formal experiments over the
+  frozen Full-Dev manifest: `stage5_4_formal` (TS-0/TS-1) and
+  `stage5_4_amendment2_formal` (TS-0/TS-1/TS-2/TS-3 constrained EMA with Confirmatory
+  Dev142), both AutoDL no-card, CPU, DEFAULT NOT RUN.
 
 Standalone frozen-stage CLIs (experiments already executed and frozen; not registry
 members):
