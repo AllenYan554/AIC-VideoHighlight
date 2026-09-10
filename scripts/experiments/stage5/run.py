@@ -11,6 +11,8 @@ Registered experiments:
                             in configs/experiments/stage5/stage5_4_smoke.json)
 - stage5_4_formal         : preregistered Stage 5.4 Formal over Frozen Dev166
                             plus Confirmatory Dev142 (AutoDL CPU; DEFAULT NOT RUN)
+- stage5_4_amendment_smoke: TS-0/TS-1/TS-2 Motion-Adaptive EMA v1 development
+                            Smoke24 (AutoDL CPU; explicit future launch only)
 
 Environment auto-selection: on Windows the default environment is
 configs/environments/windows_local.json, otherwise configs/environments/autodl.json.
@@ -32,6 +34,7 @@ RUNNERS = {
     "stage5_4_manifest": "scripts/experiments/stage5/build_stage5_4_smoke_manifest.py",
     "stage5_4_smoke": "scripts/experiments/stage5/run_stage5_4_temporal.py",
     "stage5_4_formal": "scripts/experiments/stage5/run_stage5_4_temporal.py",
+    "stage5_4_amendment_smoke": "scripts/experiments/stage5/run_stage5_4_temporal.py",
 }
 
 CONFIGS = {
@@ -41,6 +44,7 @@ CONFIGS = {
     "stage5_4_manifest": "configs/experiments/stage5/stage5_4_manifest.json",
     "stage5_4_smoke": "configs/experiments/stage5/stage5_4_smoke.json",
     "stage5_4_formal": "configs/experiments/stage5/stage5_4_formal.json",
+    "stage5_4_amendment_smoke": "configs/experiments/stage5/stage5_4_amendment_smoke.json",
 }
 
 # Launch metadata consumed by scripts/experiments/registry.py (single source of
@@ -54,6 +58,7 @@ LAUNCH = {
     "stage5_4_manifest": {"target": "AUTODL", "gpu": "NONE"},
     "stage5_4_smoke": {"target": "AUTODL", "gpu": "NONE"},
     "stage5_4_formal": {"target": "AUTODL", "gpu": "NONE"},
+    "stage5_4_amendment_smoke": {"target": "AUTODL", "gpu": "NONE"},
 }
 
 

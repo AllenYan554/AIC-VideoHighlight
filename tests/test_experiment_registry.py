@@ -62,6 +62,15 @@ def test_describe_autodl_spec(registry):
     assert spec["supports"] == {"resume": True, "dry_run": True, "validate_only": True}
 
 
+def test_describe_stage5_4_amendment_smoke(registry):
+    spec = registry.describe("stage5_4_amendment_smoke")
+    assert spec["experiment"] == "stage5_4_amendment_smoke"
+    assert spec["target"] == "AUTODL"
+    assert spec["gpu"] == "NONE"
+    assert spec["canonical_args"] == ["--experiment", "stage5_4_amendment_smoke"]
+    assert spec["config"] == "configs/experiments/stage5/stage5_4_amendment_smoke.json"
+
+
 def test_describe_windows_spec(registry):
     for name in ("stage5_infra_tiny_fake", "stage5_3_smoke"):
         spec = registry.describe(name)

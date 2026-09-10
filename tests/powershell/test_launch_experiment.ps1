@@ -104,13 +104,14 @@ try {
 }
 
 $listData = (Get-RegistryList -Context $context).Data
-Check "U11 registry list has six experiments" ($listData.experiments.Count -eq 6)
+Check "U11 registry list has seven experiments" ($listData.experiments.Count -eq 7)
 $gpuByExperiment = @{}
 foreach ($entry in $listData.experiments) { $gpuByExperiment[$entry.experiment] = $entry }
 Check "U11b stage5_3_formal targets AUTODL" ($gpuByExperiment["stage5_3_formal"].target -eq "AUTODL")
 Check "U11c smoke/tiny_fake target WINDOWS" ($gpuByExperiment["stage5_3_smoke"].target -eq "WINDOWS" -and $gpuByExperiment["stage5_infra_tiny_fake"].target -eq "WINDOWS")
 Check "U11d launch spec exposes gpu requirement" ((Get-LaunchSpec -Context $context -Name "stage5_3_formal").Data.gpu -eq "NONE")
 Check "U11e stage5_4_formal targets AUTODL with no GPU" ($gpuByExperiment["stage5_4_formal"].target -eq "AUTODL" -and $gpuByExperiment["stage5_4_formal"].gpu -eq "NONE")
+Check "U11f stage5_4_amendment_smoke targets AUTODL with no GPU" ($gpuByExperiment["stage5_4_amendment_smoke"].target -eq "AUTODL" -and $gpuByExperiment["stage5_4_amendment_smoke"].gpu -eq "NONE")
 
 # ---------------------------------------------------------------------------
 # Behavioral tests (real child processes).
@@ -137,6 +138,9 @@ Check "B4c dry-run shows remote command but does not ssh" ($dry.Out -match [rege
 $dry54 = Invoke-LauncherCaptured -ArgString "stage5_4_formal -DryRun -Inline" -Tag "dry_stage54_autodl"
 Check "B4d stage5_4_formal dry-run exits 0" ($dry54.ExitCode -eq 0) ("exit=" + $dry54.ExitCode)
 Check "B4e stage5_4_formal dry-run is AUTODL and GPU NONE" ($dry54.Out -match "Execution  : AUTODL" -and $dry54.Out -match "GPU        : NONE" -and $dry54.Out -match "DRY RUN")
+$dry54Amendment = Invoke-LauncherCaptured -ArgString "stage5_4_amendment_smoke -DryRun -Inline" -Tag "dry_stage54_amendment_autodl"
+Check "B4f stage5_4_amendment_smoke dry-run exits 0" ($dry54Amendment.ExitCode -eq 0) ("exit=" + $dry54Amendment.ExitCode)
+Check "B4g stage5_4_amendment_smoke dry-run is AUTODL and GPU NONE" ($dry54Amendment.Out -match "Execution  : AUTODL" -and $dry54Amendment.Out -match "GPU        : NONE" -and $dry54Amendment.Out -match "DRY RUN")
 
 $dryLocal = Invoke-LauncherCaptured -ArgString "stage5_infra_tiny_fake -DryRun -Inline" -Tag "dry_windows"
 Check "B5 dry-run WINDOWS target shows local command" ($dryLocal.ExitCode -eq 0 -and $dryLocal.Out -match [regex]::Escape("run.py --experiment stage5_infra_tiny_fake --dry-run"))

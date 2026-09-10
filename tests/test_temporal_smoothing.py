@@ -18,6 +18,9 @@ from aic_video_highlight.spatial_composition.subject_shifted_crop import (
 )
 from aic_video_highlight.spatial_composition.temporal_smoothing import (
     DEFAULT_EMA_ALPHA,
+    MOTION_ADAPTIVE_FULL_RESPONSE,
+    MOTION_ADAPTIVE_SMOOTHING_CEILING,
+    PLACEMENT_TS2_ADAPTIVE_SMOOTHED,
     PLACEMENT_TS1_SMOOTHED,
     RESET_FALLBACK,
     RESET_FRAME_GAP,
@@ -26,8 +29,10 @@ from aic_video_highlight.spatial_composition.temporal_smoothing import (
     acceleration_norm,
     displacement_norm,
     large_jump_ratios,
+    motion_adaptive_alpha,
     place_crop_from_center,
     smooth_video_sequence,
+    smooth_video_sequence_adaptive,
     temporal_summary,
     transition_pairs,
     transition_triplets,
@@ -279,3 +284,75 @@ def test_alpha_one_reproduces_ts0_and_alpha_validated():
     for bad in (0.0, -0.5, 1.5, float("nan")):
         with pytest.raises(ValueError, match="alpha"):
             smooth_video_sequence(W, H, TW, TH, observations, alpha=bad)
+
+
+def test_motion_adaptive_alpha_schedule_contract():
+    assert motion_adaptive_alpha(0.0) == DEFAULT_EMA_ALPHA
+    assert motion_adaptive_alpha(0.01) == DEFAULT_EMA_ALPHA
+    assert motion_adaptive_alpha(MOTION_ADAPTIVE_SMOOTHING_CEILING) == DEFAULT_EMA_ALPHA
+    assert motion_adaptive_alpha(0.15) == pytest.approx(0.75)
+    assert motion_adaptive_alpha(MOTION_ADAPTIVE_FULL_RESPONSE) == 1.0
+    assert motion_adaptive_alpha(0.9) == 1.0
+    values = [motion_adaptive_alpha(value) for value in (0.0, 0.05, 0.10, 0.12, 0.15, 0.18, 0.20, 0.30)]
+    assert values == sorted(values)
+    assert all(DEFAULT_EMA_ALPHA <= value <= 1.0 for value in values)
+    for bad in (-0.01, float("nan"), float("inf")):
+        with pytest.raises(ValueError, match="motion_norm"):
+            motion_adaptive_alpha(bad)
+
+
+def test_motion_adaptive_sequence_uses_raw_normalized_motion_and_preserves_contracts():
+    observations = [
+        obs(0, 500.0),
+        obs(1, 516.0),   # 0.01 W: fixed alpha_min
+        obs(2, 756.0),   # 0.15 W: alpha_t = 0.75
+        obs(3, 1076.0),  # 0.20 W: alpha_t = 1.0
+    ]
+    adaptive = smooth_video_sequence_adaptive(W, H, TW, TH, observations)
+    assert adaptive[0].motion_norm is None and adaptive[0].alpha_t is None
+    assert adaptive[1].motion_norm == pytest.approx(0.01)
+    assert adaptive[1].alpha_t == DEFAULT_EMA_ALPHA
+    assert adaptive[2].motion_norm == pytest.approx(0.15)
+    assert adaptive[2].alpha_t == pytest.approx(0.75)
+    assert adaptive[3].motion_norm == pytest.approx(0.20)
+    assert adaptive[3].alpha_t == 1.0
+    assert adaptive[3].ema_center_x == 1076.0
+    assert all(item.placement_status == PLACEMENT_TS2_ADAPTIVE_SMOOTHED for item in adaptive)
+    assert [item.frame for item in adaptive] == [item.frame for item in observations]
+    assert all(item.w == CROP_W and item.h == derived_height(CROP_W, TW, TH) for item in adaptive)
+    assert_geometry_valid(adaptive)
+
+
+def test_motion_adaptive_inherits_all_ts1_reset_semantics_deterministically():
+    observations = [
+        obs(0, 500.0),
+        obs(1, 540.0),
+        obs(2, 700.0, fallback=True),
+        obs(3, 900.0),
+        obs(10, 300.0),
+        obs(11, 620.0),
+    ]
+    first = smooth_video_sequence_adaptive(W, H, TW, TH, observations)
+    second = smooth_video_sequence_adaptive(W, H, TW, TH, list(reversed(observations)))
+    assert first == second
+    assert first[0].motion_norm is None and first[0].alpha_t is None
+    assert first[2].placement_status == PLACEMENT_FALLBACK_CENTER_CROP
+    assert first[3].reset_reason == RESET_FALLBACK
+    assert first[3].motion_norm is None and first[3].alpha_t is None
+    assert first[4].reset_reason == RESET_FRAME_GAP
+    assert first[4].motion_norm is None and first[4].alpha_t is None
+    assert first[5].alpha_t == 1.0
+
+
+def test_motion_adaptive_does_not_change_ts0_or_ts1_regression_contract():
+    observations = [obs(0, 500.0), obs(1, 620.0), obs(2, 940.0)]
+    before = smooth_video_sequence(W, H, TW, TH, observations, alpha=0.5)
+    after = smooth_video_sequence(W, H, TW, TH, observations, alpha=0.5)
+    adaptive = smooth_video_sequence_adaptive(W, H, TW, TH, observations)
+    assert before == after
+    assert all(item.motion_norm is None and item.alpha_t is None for item in after)
+    assert all(item.matches_ts0_placement for item in smooth_video_sequence(W, H, TW, TH, observations, alpha=1.0))
+    assert [item.frame for item in adaptive] == [item.frame for item in before]
+    assert [(item.w, item.h, item.crop_w, item.crop_h) for item in adaptive] == [
+        (item.w, item.h, item.crop_w, item.crop_h) for item in before
+    ]

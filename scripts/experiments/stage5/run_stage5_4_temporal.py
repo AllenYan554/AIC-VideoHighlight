@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Stage 5.4 Temporal Composition Stabilization runner (TS-0 vs TS-1).
+"""Stage 5.4 Temporal Composition Stabilization runner (TS-0/TS-1/TS-2).
 
-Config-driven runner for `stage5_4_smoke`: consumes the frozen Stage 5.3 CMP-1
+Config-driven runner for Stage 5.4 Smoke/Formal/Amendment configs: consumes the frozen Stage 5.3 CMP-1
 composition as TS-0 (temporal control baseline), applies the deterministic TS-1
 EMA crop-center smoothing (development baseline alpha = 0.5), and evaluates
 temporal stability metrics, Stage 5.3 spatial guardrails, strata and the
-observation-only multi-subject diagnostic. CPU-only, frozen-artifact-only,
+observation-only multi-subject diagnostic. Amendment mode adds TS-2 while keeping
+the TS-0/TS-1 record contract intact. CPU-only, frozen-artifact-only,
 no RT-DETR, no Qwen, no SAM, no tracking, no Heldout access.
 """
 
@@ -58,6 +59,7 @@ from aic_video_highlight.spatial_composition.temporal_smoothing import (
     DEFAULT_EMA_ALPHA,
     large_jump_ratios,
     smooth_video_sequence,
+    smooth_video_sequence_adaptive,
     temporal_summary,
 )
 from aic_video_highlight.spatial_localization.subject_localization import SubjectPolicyConfig
@@ -207,8 +209,9 @@ def build_video_records(
     tw: float,
     th: float,
     frozen_ts0_by_frame: dict[int, list[int]] | None = None,
+    include_ts2: bool = False,
 ) -> tuple[list[dict], list[str]]:
-    """TS-0 composition + TS-1 smoothing for one manifest video."""
+    """TS-0 composition plus TS-1 and optional TS-2 for one manifest video."""
     manifest_by_frame = {int(entry["frame"]): entry for entry in video["frames"]}
     frozen_boxes = {
         int(pred["frame"]): list(pred["bboxes"])
@@ -254,6 +257,11 @@ def build_video_records(
     width, height = int(video["image_width"]), int(video["image_height"])
     smoothed = smooth_video_sequence(width, height, tw, th, observations, alpha=alpha)
     smoothed_by_frame = {item.frame: item for item in smoothed}
+    adaptive_by_frame = (
+        {item.frame: item for item in smooth_video_sequence_adaptive(width, height, tw, th, observations)}
+        if include_ts2
+        else {}
+    )
 
     records: list[dict] = []
     for composed in composed_records:
@@ -293,6 +301,32 @@ def build_video_records(
             ts1_rect = crop_rect_from_xywh(item.x, item.y, item.w, float(item.h))
             ts1["subject_visible_fraction"] = round(subject_visible_fraction(sanitized, ts1_rect), 6)
             ts1["subject_center_inside"] = subject_center_inside_crop(sanitized, ts1_rect)
+        ts2 = None
+        if include_ts2:
+            adaptive = adaptive_by_frame[frame]
+            ts2 = {
+                "x": adaptive.x,
+                "y": adaptive.y,
+                "w": adaptive.w,
+                "h": float(adaptive.h),
+                "crop_w": adaptive.crop_w,
+                "crop_h": adaptive.crop_h,
+                "placement_status": adaptive.placement_status,
+                "reset_reason": adaptive.reset_reason,
+                "ema_center_x": adaptive.ema_center_x,
+                "ema_center_y": adaptive.ema_center_y,
+                "clamped_x": adaptive.clamped_x,
+                "clamped_y": adaptive.clamped_y,
+                "matches_ts0_placement": adaptive.matches_ts0_placement,
+                "motion_norm": adaptive.motion_norm,
+                "alpha_t": adaptive.alpha_t,
+                "subject_visible_fraction": None,
+                "subject_center_inside": False,
+            }
+            if composed["sanitized"]["status"] == SANITIZE_OK:
+                ts2_rect = crop_rect_from_xywh(adaptive.x, adaptive.y, adaptive.w, float(adaptive.h))
+                ts2["subject_visible_fraction"] = round(subject_visible_fraction(sanitized, ts2_rect), 6)
+                ts2["subject_center_inside"] = subject_center_inside_crop(sanitized, ts2_rect)
         geometry = {
             **{
                 f"ts0_{key}": value
@@ -312,8 +346,20 @@ def build_video_records(
                 ).items()
             },
         }
-        records.append(
-            {
+        if include_ts2:
+            adaptive = adaptive_by_frame[frame]
+            geometry.update({
+                f"ts2_{key}": value
+                for key, value in crop_geometry_valid(
+                    adaptive.x,
+                    adaptive.w,
+                    adaptive.y,
+                    derived_height(adaptive.w, tw, th),
+                    width,
+                    height,
+                ).items()
+            })
+        record = {
                 "video_id": composed["video_id"],
                 "frame": frame,
                 "image_width": width,
@@ -341,7 +387,9 @@ def build_video_records(
                 "ts1": ts1,
                 "geometry_valid": geometry,
             }
-        )
+        if ts2 is not None:
+            record["ts2"] = ts2
+        records.append(record)
     return records, mismatches
 
 
@@ -355,31 +403,33 @@ def engineering_gate(manifest: dict, records: list[dict], crosscheck_mismatches:
     missing = expected_keys - set(produced_keys)
     extra = set(produced_keys) - expected_keys
     duplicates = len(produced_keys) - len(set(produced_keys))
+    treatment_sides = [side for side in ("ts1", "ts2") if records and side in records[0]]
     crop_size_unchanged = all(
-        record["ts1"]["w"] == record["ts0"]["w"] and record["ts1"]["h"] == record["ts0"]["h"]
+        record[side]["w"] == record["ts0"]["w"] and record[side]["h"] == record["ts0"]["h"]
         for record in records
+        for side in treatment_sides
     )
     fallback_placement_unchanged = all(
-        record["ts1"]["placement_status"] == PLACEMENT_FALLBACK_CENTER_CROP
-        and (record["ts1"]["x"], record["ts1"]["y"]) == (record["ts0"]["x"], record["ts0"]["y"])
+        record[side]["placement_status"] == PLACEMENT_FALLBACK_CENTER_CROP
+        and (record[side]["x"], record[side]["y"]) == (record["ts0"]["x"], record["ts0"]["y"])
         for record in records
         if record["ts0"]["fallback"]
+        for side in treatment_sides
     )
     geometry_failures = [record for record in records if not all(record["geometry_valid"].values())]
     invalid_crop = len(geometry_failures)
     out_of_bounds = sum(
         1
         for record in geometry_failures
-        if not (record["geometry_valid"]["ts0_nonnegative"] and record["geometry_valid"]["ts1_nonnegative"]
-                and record["geometry_valid"]["ts0_x_within_frame"] and record["geometry_valid"]["ts1_x_within_frame"])
+        if not all(record["geometry_valid"][f"{side}_{key}"] for side in ["ts0", *treatment_sides] for key in ("nonnegative", "x_within_frame"))
     )
     ratio_violations = sum(
         1
         for record in geometry_failures
-        if not (record["geometry_valid"]["ts0_derived_height_within_frame"] and record["geometry_valid"]["ts1_derived_height_within_frame"])
+        if not all(record["geometry_valid"][f"{side}_derived_height_within_frame"] for side in ["ts0", *treatment_sides])
     )
     ts0_regression = sum(1 for record in records if record["ts0"]["frozen_regression"])
-    return {
+    result = {
         "expected_frames": len(expected_keys),
         "produced_frames": len(produced_keys),
         "missing": len(missing),
@@ -394,12 +444,15 @@ def engineering_gate(manifest: dict, records: list[dict], crosscheck_mismatches:
         "ts0_frozen_regression": ts0_regression,
         "frame_identity_complete": not missing and not extra and not duplicates,
     }
+    if "ts2" in treatment_sides:
+        result["treatment_sides"] = treatment_sides
+    return result
 
 
 def evaluate_gates(
     gate: dict, deterministic_pass: bool, artifact_modified: dict, multi_subject_generated: bool
 ) -> dict:
-    return {
+    result = {
         "manifest_sha_pinned": True,
         "frame_identity_100pct": bool(gate["frame_identity_complete"]),
         "manifest_crosscheck_consistent": gate["manifest_crosscheck_mismatches"] == 0,
@@ -414,6 +467,10 @@ def evaluate_gates(
         "heldout_access_zero": True,
         "multi_subject_diagnostic_generated": multi_subject_generated,
     }
+    if "ts2" in gate.get("treatment_sides", []):
+        result["ts2_crop_size_unchanged"] = bool(gate["crop_size_unchanged"])
+        result["ts2_fallback_placement_unchanged"] = bool(gate["fallback_placement_unchanged"])
+    return result
 
 
 def pooled_distributions(records: list[dict]) -> dict[str, list[float]]:
@@ -424,14 +481,13 @@ def pooled_distributions(records: list[dict]) -> dict[str, list[float]]:
         displacement_norm,
     )
 
-    pooled: dict[str, list[float]] = {
-        "ts0_displacement": [],
-        "ts1_displacement": [],
-        "ts1_displacement_smoothed_only": [],
-        "ts0_acceleration": [],
-        "ts1_acceleration": [],
-        "ts1_acceleration_smoothed_only": [],
-    }
+    treatment_sides = [side for side in ("ts1", "ts2") if records and side in records[0]]
+    pooled: dict[str, list[float]] = {"ts0_displacement": [], "ts0_acceleration": []}
+    for side in treatment_sides:
+        pooled[f"{side}_displacement"] = []
+        pooled[f"{side}_displacement_smoothed_only"] = []
+        pooled[f"{side}_acceleration"] = []
+        pooled[f"{side}_acceleration_smoothed_only"] = []
     by_video: dict[str, list[dict]] = {}
     for record in records:
         by_video.setdefault(record["video_id"], []).append(record)
@@ -450,14 +506,15 @@ def pooled_distributions(records: list[dict]) -> dict[str, list[float]]:
                     width,
                 )
             )
-            ts1_value = displacement_norm(
-                crop_center_x(int(previous["ts1"]["x"]), int(previous["ts1"]["w"])),
-                crop_center_x(int(current["ts1"]["x"]), int(current["ts1"]["w"])),
-                width,
-            )
-            pooled["ts1_displacement"].append(ts1_value)
-            if current["ts1"]["reset_reason"] is None:
-                pooled["ts1_displacement_smoothed_only"].append(ts1_value)
+            for side in treatment_sides:
+                value = displacement_norm(
+                    crop_center_x(int(previous[side]["x"]), int(previous[side]["w"])),
+                    crop_center_x(int(current[side]["x"]), int(current[side]["w"])),
+                    width,
+                )
+                pooled[f"{side}_displacement"].append(value)
+                if current[side]["reset_reason"] is None:
+                    pooled[f"{side}_displacement_smoothed_only"].append(value)
         for first, second, third in zip(ordered, ordered[1:], ordered[2:]):
             if any(record["ts0"]["fallback"] for record in (first, second, third)):
                 continue
@@ -472,10 +529,11 @@ def pooled_distributions(records: list[dict]) -> dict[str, list[float]]:
             pooled["ts0_acceleration"].append(
                 acceleration_norm(delta(first, second, "ts0"), delta(second, third, "ts0"), width)
             )
-            ts1_acceleration = acceleration_norm(delta(first, second, "ts1"), delta(second, third, "ts1"), width)
-            pooled["ts1_acceleration"].append(ts1_acceleration)
-            if second["ts1"]["reset_reason"] is None and third["ts1"]["reset_reason"] is None:
-                pooled["ts1_acceleration_smoothed_only"].append(ts1_acceleration)
+            for side in treatment_sides:
+                value = acceleration_norm(delta(first, second, side), delta(second, third, side), width)
+                pooled[f"{side}_acceleration"].append(value)
+                if second[side]["reset_reason"] is None and third[side]["reset_reason"] is None:
+                    pooled[f"{side}_acceleration_smoothed_only"].append(value)
     return pooled
 
 
@@ -483,6 +541,105 @@ def summary_payload(values: list[float]) -> dict:
     return {
         **temporal_summary(values),
         "large_jump_ratios_descriptive_only": large_jump_ratios(values),
+    }
+
+
+def _project_treatment(records: list[dict], side: str) -> list[dict]:
+    """Expose one frozen treatment under the legacy TS-1 diagnostic contract."""
+    if side == "ts1":
+        return records
+    return [{**record, "ts1": record[side]} for record in records]
+
+
+def _rename_ts1_keys(value, replacement: str):
+    if isinstance(value, dict):
+        return {
+            str(key).replace("ts1", replacement): _rename_ts1_keys(item, replacement)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_rename_ts1_keys(item, replacement) for item in value]
+    if isinstance(value, str):
+        return value.replace("TS-1", replacement.upper()).replace("ts1", replacement)
+    return value
+
+
+def temporal_metrics_for_all_treatments(records: list[dict]) -> dict:
+    metrics = temporal_stability_metrics(records)
+    if records and "ts2" in records[0]:
+        adaptive = _rename_ts1_keys(
+            temporal_stability_metrics(_project_treatment(records, "ts2")), "ts2"
+        )
+        metrics.update({key: value for key, value in adaptive.items() if key.startswith("ts2_")})
+        metrics["metric_role"] = "DRAFT AMENDMENT SMOKE / TS-0 vs TS-1 vs TS-2"
+    return metrics
+
+
+def spatial_metrics_for_all_treatments(records: list[dict]) -> dict:
+    metrics = spatial_guardrail_metrics(records)
+    if not records or "ts2" not in records[0]:
+        return metrics
+    adaptive = _rename_ts1_keys(spatial_guardrail_metrics(_project_treatment(records, "ts2")), "ts2")
+    metrics["ts2"] = adaptive["ts2"]
+    for stratum, payload in metrics["strata"].items():
+        payload["ts2_visible"] = adaptive["strata"][stratum]["ts2_visible"]
+        payload["ts2_delta_mean"] = adaptive["strata"][stratum]["delta_mean"]
+    return metrics
+
+
+def validate_amendment_contract(config: dict, protocol: dict, manifest: dict) -> dict:
+    """Static scientific identity checks; executes neither Smoke nor Formal."""
+    if config.get("experiment_id") != "stage5_4_amendment_smoke":
+        raise FrozenInputError("unexpected Amendment experiment id")
+    if protocol.get("status") != "DRAFT_READY_FOR_SMOKE":
+        raise FrozenInputError("Amendment protocol is not DRAFT_READY_FOR_SMOKE")
+    smoothing = config.get("temporal_smoothing", {})
+    ts2 = smoothing.get("ts2", {})
+    expected = {
+        "method": "motion_adaptive_ema_v1",
+        "alpha_min": 0.5,
+        "smoothing_ceiling_motion_norm": 0.1,
+        "full_response_motion_norm": 0.2,
+    }
+    if any(ts2.get(key) != value for key, value in expected.items()):
+        raise FrozenInputError("Amendment TS-2 schedule differs from the frozen draft")
+    candidate_set = protocol.get("parameter_candidate_set")
+    if candidate_set not in (None, []) and not (
+        isinstance(candidate_set, dict) and candidate_set.get("enabled") is False
+    ):
+        raise FrozenInputError("Amendment protocol unexpectedly enables a parameter candidate set")
+    if manifest.get("video_count") != 24 or manifest.get("frame_count") != 1080:
+        raise FrozenInputError("Amendment must reuse the frozen Stage 5.4 Smoke24 manifest")
+    manifest_spec = config.get("manifest", {})
+    if (
+        manifest.get("manifest_id") != manifest_spec.get("manifest_id")
+        or manifest.get("manifest_sha256") != manifest_spec.get("expected_manifest_sha256")
+    ):
+        raise FrozenInputError("Amendment Smoke24 manifest identity mismatch")
+    if smoothing.get("reset_rules") != ["NEW_VIDEO", "FRAME_GAP_GT_1", "FALLBACK"]:
+        raise FrozenInputError("Amendment reset rules differ from TS-1")
+    if int(config.get("heldout_lock", {}).get("allowed_access", -1)) != 0:
+        raise FrozenInputError("Heldout access must remain zero")
+    forbidden_input_tokens = ("heldout", "hard", "official_test", "official-test")
+    for name, entry in config.get("inputs", {}).items():
+        candidate = f"{name} {entry.get('path', '')}".lower()
+        if any(token in candidate for token in forbidden_input_tokens):
+            raise FrozenInputError(f"forbidden dataset input configured: {name}")
+    protocol_path = Path(config["protocol"])
+    actual_protocol_sha = file_sha256(protocol_path)
+    if config.get("protocol_sha256") != actual_protocol_sha:
+        raise FrozenInputError("Amendment protocol file SHA does not match config binding")
+    return {
+        "validation": "PASS",
+        "protocol_status": protocol["status"],
+        "protocol_sha256": actual_protocol_sha,
+        "algorithm": expected,
+        "manifest_id": manifest["manifest_id"],
+        "manifest_sha256": manifest["manifest_sha256"],
+        "videos": manifest["video_count"],
+        "frames": manifest["frame_count"],
+        "gpu_requirement": "NONE",
+        "heldout_access": 0,
     }
 
 
@@ -740,8 +897,10 @@ def validate_formal_frozen_dependencies(
     }
 
 
-def load_frozen_ts0_predictions(bindings: list[InputBinding], manifest: dict) -> dict[str, dict[int, list[int]]]:
-    """Load byte-pinned Stage 5.3 CMP-1 crops and verify exact Formal frame identity."""
+def load_frozen_ts0_predictions(
+    bindings: list[InputBinding], manifest: dict, *, exact_identity: bool = True
+) -> dict[str, dict[int, list[int]]]:
+    """Load byte-pinned Stage 5.3 CMP-1 crops and verify manifest frame identity."""
     binding = next((item for item in bindings if item.name == "stage5_3_frozen_cmp1"), None)
     if binding is None:
         raise FrozenInputError("stage5_3_frozen_cmp1 binding is required for Formal")
@@ -765,11 +924,17 @@ def load_frozen_ts0_predictions(bindings: list[InputBinding], manifest: dict) ->
         for frame in video["frames"]
     }
     actual = {(video_id, frame) for video_id, frames in by_video.items() for frame in frames}
-    if expected != actual or len(by_video) != int(manifest["video_count"]):
+    if (exact_identity and (expected != actual or len(by_video) != int(manifest["video_count"]))) or (
+        not exact_identity and not expected <= actual
+    ):
         raise FrozenInputError("Stage 5.3 frozen CMP-1 frame identity mismatch")
     if any(len(bbox) != 3 for frames in by_video.values() for bbox in frames.values()):
         raise FrozenInputError("Stage 5.3 frozen CMP-1 bbox contract mismatch")
-    return by_video
+    expected_video_ids = {video_id for video_id, _frame in expected}
+    return {
+        video_id: {frame: bbox for frame, bbox in by_video[video_id].items() if (video_id, frame) in expected}
+        for video_id in sorted(expected_video_ids)
+    }
 
 
 def build_analysis_metrics(records: list[dict]) -> dict:
@@ -839,6 +1004,13 @@ def run(args) -> int:
                     "gpu_requirement": "NONE",
                     "output_directory": str(paths.output),
                 }
+            elif config["experiment_id"] == "stage5_4_amendment_smoke":
+                protocol = json.loads(Path(config["protocol"]).read_text(encoding="utf-8"))
+                result = validate_amendment_contract(config, protocol, manifest)
+                frozen_ts0 = load_frozen_ts0_predictions(bindings, manifest, exact_identity=False)
+                result["stage5_3_cmp1_videos"] = len(frozen_ts0)
+                result["stage5_3_cmp1_frames"] = sum(len(frames) for frames in frozen_ts0.values())
+                result["output_directory"] = str(paths.output)
             else:
                 result = {
                     "manifest_id": manifest["manifest_id"],
@@ -896,6 +1068,14 @@ def run(args) -> int:
                 config, bindings, inputs, manifest
             )
             frozen_ts0 = load_frozen_ts0_predictions(bindings, manifest)
+        elif config["experiment_id"] == "stage5_4_amendment_smoke":
+            formal_contract = None
+            frozen_dependency_audit = {
+                "stage5_3_cmp1_identity": "byte-pinned Full Dev artifact; exact Smoke24 subset crosschecked per frame",
+                "stage5_3_final_freeze": "FINAL_FROZEN",
+                "stage5_2_policy_semantic_sha256": config["expected_policy_semantic_sha256"],
+            }
+            frozen_ts0 = load_frozen_ts0_predictions(bindings, manifest, exact_identity=False)
         else:
             formal_contract = None
             frozen_dependency_audit = None
@@ -917,6 +1097,7 @@ def run(args) -> int:
         strata = config["composition"]["strata_thresholds"]
         tw, th = float(target_ratio[0]), float(target_ratio[1])
         alpha = float(config["temporal_smoothing"].get("alpha", DEFAULT_EMA_ALPHA))
+        include_ts2 = "ts2" in config["temporal_smoothing"]
 
         total_frames = int(manifest["frame_count"])
         reporter = ProgressReporter(config["experiment_id"], total_frames, paths.logs)
@@ -952,6 +1133,7 @@ def run(args) -> int:
                 tw,
                 th,
                 None if frozen_ts0 is None else frozen_ts0[video_id],
+                include_ts2,
             )
             all_mismatches.extend(mismatches)
             shard_store.write(video_id, video_records)
@@ -994,13 +1176,13 @@ def run(args) -> int:
 
         gate = engineering_gate(manifest, records, all_mismatches)
         temporal_by_video = {
-            video["video_id"]: temporal_stability_metrics(
+            video["video_id"]: temporal_metrics_for_all_treatments(
                 [record for record in records if record["video_id"] == video["video_id"]]
             )
             for video in manifest["videos"]
         }
         pooled = pooled_distributions(records)
-        guardrails = spatial_guardrail_metrics(records)
+        guardrails = spatial_metrics_for_all_treatments(records)
 
         deterministic_records: list[dict] = []
         for video in manifest["videos"]:
@@ -1013,6 +1195,7 @@ def run(args) -> int:
                 tw,
                 th,
                 None if frozen_ts0 is None else frozen_ts0[video["video_id"]],
+                include_ts2,
             )
             deterministic_records.extend(video_records)
         deterministic_records.sort(key=lambda record: (record["video_id"], record["frame"]))
@@ -1033,14 +1216,35 @@ def run(args) -> int:
         multi_subject = temporal_multi_subject_diagnostic(
             inputs_with_raw, records, target_ratio, policy_config_from(config)
         )
+        if include_ts2:
+            multi_subject = {
+                "ts0_vs_ts1": multi_subject,
+                "ts0_vs_ts2": _rename_ts1_keys(
+                    temporal_multi_subject_diagnostic(
+                        inputs_with_raw,
+                        _project_treatment(records, "ts2"),
+                        target_ratio,
+                        policy_config_from(config),
+                    ),
+                    "ts2",
+                ),
+            }
 
         gates = evaluate_gates(
-            gate, deterministic_pass, artifact_modified, multi_subject.get("ambiguous_frames") is not None
+            gate,
+            deterministic_pass,
+            artifact_modified,
+            (
+                multi_subject["ts0_vs_ts1"].get("ambiguous_frames") is not None
+                if include_ts2
+                else multi_subject.get("ambiguous_frames") is not None
+            ),
         )
-        if config["experiment_id"] == "stage5_4_formal":
+        if config["experiment_id"] == "stage5_4_formal" or include_ts2:
             gates["protocol_config_snapshots_generated"] = all(
                 (snapshots_dir / name).is_file() for name in ("config.json", "protocol.json")
             )
+        if config["experiment_id"] == "stage5_4_formal":
             confirmatory_ids = set(formal_contract["confirmatory_dev142"]["video_ids"])
             confirmatory_records = [
                 record for record in records if record["video_id"] in confirmatory_ids
@@ -1061,6 +1265,55 @@ def run(args) -> int:
             scientific_gates = evaluate_formal_scientific_gates(
                 analysis_metrics, config["decision_gates"]
             )
+        elif include_ts2:
+            analysis_metrics = None
+            ts2_gate_metrics = build_analysis_metrics(_project_treatment(records, "ts2"))
+            ts2_gate_result = _evaluate_one_analysis_set(
+                ts2_gate_metrics, config["decision_gates"]
+            )
+            strong = guardrails["strata"]["strongly_off_center"]
+            mechanism_checks = {
+                "strong_visible_delta_ts2_not_worse_than_ts1": {
+                    "ts1_delta": strong["delta_mean"],
+                    "ts2_delta": strong["ts2_delta_mean"],
+                    "pass": strong["ts2_delta_mean"] >= strong["delta_mean"],
+                },
+                "containment_delta_ts2_not_worse_than_ts1": {
+                    "ts1_delta": round(
+                        guardrails["ts1"]["subject_center_inside_rate"]
+                        - guardrails["ts0"]["subject_center_inside_rate"],
+                        6,
+                    ),
+                    "ts2_delta": round(
+                        guardrails["ts2"]["subject_center_inside_rate"]
+                        - guardrails["ts0"]["subject_center_inside_rate"],
+                        6,
+                    ),
+                },
+                "full_response_alpha_at_m_gte_0_20": {
+                    "eligible": sum(
+                        1
+                        for record in records
+                        if record["ts2"]["motion_norm"] is not None
+                        and record["ts2"]["motion_norm"] >= 0.2
+                    ),
+                    "pass": all(
+                        record["ts2"]["alpha_t"] == 1.0
+                        for record in records
+                        if record["ts2"]["motion_norm"] is not None
+                        and record["ts2"]["motion_norm"] >= 0.2
+                    ),
+                },
+            }
+            containment = mechanism_checks["containment_delta_ts2_not_worse_than_ts1"]
+            containment["pass"] = containment["ts2_delta"] >= containment["ts1_delta"]
+            scientific_gates = {
+                "role": "AMENDMENT_SMOKE_PROMOTION_REVIEW / frozen Stage 5.4 gates applied to TS-2",
+                "ts2_vs_ts0": ts2_gate_result,
+                "amendment_mechanism_checks": mechanism_checks,
+                "all_pass": ts2_gate_result["pass"]
+                and all(item["pass"] for item in mechanism_checks.values()),
+            }
         else:
             analysis_metrics = None
             scientific_gates = None
@@ -1070,7 +1323,7 @@ def run(args) -> int:
             scientific_gates is None or scientific_gates["all_pass"]
         )
 
-        atomic_write_json(machine / "summary.json", {
+        summary = {
             "schema_version": "aic.machine-summary/v1",
             "experiment_id": config["experiment_id"],
             "manifest_id": manifest["manifest_id"],
@@ -1078,19 +1331,30 @@ def run(args) -> int:
             "videos": manifest["video_count"],
             "frames": manifest["frame_count"],
             "ts0": "stage5_3_final_frozen_cmp1",
-            "ts1": {**config["temporal_smoothing"]},
+            "ts1": {
+                key: value
+                for key, value in config["temporal_smoothing"].items()
+                if key != "ts2"
+            },
             "manifest_coverage": manifest.get("coverage", {}),
             "analysis_set_identities": None if formal_contract is None else {
                 "full_dev166": formal_contract["full_dev166"],
                 "confirmatory_dev142": formal_contract["confirmatory_dev142"],
             },
             "frozen_dependency_audit": frozen_dependency_audit,
-        })
+        }
+        if include_ts2:
+            summary["ts2"] = config["temporal_smoothing"]["ts2"]
+        atomic_write_json(machine / "summary.json", summary)
         metrics_payload = {
             "schema_version": "aic.machine-metrics/v1",
             "metric_role": "PREREGISTERED_FORMAL_GATES"
             if analysis_metrics is not None
-            else "DESCRIPTIVE_ONLY / no promotion gate in Stage 5.4 smoke",
+            else (
+                "DRAFT_AMENDMENT_SMOKE_PROMOTION_GATES"
+                if include_ts2
+                else "DESCRIPTIVE_ONLY / no promotion gate in Stage 5.4 smoke"
+            ),
             "temporal_stability_by_video": temporal_by_video,
             "temporal_stability_pooled": {key: summary_payload(values) for key, values in pooled.items()},
             "spatial_guardrails": guardrails,
@@ -1098,14 +1362,17 @@ def run(args) -> int:
         if analysis_metrics is not None:
             metrics_payload["analysis_sets"] = analysis_metrics
         atomic_write_json(machine / "metrics.json", metrics_payload)
-        atomic_write_json(machine / "runtime.json", {
+        runtime_payload = {
             "schema_version": "aic.machine-runtime/v1",
             "wall_sec": round(wall_sec, 3),
             "gpu_calls": 0,
             "qwen_vllm_calls": 0,
             "rtdetr_inference": 0,
             "device": "cpu",
-        })
+        }
+        if include_ts2:
+            runtime_payload.update({"sam_calls": 0, "heldout_access": 0})
+        atomic_write_json(machine / "runtime.json", runtime_payload)
         atomic_write_json(machine / "validation.json", {
             "schema_version": "aic.machine-validation/v1",
             "status": "PASS" if overall_pass else "FAIL",

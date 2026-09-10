@@ -11,15 +11,20 @@ from aic_video_highlight.spatial_composition.temporal_diagnostics import (
     summarize_multi_subject_rows,
     temporal_stability_metrics,
 )
-from scripts.experiments.stage5.run_stage5_4_temporal import engineering_gate, pooled_distributions
+from scripts.experiments.stage5.run_stage5_4_temporal import (
+    engineering_gate,
+    pooled_distributions,
+    spatial_metrics_for_all_treatments,
+    temporal_metrics_for_all_treatments,
+)
 
 W, H = 1600, 900
 TW, TH = 9.0, 16.0
 CROP_W = (H * 9) // 16
 
 
-def merged_record(video_id: str, frame: int, ts0_x: int, ts1_x: int, *, fallback: bool = False, reset=None) -> dict:
-    return {
+def merged_record(video_id: str, frame: int, ts0_x: int, ts1_x: int, *, fallback: bool = False, reset=None, ts2_x: int | None = None) -> dict:
+    record = {
         "video_id": video_id,
         "frame": frame,
         "image_width": W,
@@ -74,6 +79,22 @@ def merged_record(video_id: str, frame: int, ts0_x: int, ts1_x: int, *, fallback
             "ts1_x_within_frame": True, "ts1_derived_height_within_frame": True,
         },
     }
+    if ts2_x is not None:
+        record["ts2"] = {
+            **record["ts1"],
+            "x": ts2_x,
+            "placement_status": "FALLBACK_CENTER_CROP" if fallback else "TS2_ADAPTIVE_SMOOTHED",
+            "ema_center_x": None if fallback else float(ts2_x) + CROP_W / 2.0,
+            "motion_norm": None if reset or fallback else 0.2,
+            "alpha_t": None if reset or fallback else 1.0,
+        }
+        record["geometry_valid"].update({
+            "ts2_nonnegative": True,
+            "ts2_width_positive": True,
+            "ts2_x_within_frame": True,
+            "ts2_derived_height_within_frame": True,
+        })
+    return record
 
 
 def test_observations_use_sanitized_subject_center():
@@ -207,3 +228,24 @@ def test_multi_subject_summary_includes_primary_plus_all_secondaries_observation
     assert summary["primary_and_all_secondaries_inside_ts0_rate"] == 0.5
     assert summary["primary_and_all_secondaries_inside_ts1_rate"] == 0.5
     assert summary["tag"].startswith("MULTI_SUBJECT_DIAGNOSTIC")
+
+
+def test_amendment_helpers_include_ts2_without_changing_ts1_contract():
+    records = [
+        merged_record("v", 0, 500, 500, ts2_x=500),
+        merged_record("v", 1, 820, 660, ts2_x=820),
+    ]
+    pooled = pooled_distributions(records)
+    assert pooled["ts1_displacement"][0] < pooled["ts2_displacement"][0]
+    temporal = temporal_metrics_for_all_treatments(records)
+    spatial = spatial_metrics_for_all_treatments(records)
+    assert temporal["ts2_displacement"]["n"] == temporal["ts1_displacement"]["n"] == 1
+    assert spatial["ts2"]["n"] == spatial["ts1"]["n"] == 2
+    gate = engineering_gate(
+        {"videos": [{"video_id": "v", "frames": [{"frame": 0}, {"frame": 1}]}]},
+        records,
+        [],
+    )
+    assert gate["crop_size_unchanged"]
+    assert gate["fallback_placement_unchanged"]
+    assert gate["treatment_sides"] == ["ts1", "ts2"]

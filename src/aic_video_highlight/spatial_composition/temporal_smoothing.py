@@ -1,11 +1,13 @@
-"""Stage 5.4 temporal crop-center smoothing (TS-1 deterministic development baseline).
+"""Stage 5.4 deterministic TS-1 and Motion-Adaptive EMA v1 TS-2 smoothing.
 
 Consumes the Stage 5.3 FINAL FROZEN CMP-1 geometry as TS-0 (temporal control
 baseline) and changes ONLY the temporal continuity of the crop center / placement:
 crop width, crop height, target ratio, frame selection, primary subject and
 fallback semantics are all inherited unchanged from the frozen Stage 5.3 contract.
 
-v1 method: exponential moving average (EMA) over the pre-clamp ideal crop center,
+TS-1 uses a fixed exponential moving average (EMA) over the pre-clamp ideal crop center;
+TS-2 changes only that coefficient to a frozen function of normalized raw horizontal
+primary-subject motion. Both are
 re-placed each frame with the exact Stage 5.3 frozen floor/clamp convention, and
 re-clamped into legal frame bounds. Reset rules (no cross-sequence smoothing):
 new video (one video per call), frozen temporal discontinuity (frame gap > 1 in
@@ -19,7 +21,7 @@ import math
 import statistics
 from dataclasses import dataclass
 from fractions import Fraction
-from typing import Sequence
+from typing import Callable, Sequence
 
 from aic_video_highlight.spatial_composition.center_crop import (
     CenterCropBox,
@@ -32,8 +34,11 @@ from aic_video_highlight.spatial_composition.subject_shifted_crop import (
 )
 
 DEFAULT_EMA_ALPHA = 0.5
+MOTION_ADAPTIVE_SMOOTHING_CEILING = 0.10
+MOTION_ADAPTIVE_FULL_RESPONSE = 0.20
 
 PLACEMENT_TS1_SMOOTHED = "TS1_SMOOTHED"
+PLACEMENT_TS2_ADAPTIVE_SMOOTHED = "TS2_ADAPTIVE_SMOOTHED"
 
 RESET_NEW_VIDEO = "NEW_VIDEO"
 RESET_FRAME_GAP = "FRAME_GAP"
@@ -72,6 +77,8 @@ class SmoothedFrame:
     clamped_x: bool
     clamped_y: bool
     matches_ts0_placement: bool
+    motion_norm: float | None = None
+    alpha_t: float | None = None
 
 
 def _require_frame(width: int, height: int) -> None:
@@ -86,6 +93,35 @@ def _require_alpha(alpha: float) -> float:
     if not math.isfinite(value) or not 0.0 < value <= 1.0:
         raise ValueError("alpha must be a finite value in (0, 1]")
     return value
+
+
+def motion_adaptive_alpha(
+    motion_norm: float,
+    *,
+    alpha_min: float = DEFAULT_EMA_ALPHA,
+    smoothing_ceiling: float = MOTION_ADAPTIVE_SMOOTHING_CEILING,
+    full_response_motion: float = MOTION_ADAPTIVE_FULL_RESPONSE,
+) -> float:
+    """Deterministic monotone Motion-Adaptive EMA v1 schedule.
+
+    ``motion_norm`` is the frozen Stage 5.4 horizontal motion signal
+    ``abs(X_t - X_(t-1)) / frame_width`` over consecutive, non-fallback raw
+    primary-subject centers. The frozen 0.10 and 0.20 large-jump boundaries
+    define the smoothing and full-response anchors; no learned or GT signal is
+    consumed.
+    """
+    motion = float(motion_norm)
+    minimum = _require_alpha(alpha_min)
+    low = float(smoothing_ceiling)
+    high = float(full_response_motion)
+    if not math.isfinite(motion) or motion < 0.0:
+        raise ValueError("motion_norm must be a finite nonnegative value")
+    if minimum < DEFAULT_EMA_ALPHA or minimum > 1.0:
+        raise ValueError("alpha_min must be in [0.5, 1.0]")
+    if not math.isfinite(low) or not math.isfinite(high) or not 0.0 <= low < high:
+        raise ValueError("motion thresholds must be finite and satisfy 0 <= low < high")
+    transition = min(max((motion - low) / (high - low), 0.0), 1.0)
+    return minimum + (1.0 - minimum) * transition
 
 
 def place_crop_from_center(
@@ -141,8 +177,52 @@ def smooth_video_sequence(
     ``RESET_FRAME_GAP`` (frozen frame identity discontinuity, gap > 1). Fallback
     frames always emit the frozen center crop and clear the EMA state.
     """
-    _require_frame(width, height)
     ema_alpha = _require_alpha(alpha)
+    return _smooth_video_sequence(
+        width,
+        height,
+        target_w,
+        target_h,
+        observations,
+        alpha_for_motion=lambda _motion: ema_alpha,
+        placement_status=PLACEMENT_TS1_SMOOTHED,
+        record_transition_parameters=False,
+    )
+
+
+def smooth_video_sequence_adaptive(
+    width: int,
+    height: int,
+    target_w: int | float,
+    target_h: int | float,
+    observations: Sequence[TemporalObservation],
+) -> list[SmoothedFrame]:
+    """Motion-Adaptive EMA v1 with TS-1-identical state/reset semantics."""
+    return _smooth_video_sequence(
+        width,
+        height,
+        target_w,
+        target_h,
+        observations,
+        alpha_for_motion=motion_adaptive_alpha,
+        placement_status=PLACEMENT_TS2_ADAPTIVE_SMOOTHED,
+        record_transition_parameters=True,
+    )
+
+
+def _smooth_video_sequence(
+    width: int,
+    height: int,
+    target_w: int | float,
+    target_h: int | float,
+    observations: Sequence[TemporalObservation],
+    *,
+    alpha_for_motion: Callable[[float], float],
+    placement_status: str,
+    record_transition_parameters: bool,
+) -> list[SmoothedFrame]:
+    """Shared TS-1/TS-2 EMA state machine; only transition alpha varies."""
+    _require_frame(width, height)
     tw, th = float(target_w), float(target_h)
     center_box: CenterCropBox = compute_center_crop(width, height, tw, th)
     crop_w = center_box.w
@@ -157,6 +237,7 @@ def smooth_video_sequence(
     state_y: float | None = None
     previous_frame: int | None = None
     previous_fallback = False
+    previous_raw_center_x: float | None = None
 
     for observation in ordered:
         if observation.fallback:
@@ -184,8 +265,11 @@ def smooth_video_sequence(
             state_y = None
             previous_frame = observation.frame
             previous_fallback = True
+            previous_raw_center_x = None
             continue
 
+        motion_norm: float | None = None
+        alpha_t: float | None = None
         if previous_frame is None:
             reset_reason: str | None = None
             state_x = observation.ideal_center_x
@@ -200,8 +284,12 @@ def smooth_video_sequence(
             state_y = observation.ideal_center_y
         else:
             reset_reason = None
-            state_x = ema_alpha * observation.ideal_center_x + (1.0 - ema_alpha) * state_x
-            state_y = ema_alpha * observation.ideal_center_y + (1.0 - ema_alpha) * state_y
+            if previous_raw_center_x is None:
+                raise RuntimeError("missing previous raw center for a continuous EMA transition")
+            motion_norm = displacement_norm(previous_raw_center_x, observation.ideal_center_x, width)
+            alpha_t = _require_alpha(alpha_for_motion(motion_norm))
+            state_x = alpha_t * observation.ideal_center_x + (1.0 - alpha_t) * state_x
+            state_y = alpha_t * observation.ideal_center_y + (1.0 - alpha_t) * state_y
 
         x, y, _, derived_h, clamped_x, clamped_y = place_crop_from_center(
             width, height, tw, th, (state_x, state_y)
@@ -221,14 +309,17 @@ def smooth_video_sequence(
                 h=derived_h,
                 crop_w=crop_w,
                 crop_h=crop_h,
-                placement_status=PLACEMENT_TS1_SMOOTHED,
+                placement_status=placement_status,
                 clamped_x=clamped_x,
                 clamped_y=clamped_y,
                 matches_ts0_placement=(x, y) == (ts0_x, ts0_y),
+                motion_norm=motion_norm if record_transition_parameters else None,
+                alpha_t=alpha_t if record_transition_parameters else None,
             )
         )
         previous_frame = observation.frame
         previous_fallback = False
+        previous_raw_center_x = observation.ideal_center_x
     return smoothed
 
 
