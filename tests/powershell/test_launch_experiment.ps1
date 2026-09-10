@@ -104,7 +104,7 @@ try {
 }
 
 $listData = (Get-RegistryList -Context $context).Data
-Check "U11 registry list has eight experiments" ($listData.experiments.Count -eq 8)
+Check "U11 registry list has nine experiments" ($listData.experiments.Count -eq 9)
 $gpuByExperiment = @{}
 foreach ($entry in $listData.experiments) { $gpuByExperiment[$entry.experiment] = $entry }
 Check "U11b stage5_3_formal targets AUTODL" ($gpuByExperiment["stage5_3_formal"].target -eq "AUTODL")
@@ -113,6 +113,7 @@ Check "U11d launch spec exposes gpu requirement" ((Get-LaunchSpec -Context $cont
 Check "U11e stage5_4_formal targets AUTODL with no GPU" ($gpuByExperiment["stage5_4_formal"].target -eq "AUTODL" -and $gpuByExperiment["stage5_4_formal"].gpu -eq "NONE")
 Check "U11f stage5_4_amendment_smoke targets AUTODL with no GPU" ($gpuByExperiment["stage5_4_amendment_smoke"].target -eq "AUTODL" -and $gpuByExperiment["stage5_4_amendment_smoke"].gpu -eq "NONE")
 Check "U11g stage5_4_amendment2_smoke targets AUTODL with no GPU" ($gpuByExperiment["stage5_4_amendment2_smoke"].target -eq "AUTODL" -and $gpuByExperiment["stage5_4_amendment2_smoke"].gpu -eq "NONE")
+Check "U11h stage5_4_amendment2_formal targets AUTODL with no GPU" ($gpuByExperiment["stage5_4_amendment2_formal"].target -eq "AUTODL" -and $gpuByExperiment["stage5_4_amendment2_formal"].gpu -eq "NONE")
 
 # ---------------------------------------------------------------------------
 # Behavioral tests (real child processes).
@@ -145,6 +146,9 @@ Check "B4g stage5_4_amendment_smoke dry-run is AUTODL and GPU NONE" ($dry54Amend
 $dry54Amendment2 = Invoke-LauncherCaptured -ArgString "stage5_4_amendment2_smoke -DryRun -Inline" -Tag "dry_stage54_amendment2_autodl"
 Check "B4h stage5_4_amendment2_smoke dry-run exits 0" ($dry54Amendment2.ExitCode -eq 0) ("exit=" + $dry54Amendment2.ExitCode)
 Check "B4i stage5_4_amendment2_smoke dry-run is AUTODL and GPU NONE" ($dry54Amendment2.Out -match "Execution  : AUTODL" -and $dry54Amendment2.Out -match "GPU        : NONE" -and $dry54Amendment2.Out -match "DRY RUN")
+$dry54Amendment2Formal = Invoke-LauncherCaptured -ArgString "stage5_4_amendment2_formal -DryRun -Inline" -Tag "dry_stage54_amendment2_formal_autodl"
+Check "B4j stage5_4_amendment2_formal dry-run exits 0" ($dry54Amendment2Formal.ExitCode -eq 0) ("exit=" + $dry54Amendment2Formal.ExitCode)
+Check "B4k stage5_4_amendment2_formal dry-run is AUTODL and GPU NONE" ($dry54Amendment2Formal.Out -match "Execution  : AUTODL" -and $dry54Amendment2Formal.Out -match "GPU        : NONE" -and $dry54Amendment2Formal.Out -match "DRY RUN")
 
 $dryLocal = Invoke-LauncherCaptured -ArgString "stage5_infra_tiny_fake -DryRun -Inline" -Tag "dry_windows"
 Check "B5 dry-run WINDOWS target shows local command" ($dryLocal.ExitCode -eq 0 -and $dryLocal.Out -match [regex]::Escape("run.py --experiment stage5_infra_tiny_fake --dry-run"))

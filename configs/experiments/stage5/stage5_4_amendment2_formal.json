@@ -4,8 +4,18 @@
   "run_type": "FORMAL_TEMPORAL_COMPOSITION_AMENDMENT2",
   "status_note": "PREREGISTERED_BEFORE_FORMAL; registered for a future explicitly authorized executor only; this preparation round must not run Formal",
   "protocol": "configs/experiments/stage5/stage5_4_amendment2_formal_protocol.json",
-  "protocol_sha256": "c3299f9dcb555dfca942d35a65e9282761500f834e32143b6db47a64084f68ad",
-  "output_directory": "outputs/stage5/stage5_4_amendment2_formal/",
+  "protocol_sha256": "d109b3d8727f489e6832c9b1731e4e65b9025bb38a51c10945dd1500f9d80fea",
+  "output_run_id": "stage5_4_amendment2_formal_engineering_amendment1",
+  "output_directory": "outputs/stage5/stage5_4_amendment2_formal_engineering_amendment1/",
+  "execution_identity": {
+    "previous_execution_head": "b4059ae9e864818e3c0e41d71b1e1e61b05f3528",
+    "previous_result": "ENGINEERING_FAILED_PRE_AGGREGATION",
+    "previous_scientific_aggregates_produced": 0,
+    "previous_scientific_results_observed": 0,
+    "output_run_id": "stage5_4_amendment2_formal_engineering_amendment1",
+    "old_shard_reuse": false,
+    "fresh_run_required": true
+  },
   "temporal_smoothing": {
     "method": "ema_crop_center_v1",
     "alpha": 0.5,

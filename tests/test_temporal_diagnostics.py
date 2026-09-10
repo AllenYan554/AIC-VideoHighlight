@@ -242,10 +242,91 @@ def test_multi_subject_summary_includes_primary_plus_all_secondaries_observation
             "secondary_centers_inside_ts1_crop": 1,
         },
     ]
-    summary = summarize_multi_subject_rows(rows)
+    summary = summarize_multi_subject_rows(rows, candidate_side="ts1")
+    assert summary == {
+        "tag": "MULTI_SUBJECT_DIAGNOSTIC / observation only / TS-0 (CMP-1) vs TS-1 / no union or fusion policy",
+        "ambiguous_frames": 2,
+        "frames_with_secondaries": 2,
+        "all_secondaries_inside_ts0_rate": 0.5,
+        "all_secondaries_inside_ts1_rate": 1.0,
+        "at_least_one_inside_ts0_rate": 0.5,
+        "at_least_one_inside_ts1_rate": 1.0,
+        "primary_and_all_secondaries_inside_ts0_rate": 0.5,
+        "primary_and_all_secondaries_inside_ts1_rate": 0.5,
+        "rows": rows,
+    }
+
+
+@pytest.mark.parametrize("candidate_side", ["ts2", "ts3"])
+def test_multi_subject_summary_uses_explicit_candidate_side_with_exact_rates(candidate_side):
+    rows = [
+        {
+            "video_id": "a",
+            "frame": 0,
+            "primary_center_inside_ts0_crop": True,
+            f"primary_center_inside_{candidate_side}_crop": True,
+            "secondary_count": 2,
+            "secondary_centers_inside_ts0_crop": 2,
+            f"secondary_centers_inside_{candidate_side}_crop": 1,
+        },
+        {
+            "video_id": "a",
+            "frame": 1,
+            "primary_center_inside_ts0_crop": True,
+            f"primary_center_inside_{candidate_side}_crop": True,
+            "secondary_count": 1,
+            "secondary_centers_inside_ts0_crop": 0,
+            f"secondary_centers_inside_{candidate_side}_crop": 1,
+        },
+    ]
+    summary = summarize_multi_subject_rows(rows, candidate_side=candidate_side)
+    assert summary["all_secondaries_inside_ts0_rate"] == 0.5
+    assert summary[f"all_secondaries_inside_{candidate_side}_rate"] == 0.5
+    assert summary["at_least_one_inside_ts0_rate"] == 0.5
+    assert summary[f"at_least_one_inside_{candidate_side}_rate"] == 1.0
     assert summary["primary_and_all_secondaries_inside_ts0_rate"] == 0.5
-    assert summary["primary_and_all_secondaries_inside_ts1_rate"] == 0.5
-    assert summary["tag"].startswith("MULTI_SUBJECT_DIAGNOSTIC")
+    assert summary[f"primary_and_all_secondaries_inside_{candidate_side}_rate"] == 0.5
+    assert f"TS-0 (CMP-1) vs TS-{candidate_side[2:]}" in summary["tag"]
+
+
+def test_multi_subject_summary_rejects_unknown_or_missing_candidate_contract():
+    with pytest.raises(ValueError, match="unknown multi-subject candidate side"):
+        summarize_multi_subject_rows([], candidate_side="ts4")
+    incomplete = {
+        "video_id": "a",
+        "frame": 0,
+        "primary_center_inside_ts0_crop": True,
+        "secondary_count": 1,
+        "secondary_centers_inside_ts0_crop": 1,
+    }
+    with pytest.raises(ValueError, match="missing multi-subject row fields"):
+        summarize_multi_subject_rows([incomplete], candidate_side="ts2")
+
+
+def test_multi_subject_summary_empty_and_zero_applicable_rows_are_explicit():
+    empty = summarize_multi_subject_rows([], candidate_side="ts3")
+    assert empty["ambiguous_frames"] == 0
+    assert empty["frames_with_secondaries"] == 0
+    assert empty["all_secondaries_inside_ts0_rate"] is None
+    assert empty["all_secondaries_inside_ts3_rate"] is None
+
+    zero_applicable = summarize_multi_subject_rows(
+        [
+            {
+                "video_id": "a",
+                "frame": 0,
+                "primary_center_inside_ts0_crop": True,
+                "primary_center_inside_ts3_crop": True,
+                "secondary_count": 0,
+                "secondary_centers_inside_ts0_crop": 0,
+                "secondary_centers_inside_ts3_crop": 0,
+            }
+        ],
+        candidate_side="ts3",
+    )
+    assert zero_applicable["ambiguous_frames"] == 1
+    assert zero_applicable["frames_with_secondaries"] == 0
+    assert zero_applicable["primary_and_all_secondaries_inside_ts3_rate"] is None
 
 
 def test_amendment_helpers_include_ts2_without_changing_ts1_contract():

@@ -22,6 +22,39 @@
       "description": "The first Formal preflight (attempt=0, before any execution) found that the Confirmatory Dev142 analysis-set identity SHA depends on the definition text; the preregistration commit 3aa0c40 had reworded the Dev142 definition while still pinning the historical identity d00f99a044fc67a7ae484185cab5e8f94928ec3be350e2b27ac26250b72b7434, so validate-only correctly failed. The historical canonical wording \"Frozen Dev166 minus Stage5.4 Smoke24 whole video_ids\" is restored byte-for-byte; the pinned identity_sha256, the Dev142 member set, the Smoke24 exclusion set, and every scientific element are unchanged. No Formal result existed or was read.",
       "blocked_preflight_evidence": "archive: amendment2_formal_blocked_preflight_20260910 (outside the repo; preserved, not rewritten)",
       "scientific_change": false
+    },
+    "pre_execution_engineering_amendment": {
+      "date": "2026-09-11",
+      "classification": "PURE_ENGINEERING_AMENDMENT / post-processing crash repair / NOT a scientific change",
+      "previous_execution_head": "b4059ae9e864818e3c0e41d71b1e1e61b05f3528",
+      "previous_protocol_sha256": "c3299f9dcb555dfca942d35a65e9282761500f834e32143b6db47a64084f68ad",
+      "previous_config_sha256": "c9e378f73a180ffa88444589995326962602d05f6b6ac55ababdbe4bd7787513",
+      "failure_stage": "post-processing before machine/summary.json",
+      "failure_type": "KeyError / engineering",
+      "formal_attempts_recorded": [
+        "attempt 1: fresh Formal produced all 166/166 shards and then crashed in multi-subject post-processing",
+        "attempt 2: same-identity diagnostic resume reused all 166 shards and reproduced the same KeyError"
+      ],
+      "formal_shards_produced": "166/166",
+      "scientific_aggregates_produced": 0,
+      "scientific_results_observed": 0,
+      "algorithm_changed": false,
+      "gates_changed": false,
+      "metrics_changed": false,
+      "dataset_changed": false,
+      "manifest_changed": false,
+      "ts3_changed": false,
+      "fix_scope": [
+        "multi-subject summarizer candidate-side generalization",
+        "explicit TS-0-vs-TS-1/TS-2/TS-3 comparison mapping",
+        "four-arm synthetic post-processing regression coverage"
+      ],
+      "failed_output_root": "/root/autodl-tmp/outputs/stage5/stage5_4_amendment2_formal/",
+      "failed_evidence_disposition": "PRESERVE_IN_PLACE / ENGINEERING_FAILED_PRE_AGGREGATION / never overwrite or delete",
+      "new_output_run_id": "stage5_4_amendment2_formal_engineering_amendment1",
+      "old_shard_reuse": false,
+      "new_formal_starts_fresh": true,
+      "local_evidence": "experiment archive amendment2_formal/engineering_failure_evidence/; preserved without rewrite"
     }
   },
   "research_question": "Does the frozen parameter-free constrained EMA (TS-3, guarded_constrained_ema_v1) retain the temporal-stabilization benefit of fixed EMA (TS-1) while repairing its worst spatial lag on the full frozen Dev166, measured against TS-0 and against the TS-2 motion-adaptive ablation?",
@@ -248,8 +281,10 @@
     "reuse": ["RunContext", "ShardStore", "ProgressReporter", "run_manifest", "status.json", "progress.json", "progress.jsonl", "artifact_manifest", "experiment_raw_report.md", "AI_REPORT_INPUTS.md", "snapshots/config.json", "snapshots/protocol.json"],
     "progress": ["videos", "frames", "current video", "current sequence", "elapsed", "ETA", "errors", "invalid", "resume state"],
     "launch_provenance": "launch_source / launch_mode / interactive_child / target are recorded in run_manifest only and never enter the scientific identity or semantic hashes",
-    "output_root": "/root/autodl-tmp/outputs/stage5/stage5_4_amendment2_formal/",
-    "output_collision": "A non-resume start refuses an existing output identity; no overwrite, reset, clean, or automatic deletion."
+    "output_run_id": "stage5_4_amendment2_formal_engineering_amendment1",
+    "output_root": "/root/autodl-tmp/outputs/stage5/stage5_4_amendment2_formal_engineering_amendment1/",
+    "failed_output_root_preservation": "/root/autodl-tmp/outputs/stage5/stage5_4_amendment2_formal/ remains immutable engineering-failure evidence",
+    "output_collision": "The engineering-amendment run uses a fresh output_run_id. A non-resume start still refuses an existing identity; no overwrite, reset, clean, deletion, shard copy, or cross-HEAD resume is allowed."
   },
   "completion_criteria": {
     "formal_complete_requires_all_of": [

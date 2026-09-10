@@ -340,12 +340,30 @@ def temporal_multi_subject_diagnostic(
                 ),
             }
         )
-    return summarize_multi_subject_rows(rows)
+    return summarize_multi_subject_rows(rows, candidate_side="ts1")
 
 
-def summarize_multi_subject_rows(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
-    """Summarize observation-only secondary and primary+secondary containment."""
+def summarize_multi_subject_rows(
+    rows: Sequence[Mapping[str, Any]], *, candidate_side: str
+) -> dict[str, Any]:
+    """Summarize TS-0 versus one explicitly named temporal treatment side."""
+    if candidate_side not in {"ts1", "ts2", "ts3"}:
+        raise ValueError(f"unknown multi-subject candidate side: {candidate_side}")
+    candidate_label = f"TS-{candidate_side[2:]}"
     rows = list(rows)
+    required_fields = {
+        "secondary_count",
+        "primary_center_inside_ts0_crop",
+        f"primary_center_inside_{candidate_side}_crop",
+        "secondary_centers_inside_ts0_crop",
+        f"secondary_centers_inside_{candidate_side}_crop",
+    }
+    for index, row in enumerate(rows):
+        missing = sorted(required_fields - row.keys())
+        if missing:
+            raise ValueError(
+                f"missing multi-subject row fields at index {index}: {', '.join(missing)}"
+            )
     relevant = [row for row in rows if row["secondary_count"]]
 
     def primary_and_all(side: str) -> float | None:
@@ -360,19 +378,26 @@ def summarize_multi_subject_rows(rows: Sequence[Mapping[str, Any]]) -> dict[str,
         return round(hits / len(relevant), 6)
 
     return {
-        "tag": "MULTI_SUBJECT_DIAGNOSTIC / observation only / TS-0 (CMP-1) vs TS-1 / no union or fusion policy",
+        "tag": (
+            "MULTI_SUBJECT_DIAGNOSTIC / observation only / TS-0 (CMP-1) vs "
+            f"{candidate_label} / no union or fusion policy"
+        ),
         "ambiguous_frames": len(rows),
         "frames_with_secondaries": len(relevant),
         "all_secondaries_inside_ts0_rate": _rate(
             relevant, "secondary_centers_inside_ts0_crop"
         ),
-        "all_secondaries_inside_ts1_rate": _rate(
-            relevant, "secondary_centers_inside_ts1_crop"
+        f"all_secondaries_inside_{candidate_side}_rate": _rate(
+            relevant, f"secondary_centers_inside_{candidate_side}_crop"
         ),
         "at_least_one_inside_ts0_rate": _rate(relevant, "secondary_centers_inside_ts0_crop", at_least_one=True),
-        "at_least_one_inside_ts1_rate": _rate(relevant, "secondary_centers_inside_ts1_crop", at_least_one=True),
+        f"at_least_one_inside_{candidate_side}_rate": _rate(
+            relevant, f"secondary_centers_inside_{candidate_side}_crop", at_least_one=True
+        ),
         "primary_and_all_secondaries_inside_ts0_rate": primary_and_all("ts0"),
-        "primary_and_all_secondaries_inside_ts1_rate": primary_and_all("ts1"),
+        f"primary_and_all_secondaries_inside_{candidate_side}_rate": primary_and_all(
+            candidate_side
+        ),
         "rows": rows,
     }
 

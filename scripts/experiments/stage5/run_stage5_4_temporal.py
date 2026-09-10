@@ -73,6 +73,12 @@ BASE_FIELDS = {
     "models": "models",
 }
 
+MULTI_SUBJECT_COMPARISON_CANDIDATES = {
+    "ts0_vs_ts1": "ts1",
+    "ts0_vs_ts2": "ts2",
+    "ts0_vs_ts3": "ts3",
+}
+
 # Experiment ids that consume the Stage 5.3 frozen Full-Dev manifest and apply
 # the preregistered Formal contract (Full Dev166 + Confirmatory Dev142).
 FORMAL_EXPERIMENT_IDS = ("stage5_4_formal", "stage5_4_amendment2_formal")
@@ -894,6 +900,17 @@ def validate_formal_contract(config: dict, protocol: dict, manifest: dict, smoke
         raise ValueError("formal protocol_id mismatch")
     if protocol.get("status") not in {"DRAFT", "PREREGISTERED_BEFORE_FORMAL"}:
         raise ValueError("formal protocol status is invalid")
+    if config["experiment_id"] == "stage5_4_amendment2_formal":
+        expected_output_run_id = protocol.get("runtime_contract", {}).get("output_run_id")
+        if not expected_output_run_id or config.get("output_run_id") != expected_output_run_id:
+            raise ValueError("Amendment 2 Formal output run identity drifted")
+        execution_identity = config.get("execution_identity", {})
+        if (
+            execution_identity.get("output_run_id") != expected_output_run_id
+            or execution_identity.get("old_shard_reuse") is not False
+            or execution_identity.get("fresh_run_required") is not True
+        ):
+            raise ValueError("Amendment 2 Formal execution identity policy drifted")
     if float(config["temporal_smoothing"]["alpha"]) != 0.5:
         raise ValueError("Formal alpha must remain exactly 0.5")
     if config["temporal_smoothing"].get("reset_rules") != [
@@ -1281,10 +1298,61 @@ def build_analysis_metrics_all_treatments(records: list[dict]) -> dict:
     return metrics
 
 
+def aggregate_formal_multi_subject_diagnostics(
+    analysis_metrics: dict,
+    multi_subject: dict,
+    confirmatory_ids: set[str],
+    *,
+    four_arm: bool,
+) -> dict:
+    """Attach Full/Confirmatory summaries for explicitly mapped treatment sides."""
+    by_comparison = multi_subject if four_arm else {"ts0_vs_ts1": multi_subject}
+    for comparison, payload in by_comparison.items():
+        if comparison not in MULTI_SUBJECT_COMPARISON_CANDIDATES:
+            raise ValueError(f"unknown multi-subject comparison: {comparison}")
+        if not isinstance(payload, dict) or "rows" not in payload:
+            raise ValueError(f"multi-subject comparison missing rows: {comparison}")
+        candidate_side = MULTI_SUBJECT_COMPARISON_CANDIDATES[comparison]
+        full_summary = {
+            key: value
+            for key, value in summarize_multi_subject_rows(
+                payload["rows"], candidate_side=candidate_side
+            ).items()
+            if key != "rows"
+        }
+        confirmatory_summary = {
+            key: value
+            for key, value in summarize_multi_subject_rows(
+                [row for row in payload["rows"] if row["video_id"] in confirmatory_ids],
+                candidate_side=candidate_side,
+            ).items()
+            if key != "rows"
+        }
+        if four_arm:
+            analysis_metrics["full_dev166"].setdefault(
+                "multi_subject_observation_only", {}
+            )[comparison] = full_summary
+            analysis_metrics["confirmatory_dev142"].setdefault(
+                "multi_subject_observation_only", {}
+            )[comparison] = confirmatory_summary
+        else:
+            analysis_metrics["full_dev166"]["multi_subject_observation_only"] = full_summary
+            analysis_metrics["confirmatory_dev142"][
+                "multi_subject_observation_only"
+            ] = confirmatory_summary
+    return analysis_metrics
+
+
+def resolve_experiment_paths(environment: EnvironmentPaths, config: dict):
+    """Resolve an evidence-preserving run directory while retaining registry identity."""
+    output_run_id = config.get("output_run_id", config["experiment_id"])
+    return environment.for_experiment(config["stage"], output_run_id)
+
+
 def run(args) -> int:
     config = json.loads(args.config.read_text(encoding="utf-8"))
     environment = EnvironmentPaths.from_json(args.environment)
-    paths = environment.for_experiment(config["stage"], config["experiment_id"])
+    paths = resolve_experiment_paths(environment, config)
     if args.dry_run:
         print(json.dumps({
             "experiment_id": config["experiment_id"],
@@ -1628,34 +1696,12 @@ def run(args) -> int:
                 scientific_gates = evaluate_formal_scientific_gates(
                     analysis_metrics, config["decision_gates"]
                 )
-            multi_subject_by_comparison = (
-                multi_subject
-                if additional_sides
-                else {"ts0_vs_ts1": multi_subject}
+            aggregate_formal_multi_subject_diagnostics(
+                analysis_metrics,
+                multi_subject,
+                confirmatory_ids,
+                four_arm=config["experiment_id"] == "stage5_4_amendment2_formal",
             )
-            for comparison, payload in multi_subject_by_comparison.items():
-                if not isinstance(payload, dict) or "rows" not in payload:
-                    continue
-                full_summary = {key: value for key, value in payload.items() if key != "rows"}
-                confirmatory_summary = {
-                    key: value
-                    for key, value in summarize_multi_subject_rows(
-                        [row for row in payload["rows"] if row["video_id"] in confirmatory_ids]
-                    ).items()
-                    if key != "rows"
-                }
-                if config["experiment_id"] == "stage5_4_amendment2_formal":
-                    analysis_metrics["full_dev166"].setdefault(
-                        "multi_subject_observation_only", {}
-                    )[comparison] = full_summary
-                    analysis_metrics["confirmatory_dev142"].setdefault(
-                        "multi_subject_observation_only", {}
-                    )[comparison] = confirmatory_summary
-                else:
-                    analysis_metrics["full_dev166"]["multi_subject_observation_only"] = full_summary
-                    analysis_metrics["confirmatory_dev142"][
-                        "multi_subject_observation_only"
-                    ] = confirmatory_summary
         elif include_ts3:
             analysis_metrics = None
             scientific_gates = evaluate_amendment2_scientific_gates(
