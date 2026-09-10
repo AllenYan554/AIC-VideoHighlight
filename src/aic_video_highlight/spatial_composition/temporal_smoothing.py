@@ -1,4 +1,4 @@
-"""Stage 5.4 deterministic TS-1 and Motion-Adaptive EMA v1 TS-2 smoothing.
+"""Stage 5.4 TS-1 fixed, TS-2 adaptive, and TS-3 constrained EMA methods.
 
 Consumes the Stage 5.3 FINAL FROZEN CMP-1 geometry as TS-0 (temporal control
 baseline) and changes ONLY the temporal continuity of the crop center / placement:
@@ -7,9 +7,10 @@ fallback semantics are all inherited unchanged from the frozen Stage 5.3 contrac
 
 TS-1 uses a fixed exponential moving average (EMA) over the pre-clamp ideal crop center;
 TS-2 changes only that coefficient to a frozen function of normalized raw horizontal
-primary-subject motion. Both are
-re-placed each frame with the exact Stage 5.3 frozen floor/clamp convention, and
-re-clamped into legal frame bounds. Reset rules (no cross-sequence smoothing):
+primary-subject motion. TS-3 retains the fixed TS-1 state and projects only an
+unsafe output placement to the nearest crop containing the current frozen subject
+center. All are placed with the exact Stage 5.3 frozen floor/clamp convention.
+Reset rules (no cross-sequence smoothing):
 new video (one video per call), frozen temporal discontinuity (frame gap > 1 in
 the frozen frame identity), and any fallback frame (FALLBACK_CENTER_CROP on the
 current or the previous frame). No scene-cut detector, no tracking, no new pixels.
@@ -19,7 +20,7 @@ from __future__ import annotations
 
 import math
 import statistics
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from fractions import Fraction
 from typing import Callable, Sequence
 
@@ -39,6 +40,7 @@ MOTION_ADAPTIVE_FULL_RESPONSE = 0.20
 
 PLACEMENT_TS1_SMOOTHED = "TS1_SMOOTHED"
 PLACEMENT_TS2_ADAPTIVE_SMOOTHED = "TS2_ADAPTIVE_SMOOTHED"
+PLACEMENT_TS3_GUARDED_SMOOTHED = "TS3_GUARDED_SMOOTHED"
 
 RESET_NEW_VIDEO = "NEW_VIDEO"
 RESET_FRAME_GAP = "FRAME_GAP"
@@ -61,7 +63,7 @@ class TemporalObservation:
 
 @dataclass(frozen=True, slots=True)
 class SmoothedFrame:
-    """TS-1 crop for one frame: frozen crop size, EMA-smoothed placement."""
+    """One temporal treatment crop with frozen size and deterministic placement."""
 
     frame: int
     reset_reason: str | None
@@ -79,6 +81,13 @@ class SmoothedFrame:
     matches_ts0_placement: bool
     motion_norm: float | None = None
     alpha_t: float | None = None
+    guard_applied: bool | None = None
+    guard_correction_x: int | None = None
+    guard_correction_y: int | None = None
+    safe_x_min: int | None = None
+    safe_x_max: int | None = None
+    safe_y_min: int | None = None
+    safe_y_max: int | None = None
 
 
 def _require_frame(width: int, height: int) -> None:
@@ -122,6 +131,34 @@ def motion_adaptive_alpha(
         raise ValueError("motion thresholds must be finite and satisfy 0 <= low < high")
     transition = min(max((motion - low) / (high - low), 0.0), 1.0)
     return minimum + (1.0 - minimum) * transition
+
+
+def containment_safe_top_left_interval(
+    frame_extent: int,
+    crop_extent: int | float | Fraction,
+    subject_coordinate: float,
+) -> tuple[int, int]:
+    """Legal integer top-left interval whose half-open crop contains a point.
+
+    For crop interval ``[q, q + C)`` and subject coordinate ``p``, containment
+    requires ``p - C < q <= p``. This is intersected with the frozen legal
+    placement range ``0 <= q <= floor(F - C)`` using exact ``Fraction``
+    arithmetic for the derived vertical crop extent.
+    """
+    if isinstance(frame_extent, bool) or not isinstance(frame_extent, int) or frame_extent <= 0:
+        raise ValueError("frame_extent must be a positive integer")
+    crop = Fraction(crop_extent)
+    coordinate = float(subject_coordinate)
+    if crop <= 0 or crop > frame_extent:
+        raise ValueError("crop_extent must be positive and fit inside frame_extent")
+    if not math.isfinite(coordinate) or not 0.0 <= coordinate < float(frame_extent):
+        raise ValueError("subject_coordinate must be finite and inside the half-open frame")
+    point = Fraction(str(coordinate))
+    lower = max(0, math.floor(point - crop) + 1)
+    upper = min(math.floor(Fraction(frame_extent) - crop), math.floor(point))
+    if lower > upper:
+        raise ValueError("no legal crop placement contains the subject coordinate")
+    return int(lower), int(upper)
 
 
 def place_crop_from_center(
@@ -208,6 +245,63 @@ def smooth_video_sequence_adaptive(
         placement_status=PLACEMENT_TS2_ADAPTIVE_SMOOTHED,
         record_transition_parameters=True,
     )
+
+
+def smooth_video_sequence_guarded(
+    width: int,
+    height: int,
+    target_w: int | float,
+    target_h: int | float,
+    observations: Sequence[TemporalObservation],
+    alpha: float = DEFAULT_EMA_ALPHA,
+) -> list[SmoothedFrame]:
+    """TS-3: fixed EMA proposal projected minimally to center containment.
+
+    The unconstrained fixed-EMA state remains the TS-1 state and is never fed
+    back from the projection. Only the current frame's final integer placement
+    is projected into the legal rectangle that contains the current frozen
+    primary-subject center.
+    """
+    fixed = smooth_video_sequence(width, height, target_w, target_h, observations, alpha=alpha)
+    observations_by_frame = {item.frame: item for item in observations}
+    guarded: list[SmoothedFrame] = []
+    for proposal in fixed:
+        observation = observations_by_frame[proposal.frame]
+        if observation.fallback:
+            guarded.append(proposal)
+            continue
+        safe_x_min, safe_x_max = containment_safe_top_left_interval(
+            width, proposal.w, observation.ideal_center_x
+        )
+        safe_y_min, safe_y_max = containment_safe_top_left_interval(
+            height, proposal.h, observation.ideal_center_y
+        )
+        x = min(max(proposal.x, safe_x_min), safe_x_max)
+        y = min(max(proposal.y, safe_y_min), safe_y_max)
+        ts0_x, ts0_y, _, _, _, _ = place_crop_from_center(
+            width,
+            height,
+            target_w,
+            target_h,
+            (observation.ideal_center_x, observation.ideal_center_y),
+        )
+        guarded.append(
+            replace(
+                proposal,
+                x=x,
+                y=y,
+                placement_status=PLACEMENT_TS3_GUARDED_SMOOTHED,
+                matches_ts0_placement=(x, y) == (ts0_x, ts0_y),
+                guard_applied=(x, y) != (proposal.x, proposal.y),
+                guard_correction_x=x - proposal.x,
+                guard_correction_y=y - proposal.y,
+                safe_x_min=safe_x_min,
+                safe_x_max=safe_x_max,
+                safe_y_min=safe_y_min,
+                safe_y_max=safe_y_max,
+            )
+        )
+    return guarded
 
 
 def _smooth_video_sequence(

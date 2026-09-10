@@ -21,18 +21,21 @@ from aic_video_highlight.spatial_composition.temporal_smoothing import (
     MOTION_ADAPTIVE_FULL_RESPONSE,
     MOTION_ADAPTIVE_SMOOTHING_CEILING,
     PLACEMENT_TS2_ADAPTIVE_SMOOTHED,
+    PLACEMENT_TS3_GUARDED_SMOOTHED,
     PLACEMENT_TS1_SMOOTHED,
     RESET_FALLBACK,
     RESET_FRAME_GAP,
     SmoothedFrame,
     TemporalObservation,
     acceleration_norm,
+    containment_safe_top_left_interval,
     displacement_norm,
     large_jump_ratios,
     motion_adaptive_alpha,
     place_crop_from_center,
     smooth_video_sequence,
     smooth_video_sequence_adaptive,
+    smooth_video_sequence_guarded,
     temporal_summary,
     transition_pairs,
     transition_triplets,
@@ -356,3 +359,111 @@ def test_motion_adaptive_does_not_change_ts0_or_ts1_regression_contract():
     assert [(item.w, item.h, item.crop_w, item.crop_h) for item in adaptive] == [
         (item.w, item.h, item.crop_w, item.crop_h) for item in before
     ]
+
+
+def test_guarded_ema_safe_proposal_is_identical_to_fixed_ema_placement():
+    observations = [obs(0, 700.0), obs(1, 720.0), obs(2, 740.0)]
+    fixed = smooth_video_sequence(W, H, TW, TH, observations, alpha=0.5)
+    guarded = smooth_video_sequence_guarded(W, H, TW, TH, observations)
+    assert [(item.x, item.y, item.w, item.h) for item in guarded] == [
+        (item.x, item.y, item.w, item.h) for item in fixed
+    ]
+    assert [item.ema_center_x for item in guarded] == [item.ema_center_x for item in fixed]
+    assert all(item.guard_applied is False for item in guarded)
+    assert all(item.placement_status == PLACEMENT_TS3_GUARDED_SMOOTHED for item in guarded)
+
+
+def test_guarded_ema_slight_violation_moves_only_to_nearest_safe_boundary():
+    observations = [obs(0, 700.0), obs(1, 1220.0)]
+    fixed = smooth_video_sequence(W, H, TW, TH, observations)
+    guarded = smooth_video_sequence_guarded(W, H, TW, TH, observations)
+    safe_min, safe_max = containment_safe_top_left_interval(W, CROP_W, 1220.0)
+    assert fixed[1].x == safe_min - 8
+    assert guarded[1].x == safe_min
+    assert guarded[1].safe_x_min == safe_min and guarded[1].safe_x_max == safe_max
+    assert guarded[1].guard_correction_x == 8
+    assert guarded[1].guard_correction_y == 0
+
+
+@pytest.mark.parametrize(
+    ("previous_center", "current_center", "expected_boundary", "raw_side"),
+    [(1300.0, 100.0, 100, "left"), (300.0, 1500.0, 995, "right")],
+)
+def test_guarded_ema_severe_lag_projects_nearest_without_snapping_to_raw_cmp1(
+    previous_center, current_center, expected_boundary, raw_side
+):
+    observations = [obs(0, previous_center), obs(1, current_center)]
+    guarded = smooth_video_sequence_guarded(W, H, TW, TH, observations)
+    raw_x = place_crop_from_center(W, H, TW, TH, (current_center, 450.0))[0]
+    assert guarded[1].x == expected_boundary
+    assert guarded[1].x != raw_x
+    assert guarded[1].guard_applied
+    assert raw_side in ("left", "right")
+
+
+def test_guarded_ema_vertical_ratio_projects_with_exact_derived_height():
+    fw, fh = 1080, 1920
+    observations = [obs(0, 540.0, 1600.0), obs(1, 540.0, 100.0)]
+    fixed = smooth_video_sequence(fw, fh, 16, 9, observations)
+    guarded = smooth_video_sequence_guarded(fw, fh, 16, 9, observations)
+    assert fixed[1].y > 100
+    assert guarded[1].y == 100
+    assert guarded[1].y <= 100.0 < guarded[1].y + guarded[1].h
+    assert guarded[1].h == derived_height(guarded[1].w, 16, 9)
+    assert guarded[1].x == 0
+    assert_geometry_valid(guarded, width=fw, height=fh)
+
+
+def test_guarded_ema_inherits_first_frame_gap_and_fallback_reset_semantics():
+    observations = [
+        obs(0, 300.0),
+        obs(1, 500.0, fallback=True),
+        obs(2, 1400.0),
+        obs(10, 200.0),
+    ]
+    guarded = smooth_video_sequence_guarded(W, H, TW, TH, observations)
+    assert guarded[0].reset_reason is None and guarded[0].matches_ts0_placement
+    assert guarded[1].placement_status == PLACEMENT_FALLBACK_CENTER_CROP
+    assert guarded[1].guard_applied is None
+    assert guarded[2].reset_reason == RESET_FALLBACK and guarded[2].matches_ts0_placement
+    assert guarded[3].reset_reason == RESET_FRAME_GAP and guarded[3].matches_ts0_placement
+
+
+def test_guarded_ema_is_deterministic_and_preserves_ts0_ts1_ts2_and_geometry_contracts():
+    observations = [
+        obs(5, 1400.0),
+        obs(3, 200.0),
+        obs(4, 1000.0),
+        obs(12, 600.0, fallback=True),
+    ]
+    ts1_before = smooth_video_sequence(W, H, TW, TH, observations)
+    ts2_before = smooth_video_sequence_adaptive(W, H, TW, TH, observations)
+    guarded = smooth_video_sequence_guarded(W, H, TW, TH, observations)
+    replay = smooth_video_sequence_guarded(W, H, TW, TH, list(reversed(observations)))
+    assert guarded == replay
+    assert smooth_video_sequence(W, H, TW, TH, observations) == ts1_before
+    assert smooth_video_sequence_adaptive(W, H, TW, TH, observations) == ts2_before
+    assert [item.frame for item in guarded] == sorted(item.frame for item in observations)
+    assert [(item.w, item.h, item.crop_w, item.crop_h) for item in guarded] == [
+        (item.w, item.h, item.crop_w, item.crop_h) for item in ts1_before
+    ]
+    by_frame = {item.frame: item for item in observations}
+    for item in guarded:
+        assert 0 <= item.x and item.x + item.w <= W
+        assert 0 <= item.y and item.y + item.h <= H
+        assert item.h == derived_height(item.w, TW, TH)
+        observation = by_frame[item.frame]
+        if not observation.fallback:
+            assert item.x <= observation.ideal_center_x < item.x + item.w
+            assert item.y <= observation.ideal_center_y < item.y + item.h
+
+
+def test_containment_interval_handles_horizontal_crop_and_frame_edges_exactly():
+    assert containment_safe_top_left_interval(W, CROP_W, 0.0) == (0, 0)
+    assert containment_safe_top_left_interval(W, CROP_W, W - 0.1) == (MAX_X, MAX_X)
+    middle_min, middle_max = containment_safe_top_left_interval(W, CROP_W, 800.0)
+    assert middle_min == 295
+    assert middle_max == 800
+    assert 0 <= middle_min <= middle_max <= MAX_X
+    with pytest.raises(ValueError, match="half-open frame"):
+        containment_safe_top_left_interval(W, CROP_W, float(W))

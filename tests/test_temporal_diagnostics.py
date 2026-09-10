@@ -13,6 +13,8 @@ from aic_video_highlight.spatial_composition.temporal_diagnostics import (
 )
 from scripts.experiments.stage5.run_stage5_4_temporal import (
     engineering_gate,
+    evaluate_amendment2_scientific_gates,
+    guard_projection_diagnostics,
     pooled_distributions,
     spatial_metrics_for_all_treatments,
     temporal_metrics_for_all_treatments,
@@ -23,7 +25,7 @@ TW, TH = 9.0, 16.0
 CROP_W = (H * 9) // 16
 
 
-def merged_record(video_id: str, frame: int, ts0_x: int, ts1_x: int, *, fallback: bool = False, reset=None, ts2_x: int | None = None) -> dict:
+def merged_record(video_id: str, frame: int, ts0_x: int, ts1_x: int, *, fallback: bool = False, reset=None, ts2_x: int | None = None, ts3_x: int | None = None) -> dict:
     record = {
         "video_id": video_id,
         "frame": frame,
@@ -93,6 +95,22 @@ def merged_record(video_id: str, frame: int, ts0_x: int, ts1_x: int, *, fallback
             "ts2_width_positive": True,
             "ts2_x_within_frame": True,
             "ts2_derived_height_within_frame": True,
+        })
+    if ts3_x is not None:
+        record["ts3"] = {
+            **record["ts1"],
+            "x": ts3_x,
+            "placement_status": "FALLBACK_CENTER_CROP" if fallback else "TS3_GUARDED_SMOOTHED",
+            "ema_center_x": None if fallback else float(ts1_x) + CROP_W / 2.0,
+            "guard_applied": not fallback and ts3_x != ts1_x,
+            "guard_correction_x": None if fallback else ts3_x - ts1_x,
+            "guard_correction_y": None if fallback else 0,
+        }
+        record["geometry_valid"].update({
+            "ts3_nonnegative": True,
+            "ts3_width_positive": True,
+            "ts3_x_within_frame": True,
+            "ts3_derived_height_within_frame": True,
         })
     return record
 
@@ -249,3 +267,61 @@ def test_amendment_helpers_include_ts2_without_changing_ts1_contract():
     assert gate["crop_size_unchanged"]
     assert gate["fallback_placement_unchanged"]
     assert gate["treatment_sides"] == ["ts1", "ts2"]
+
+
+def test_amendment2_helpers_include_ts3_in_four_way_metrics_and_gates():
+    records = [
+        merged_record("v", 0, 500, 500, ts2_x=500, ts3_x=500),
+        merged_record("v", 1, 820, 660, ts2_x=820, ts3_x=700),
+    ]
+    pooled = pooled_distributions(records)
+    temporal = temporal_metrics_for_all_treatments(records)
+    spatial = spatial_metrics_for_all_treatments(records)
+    gate = engineering_gate(
+        {"videos": [{"video_id": "v", "frames": [{"frame": 0}, {"frame": 1}]}]}, records, []
+    )
+    assert pooled["ts3_displacement"][0] < pooled["ts2_displacement"][0]
+    assert temporal["ts3_displacement"]["n"] == 1
+    assert spatial["ts3"]["n"] == 2
+    assert gate["treatment_sides"] == ["ts1", "ts2", "ts3"]
+    guard = guard_projection_diagnostics(records)
+    assert guard["eligible_nonfallback_frames"] == 2
+    assert guard["guard_applied_frames"] == 1
+    assert guard["guard_applied_rate"] == 0.5
+
+
+def test_amendment2_promotion_checks_are_frozen_and_mechanism_specific():
+    records = [
+        merged_record("v", 0, 500, 500, ts2_x=500, ts3_x=500),
+        merged_record("v", 1, 900, 600, ts2_x=900, ts3_x=650),
+        merged_record("v", 2, 500, 550, ts2_x=500, ts3_x=700),
+    ]
+    for record in records:
+        record["stratum"] = "strongly_off_center"
+        record["ts3"]["subject_visible_fraction"] = record["ts0"]["subject_visible_fraction"]
+        record["ts3"]["subject_center_inside"] = True
+    gates = {
+        "temporal_benefit": {
+            "minimum_mean_displacement_relative_reduction": 0.2,
+            "minimum_mean_acceleration_relative_reduction": 0.3,
+            "maximum_p95_displacement_relative_regression": 0.0,
+            "large_jump_nonincrease_thresholds": [0.1, 0.2, 0.3],
+            "minimum_gt_0_20_relative_reduction": 0.25,
+        },
+        "spatial_regression_guardrails": {
+            "minimum_mean_visible_fraction_delta": -0.03,
+            "minimum_visible_ge_0_90_delta": -0.05,
+            "minimum_subject_center_containment_delta": -0.02,
+            "minimum_strong_off_center_mean_visible_delta": -0.05,
+        },
+    }
+    result = evaluate_amendment2_scientific_gates(
+        records,
+        pooled_distributions(records),
+        spatial_metrics_for_all_treatments(records),
+        gates,
+    )
+    checks = result["amendment2_mechanism_checks"]
+    assert all(check["pass"] for check in checks.values())
+    assert result["ts3_vs_ts0"]["pass"]
+    assert result["all_pass"]

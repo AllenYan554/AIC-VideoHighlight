@@ -1,0 +1,178 @@
+{
+  "protocol_id": "stage5_4_amendment2_smoke",
+  "title": "Stage 5.4 Amendment 2 — Guarded / Constrained EMA v1 Development Smoke Protocol",
+  "status": "DRAFT_READY_FOR_SMOKE",
+  "created": "2026-09-10",
+  "research_question": "Can fixed alpha=0.5 EMA remain the default stabilizer while a parameter-free, minimum-distance projection is applied only when its current placement excludes the frozen primary-subject center, thereby retaining more TS-1 temporal benefit than TS-2 while recovering TS-1 strong-motion spatial loss?",
+  "prior_evidence": {
+    "stage5_4_formal": {
+      "execution_head": "172aef82f90d48a977c93a6872b2b17442377da5",
+      "protocol_sha256": "990afcfe697d82bf89573d08b81217a7b9c91fc4d3b60d8a4d63081e32581e51",
+      "config_sha256": "04639b97277a5e8eb71edbecdac8e66017df1185ecadf9d2a2e1dd52da4c06b6",
+      "ts1_mean_displacement": [0.025786, 0.01557],
+      "ts1_mean_acceleration": [0.046674, 0.019284],
+      "ts1_large_jump_gt_0_20": [0.0476, 0.012],
+      "ts1_center_containment_delta": -0.022913,
+      "ts1_strong_visible_delta": -0.071204,
+      "confirmatory_ts1_strong_visible_delta": -0.080256,
+      "decision": "TS1_REJECTED_FOR_FREEZE"
+    },
+    "amendment1_smoke": {
+      "execution_head": "bf85a67c2a83a58181b15e229e5462cc083f5df1",
+      "protocol_sha256": "25c73ba869a4bd802dedc94be24921e8d375a829cadaebf9545b74b7924439eb",
+      "config_sha256": "11760495077b33e827590e7c528657510eb2ad074935e8841bb94df60e93cbbf",
+      "ts2_mean_displacement_relative_reduction": 0.099144,
+      "ts2_mean_acceleration_relative_reduction": 0.126441,
+      "ts2_gt_0_20_relative_reduction": 0.0,
+      "ts2_center_containment_rate": 1.0,
+      "ts2_strong_visible_delta": -0.000435,
+      "decision": "NOT_READY_FOR_FORMAL",
+      "mechanism": "Motion-adaptive alpha repaired spatial lag by weakening or disabling smoothing on large-motion transitions, structurally sacrificing the temporal benefit the amendment was intended to preserve."
+    }
+  },
+  "scientific_variables": {
+    "ts0": "Stage 5.3 FINAL FROZEN CMP-1; no temporal smoothing",
+    "ts1": "ema_crop_center_v1; fixed alpha=0.5",
+    "ts2": "motion_adaptive_ema_v1; retained unchanged as an ablation reference",
+    "ts3": "guarded_constrained_ema_v1; fixed TS-1 EMA proposal plus current-frame center-containment projection",
+    "only_changed_variable": "Post-EMA placement projection is added to TS-1; EMA alpha, state update, reset policy, input signal, crop dimensions, and all frozen composition semantics remain unchanged.",
+    "unchanged": [
+      "frozen frame identity and ordering",
+      "sanitized frozen primary subject and bbox",
+      "Stage 5.3 CMP-1 raw composition signal",
+      "fixed EMA alpha=0.5 and unconstrained EMA state",
+      "crop width, derived crop height, and target ratio",
+      "fallback placement",
+      "Stage 5.3 floor/clamp geometry",
+      "TS-1 reset semantics"
+    ]
+  },
+  "guard_inputs": [
+    "current frozen sanitized primary-subject center",
+    "TS-1 final integer top-left proposal",
+    "frozen crop width and derived crop height",
+    "frame width and height"
+  ],
+  "guard_constraint": {
+    "definition": "For every non-fallback frame, the current frozen primary-subject center must lie inside the final half-open crop rectangle [x,x+Cw) × [y,y+Ch).",
+    "horizontal_safe_integer_interval": "Lx=max(0,floor(px-Cw)+1); Ux=min(W-Cw,floor(px))",
+    "vertical_safe_integer_interval": "Ly=max(0,floor(py-Ch)+1); Uy=min(H-Ch,floor(py))",
+    "symbols": "W,H are frame dimensions; Cw is frozen crop width; Ch is the existing target-ratio-derived crop height; px,py are exact current frozen subject-center coordinates.",
+    "extra_hyperparameters": [],
+    "not_used": ["GT", "weak reference", "future frames", "visible-fraction threshold", "full-bbox constraint", "new detector", "tracking", "video_id", "class"]
+  },
+  "projection_rule": {
+    "equation": "x3=clip(x_ema,Lx,Ux); y3=clip(y_ema,Ly,Uy)",
+    "proposal_domain": "The existing TS-1 final integer top-left placement after its unchanged floor/frame clamp.",
+    "minimum_correction": "Coordinatewise clipping is the nearest point in the closed safe integer rectangle under both Euclidean and L1 distance; a safe proposal is unchanged and an unsafe proposal moves only to the nearest violated boundary.",
+    "state_feedback": "The corrected placement is output-only. It is never fed back into the fixed-EMA state, so future EMA proposals remain exactly TS-1 proposals.",
+    "not_a_snap": "Projection does not return the raw CMP-1 center unless that point independently equals the nearest safe boundary.",
+    "fallback": "No guard is evaluated on fallback frames; frozen center-crop placement and state clearing are inherited exactly."
+  },
+  "reset_semantics": {
+    "NEW_VIDEO": "State never crosses video_id; the first valid frame initializes from its own raw center.",
+    "FRAME_GAP_GT_1": "A frozen frame-id gap greater than 1 resets before the current frame.",
+    "FALLBACK": "A fallback frame emits the frozen center crop and clears state; the next valid frame reinitializes.",
+    "scene_or_shot_reset": "NONE; no new reset is introduced."
+  },
+  "frozen_inputs": {
+    "stage5_3_final_freeze": {
+      "path": "configs/stage5_3_final_freeze.json",
+      "file_sha256": "2b7081443cbb0e6ed0fd73d49217f6d4ff071a1e094146bbfd0c78b5696beb49",
+      "status": "FINAL_FROZEN",
+      "git_head_at_freeze": "5330a14bbe49db7ee2131163e78fee83d1596671",
+      "formal_manifest_semantic_sha256": "2af7d66468fc8d5546f2fabf20aba2f799a17d76ce7c8f4c281fb930539cb24d",
+      "frozen_cmp1_predictions_sha256": "dce61c4ce1e83358a02a0c4a0ef38666eae2726fa116826980506997005580b1"
+    },
+    "stage5_2_final_freeze": {
+      "path": "configs/stage5_2_final_freeze.json",
+      "file_sha256": "4d407b2578e92a6b02820651de369f5fa6728cbda6f8b94efdf54689d49cc03a",
+      "status": "FINAL_FROZEN",
+      "raw_candidates_semantic_sha256": "44ae9383d20fe0afd290c10f8fb78c5bcd2ee5b0709fb7aedf61dbd83d52f399",
+      "policy_v1_semantic_sha256": "222258d1d7960639697bd6c3f36339443c85a27bee9dcee7742f24fda238871d"
+    }
+  },
+  "smoke": {
+    "manifest_id": "stage5_4_smoke_manifest_v1",
+    "manifest_sha256": "2909f7a831a1f90fb149f0b07033586ab2678ead398180d3715c2ee077e2d766",
+    "manifest_file_sha256": "046ebf18d4df2c05d9c51ba627001ce8fccd222d4940ffa1a593d5d8fdf1adfc",
+    "videos": 24,
+    "frames": 1080,
+    "selection": "Reuse the exact existing model-blind Smoke24 for matched TS-0/TS-1/TS-2/TS-3 comparison; no reselection or deletion.",
+    "coverage_audit": {
+      "jitter_tercile_videos": {"low": 8, "moderate": 8, "high": 8},
+      "spatial_strata_frames": {"near_center": 358, "moderately_off_center": 169, "strongly_off_center": 229, "no_subject": 324},
+      "conclusion": "The frozen manifest includes strong-off-center frames that exposed TS-1 lag and supports a strict matched mechanism comparison."
+    }
+  },
+  "metrics": {
+    "treatments": ["TS-0", "TS-1", "TS-2", "TS-3"],
+    "temporal_displacement": ["mean", "median", "P90", "P95", "max", ">0.10", ">0.20", ">0.30"],
+    "temporal_acceleration": ["mean", "median", "P90", "P95", "max"],
+    "spatial": ["mean visible fraction", "visible >=0.90", "subject-center containment"],
+    "center_offset_strata": ["near", "moderate", "strong"],
+    "multi_subject": ["all-secondary-contained", "at-least-one-secondary-contained", "primary+all-secondary-contained"],
+    "guard_diagnostics": ["guard-applied count/rate", "horizontal correction", "vertical correction", "safe interval"],
+    "multi_subject_role": "OBSERVATION_ONLY"
+  },
+  "decision_rule": {
+    "frozen_stage5_4_gates": {
+      "temporal_benefit": {
+        "minimum_mean_displacement_relative_reduction": 0.2,
+        "minimum_mean_acceleration_relative_reduction": 0.3,
+        "maximum_p95_displacement_relative_regression": 0.0,
+        "large_jump_nonincrease_thresholds": [0.1, 0.2, 0.3],
+        "minimum_gt_0_20_relative_reduction": 0.25
+      },
+      "spatial_guardrails": {
+        "minimum_mean_visible_fraction_delta": -0.03,
+        "minimum_visible_ge_0_90_delta": -0.05,
+        "minimum_subject_center_containment_delta": -0.02,
+        "minimum_strong_off_center_mean_visible_delta": -0.05
+      }
+    },
+    "amendment2_mechanism_checks": [
+      "Every non-fallback TS-3 crop contains the current frozen primary-subject center.",
+      "TS-3 strong-off-center visible-fraction delta versus TS-0 is strictly better than TS-1 on the same Smoke frames.",
+      "TS-3 mean displacement, mean acceleration, and >0.20 jump ratio are each no worse than TS-2 on the same Smoke frames."
+    ],
+    "promotion_rule": "Only if every engineering gate, every unchanged Stage 5.4 scientific gate applied to TS-3 versus TS-0, and every Amendment 2 mechanism check passes may TS-3 be proposed for a later Formal preregistration. Smoke never freezes TS-3.",
+    "failure_rule": "Any failure stops promotion. Do not alter the constraint, projection, gates, manifest, or exclusions after seeing Smoke; another mechanism requires a new protocol."
+  },
+  "engineering_gates": {
+    "all_must_pass": [
+      "missing=0; extra=0; duplicates=0",
+      "manifest crosscheck mismatches=0",
+      "invalid crop=0; out-of-bounds=0; ratio violations=0",
+      "TS-0/TS-1/TS-2/TS-3 frame identities identical",
+      "all treatment crop sizes and targetRatioWH unchanged",
+      "fallback placement unchanged",
+      "TS-0 frozen CMP-1, TS-1, and TS-2 regressions=0",
+      "deterministic replay=PASS",
+      "frozen inputs unmodified",
+      "Heldout access=0",
+      "GPU/Qwen/vLLM/RT-DETR/SAM calls=0",
+      "protocol/config snapshots and artifact manifest generated"
+    ]
+  },
+  "runtime": {
+    "reuse": ["RunContext", "ShardStore", "ProgressReporter", "run_manifest", "status.json", "progress.json", "progress.jsonl", "artifact_manifest", "experiment_raw_report.md", "AI_REPORT_INPUTS.md"],
+    "progress": ["videos", "frames", "current_video", "current_sequence", "elapsed", "ETA", "errors", "invalid", "resume state"],
+    "resume": "Same immutable identity plus --resume; completed per-video shards are reused.",
+    "output_collision": "A non-resume start refuses an existing output identity; no overwrite, reset, clean, or automatic deletion.",
+    "output_root": "/root/autodl-tmp/outputs/stage5/stage5_4_amendment2_smoke/"
+  },
+  "determinism": "Pure CPU arithmetic over SHA-frozen inputs; an in-process replay must produce the same canonical record SHA.",
+  "heldout_lock": {"heldout392": "ABSOLUTELY_LOCKED", "allowed_access": 0},
+  "formal_freeze_procedure": "After Smoke, a human reviews matched raw evidence. Only a passing candidate may enter a separate later PREREGISTERED_BEFORE_FORMAL preparation round before any Dev166 TS-3 execution. This DRAFT is not a Formal preregistration.",
+  "limitations": [
+    "The frozen primary bbox is detector output, not composition GT.",
+    "Center containment is a deliberately minimal safety constraint and does not guarantee full-bbox containment or visible fraction >=0.90.",
+    "Visible-fraction and multi-subject measures remain diagnostics and unchanged gates, not inputs to TS-3.",
+    "Smoke24 is a development subset and cannot establish Heldout or official-test generalization."
+  ],
+  "forbidden": ["adaptive-alpha tuning", "new threshold", "full-bbox guard", "visible-fraction guard", "hard subject snap", "dynamic crop size", "Kalman", "velocity prediction", "tracking", "optical flow", "SAM", "CMP-2", "Stage 5.5", "Full Dev parameter sweep", "Heldout392", "official test", "GPU inference", "Qwen", "vLLM", "RT-DETR inference"],
+  "references": [
+    "Kassis, T., Agarwal, V., He, Y., Patel, D., & Brueckner, A. M. (2026). Scientific Agent Skills: A Library of Procedural Knowledge for Research Agents. arXiv:2609.00065. https://doi.org/10.48550/arXiv.2609.00065"
+  ]
+}
