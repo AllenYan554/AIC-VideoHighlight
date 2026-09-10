@@ -125,6 +125,21 @@ def test_dev142_exclusion_matches_local_smoke24_manifest():
     assert smoke_ids == excluded
 
 
+def test_dev142_canonical_definition_matches_ts1_formal_wording():
+    """The pinned Dev142 identity d00f99a0... was computed with the TS-1 Formal wording."""
+    config = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    ts1_formal = json.loads(TS1_FORMAL_CONFIG_PATH.read_text(encoding="utf-8"))
+    assert config["analysis_sets"]["confirmatory_dev142"]["definition"] == (
+        ts1_formal["analysis_sets"]["confirmatory_dev142"]["definition"]
+    )
+    assert config["analysis_sets"]["confirmatory_dev142"]["definition"] == (
+        "Frozen Dev166 minus Stage5.4 Smoke24 whole video_ids"
+    )
+    assert config["analysis_sets"]["confirmatory_dev142"]["identity_sha256"] == (
+        "d00f99a044fc67a7ae484185cab5e8f94928ec3be350e2b27ac26250b72b7434"
+    )
+
+
 def test_validate_formal_contract_accepts_amendment2_formal():
     config = _config()
     smoke = {"manifest_sha256": "smoke", "videos": [{"video_id": "b"}]}

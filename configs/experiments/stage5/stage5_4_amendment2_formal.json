@@ -4,7 +4,7 @@
   "run_type": "FORMAL_TEMPORAL_COMPOSITION_AMENDMENT2",
   "status_note": "PREREGISTERED_BEFORE_FORMAL; registered for a future explicitly authorized executor only; this preparation round must not run Formal",
   "protocol": "configs/experiments/stage5/stage5_4_amendment2_formal_protocol.json",
-  "protocol_sha256": "e3e2b3dc4b2b55b54db2eb2f882d015564640589b167a86909e6dd018c41f8f8",
+  "protocol_sha256": "c3299f9dcb555dfca942d35a65e9282761500f834e32143b6db47a64084f68ad",
   "output_directory": "outputs/stage5/stage5_4_amendment2_formal/",
   "temporal_smoothing": {
     "method": "ema_crop_center_v1",
@@ -91,7 +91,7 @@
     },
     "confirmatory_dev142": {
       "name": "Confirmatory Dev142",
-      "definition": "Frozen Dev166 minus all 24 whole video_ids of the SHA-frozen Stage 5.4 Smoke24 manifest",
+      "definition": "Frozen Dev166 minus Stage5.4 Smoke24 whole video_ids",
       "expected_video_count": 142,
       "expected_frame_count": 43820,
       "identity_sha256": "d00f99a044fc67a7ae484185cab5e8f94928ec3be350e2b27ac26250b72b7434",

@@ -13,7 +13,16 @@
       "stage5_4_formal protocol SHA 990afcfe697d82bf89573d08b81217a7b9c91fc4d3b60d8a4d63081e32581e51 (TS-1 Formal, execution head 172aef8)",
       "stage5_4_amendment_smoke protocol SHA 25c73ba869a4bd802dedc94be24921e8d375a829cadaebf9545b74b7924439eb (TS-2 Smoke, NOT_READY_FOR_FORMAL)",
       "stage5_4_amendment2_smoke protocol SHA 63c714264161fd9130891a044671b9d34c6032a6d75a109cbb8ef160b75c1770 (TS-3 Smoke, all gates PASS, exit 0)"
-    ]
+    ],
+    "pre_execution_engineering_correction": {
+      "date": "2026-09-10",
+      "formal_attempts_observed": 0,
+      "formal_results_observed": 0,
+      "classification": "PRE_EXECUTION_ENGINEERING_CORRECTION / preregistration bookkeeping only / NOT a post-hoc scientific change",
+      "description": "The first Formal preflight (attempt=0, before any execution) found that the Confirmatory Dev142 analysis-set identity SHA depends on the definition text; the preregistration commit 3aa0c40 had reworded the Dev142 definition while still pinning the historical identity d00f99a044fc67a7ae484185cab5e8f94928ec3be350e2b27ac26250b72b7434, so validate-only correctly failed. The historical canonical wording \"Frozen Dev166 minus Stage5.4 Smoke24 whole video_ids\" is restored byte-for-byte; the pinned identity_sha256, the Dev142 member set, the Smoke24 exclusion set, and every scientific element are unchanged. No Formal result existed or was read.",
+      "blocked_preflight_evidence": "archive: amendment2_formal_blocked_preflight_20260910 (outside the repo; preserved, not rewritten)",
+      "scientific_change": false
+    }
   },
   "research_question": "Does the frozen parameter-free constrained EMA (TS-3, guarded_constrained_ema_v1) retain the temporal-stabilization benefit of fixed EMA (TS-1) while repairing its worst spatial lag on the full frozen Dev166, measured against TS-0 and against the TS-2 motion-adaptive ablation?",
   "hypothesis": [
@@ -99,7 +108,7 @@
       "videos": 24,
       "frames": 1080
     },
-    "exclusion_rule": "Confirmatory Dev142 = Frozen Dev166 minus ALL 24 whole video_ids of the SHA-frozen Smoke24 manifest (whole-video exclusion, not per-frame exclusion); 166 - 24 = 142 videos.",
+    "exclusion_rule": "Confirmatory Dev142 = \"Frozen Dev166 minus Stage5.4 Smoke24 whole video_ids\" (the canonical analysis-set definition; whole-video exclusion of the 24 Smoke24 video_ids, not per-frame exclusion; 166 - 24 = 142 videos).",
     "exclusion_verified_locally": "The 24 excluded video_ids in the Formal config were byte-verified against the archived Smoke24 manifest copy (semantic and file SHA re-verified 2026-09-10).",
     "role": "identity-only exclusion source; never used to alter any treatment",
     "ts3_smoke_result_binding": {
@@ -125,7 +134,7 @@
     },
     "confirmatory_dev142": {
       "name": "Confirmatory Dev142",
-      "definition": "Frozen Dev166 minus all 24 whole video_ids of the SHA-frozen Stage 5.4 Smoke24 manifest",
+      "definition": "Frozen Dev166 minus Stage5.4 Smoke24 whole video_ids",
       "expected_video_count": 142,
       "expected_frame_count": 43820,
       "identity_sha256": "d00f99a044fc67a7ae484185cab5e8f94928ec3be350e2b27ac26250b72b7434",
