@@ -578,7 +578,7 @@ def run_fresh_pipeline(
     if not _marker_matches(stage53_marker, inputs=stage53_inputs, outputs=[records53_path]):
         records53 = compose_all_frames(manifest53, inputs, TARGET_RATIO)
         gate53 = engineering_gate(manifest53, records53)
-        if any(int(gate53[key]) for key in ("missing", "extra", "duplicates", "geometry_failures", "cmp0_frozen_regression")):
+        if any(int(gate53[key]) for key in ("missing", "extra", "duplicates", "invalid_crop", "cmp0_frozen_regression")):
             raise FreshPipelineError(f"Stage 5.3 fresh CMP-1 gate failed: {gate53}")
         _write_json(records53_path, {"algorithm": CMP1_METHOD, "records": records53, "gate": gate53})
         _stage_marker(stage53_marker, stage="stage5_3_cmp1", inputs=stage53_inputs, outputs={
