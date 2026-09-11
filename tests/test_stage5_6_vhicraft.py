@@ -190,6 +190,7 @@ def test_compare_replays_and_fresh_gate():
     fresh_partial = [{"video_id": "v", "targetRatioWH": [9, 16],
                       "predictions": [{"frame": 0, "bboxes": [0, 0, 168]}, {"frame": 1, "bboxes": [5, 0, 168]}]}]
     comparison2 = compare_replays(cached, fresh_partial)
+    assert comparison2["video_completion_rate"] == 1.0
     assert comparison2["bbox_exact_match_rate"] == 0.5
     gate2 = evaluate_fresh_reproduction(comparison2, schema_success_rate=1.0, contract_valid=True)
     assert not gate2["all_pass"]
@@ -240,6 +241,7 @@ def test_report_generator_sections(tmp_path):
     )
     report = output.read_text(encoding="utf-8")
     assert all(f"## {section}" in report for section in runner.REPORT_SECTIONS)
+    assert '"status": "PASS"' in report
 
 
 def test_registry_and_launcher():

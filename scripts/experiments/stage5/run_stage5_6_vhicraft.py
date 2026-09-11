@@ -501,14 +501,17 @@ def render_stage5_6_report(
         "> Machine-generated factual evidence only.",
         "",
     ]
-    body = {"validation": validation, "metrics": metrics, "runtime": runtime}
+    section_payloads = {
+        "Executive Summary": {"status": validation.get("status")},
+        "Preregistered Validation": validation,
+        "Fresh VHiCraft Reproduction": metrics,
+        "Runtime / Resource Profile": runtime,
+        "FINAL_CANDIDATE_V1": validation.get("final_candidate"),
+        "Artifact Index": validation.get("fresh_pipeline"),
+    }
     for section in REPORT_SECTIONS:
         lines.extend([f"## {section}", ""])
-        if section == "FINAL_CANDIDATE_V1":
-            payload = validation.get("final_candidate")
-        else:
-            key = section.split()[0].lower()
-            payload = next((v for k, v in body.items() if k in key), None)
+        payload = section_payloads.get(section)
         if payload is not None:
             lines.extend(["```json", json.dumps(payload, ensure_ascii=False, indent=2), "```", ""])
     _atomic_write(output, "\n".join(lines))
@@ -627,7 +630,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     }
     if fresh_result is not None:
         validation["fresh_pipeline"] = fresh_result
-    render_stage5_6_report(output / "experiment_report.md", config=config, validation=validation, metrics=metrics, runtime=None)
+    runtime = None if fresh_result is None else {
+        "qwen_calls": fresh_result["qwen_calls"],
+        "rtdetr_calls": fresh_result["rtdetr_calls"],
+        "resume_count": fresh_result["resume_count"],
+        "execution_head": execution_head,
+    }
+    machine = output / "machine"
+    _write_json(machine / "validation.json", validation)
+    if metrics is not None:
+        _write_json(machine / "metrics.json", metrics)
+    if runtime is not None:
+        _write_json(machine / "runtime.json", runtime)
+    render_stage5_6_report(output / "experiment_report.md", config=config, validation=validation, metrics=metrics, runtime=runtime)
     print(json.dumps({"experiment_id": config.get("experiment_id"), "arms": [r["arm"] for r in results]}, indent=2))
     return 0
 

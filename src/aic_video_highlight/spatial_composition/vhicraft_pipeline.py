@@ -229,7 +229,11 @@ def compare_replays(
         bbox_exact_rate = (exact / len(inter)) if inter else None
         if bbox_exact_rate is not None:
             bbox_exact_rates.append(bbox_exact_rate)
-        if c_frames == f_frames:
+        # Completion is video-level presence.  Fresh frame sets are allowed to
+        # differ and are governed separately by the preregistered macro Jaccard
+        # gate; requiring exact frame equality here would silently turn the
+        # 0.98 Jaccard threshold into an unintended 1.0 threshold gate.
+        if video_id in cached_ids and video_id in fresh_ids:
             completed += 1
         per_video.append(
             {
