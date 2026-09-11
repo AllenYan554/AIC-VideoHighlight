@@ -246,6 +246,7 @@ def test_registry_and_launcher():
     for experiment in ("stage5_6_vhicraft_smoke", "stage5_6_vhicraft_formal", "stage5_6_vhicraft_ablation"):
         assert experiment in stage5_registry.RUNNERS
         assert stage5_registry.LAUNCH[experiment]["target"] == "AUTODL"
+        assert stage5_registry.LAUNCH[experiment]["gpu"] == "REQUIRED"
         assert stage5_registry.LAUNCH[experiment]["strict_git_preflight"] is True
     assert (REPO / "scripts" / "experiments" / "launch_experiment.ps1").is_file()
     described = subprocess.run(

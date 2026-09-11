@@ -12,10 +12,11 @@
   "config_repo_path": "configs/experiments/stage5/stage5_6_vhicraft_formal.json",
   "master_preregistration": "configs/experiments/stage5/stage5_6_master_preregistration.json",
   "protocol": "configs/experiments/stage5/stage5_6_formal_protocol.json",
-  "protocol_sha256": "f4236326e05eb430e3d03d552700b305d5c9e5801baad2e9b4cfab36810de8fb",
-  "protocol_semantic_sha256": "88323a1b2697ca19b2f0eabe46b8d1e36171f70fbedbab5a171d6339a28201f7",
+  "protocol_sha256": "60c2f9a6770915a37dee649cde6cbe2726c23261741a1400bfb5bceb61e1fbe2",
+  "protocol_semantic_sha256": "f1a3a0def3605e9acd49e215a59dc18e8e10a0ff4e646f4c3aafe934e167a8cf",
   "arms": [
     "VC-0",
+    "VC-1",
     "VC-A0"
   ],
   "output_run_id": "stage5_6_vhicraft_formal",
@@ -72,13 +73,13 @@
     "max_videos": 0
   },
   "runtime": {
-    "device": "cpu",
-    "gpu": "NONE",
+    "device": "cuda",
+    "gpu": "REQUIRED",
     "resume": true,
     "report": "experiment_report.md"
   },
   "local_model_snapshot": {
-    "path": "D:\\CDUT\\硕士\\2026-09 AIC\\models\\Qwen3.5-4B",
+    "path": "/root/autodl-tmp/hf-cache/hub/models--Qwen--Qwen3.5-4B/snapshots/851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
     "revision": "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
     "matches_formal_revision": true
   },
@@ -90,26 +91,17 @@
     "official_test": "ABSOLUTELY_LOCKED",
     "allowed_access": 0
   },
-  "fresh_orchestration": {
-    "requires_user_confirmation": false,
-    "note": "canonical upstream Stage 1 Qwen retrieval command (from frozen stage3_dev_full_baseline_v1 run_config)",
-    "commands": [
-      [
-        "python",
-        "scripts/experiments/stage1/run_baseline.py",
-        "--manifest",
-        "/root/autodl-tmp/datasets/aic_highlight_dev/manifests/dev.jsonl",
-        "--video-root",
-        "/root/autodl-tmp/datasets/aic_highlight_dev",
-        "--output-dir",
-        "/root/autodl-tmp/outputs/stage5/stage5_6_fresh/stage1",
-        "--config",
-        "configs/highlight_retrieval.yaml",
-        "--dataset-name",
-        "aic_highlight_dev",
-        "--dataset-version",
-        "aic_highlight_dev_v1.1"
-      ]
-    ]
+  "fresh_pipeline": {
+    "schema_version": "aic.vhicraft.true-fresh-pipeline/v1",
+    "python": "/root/miniconda3/envs/aic-video-highlight/bin/python",
+    "dev_manifest": {"base": "datasets", "path": "aic_highlight_dev/manifests/dev.jsonl"},
+    "video_root": {"base": "datasets", "path": "aic_highlight_dev"},
+    "source_index": {"base": "outputs", "path": "stage5/stage5_1_dev_baseline/dev166_stage5_index.jsonl"},
+    "qwen_snapshot": {"base": "hf_cache", "path": "hub/models--Qwen--Qwen3.5-4B/snapshots/851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a"},
+    "rtdetr_snapshot": {"base": "hf_cache", "path": "hub/models--PekingU--rtdetr_r50vd/snapshots/df939e661d8c52e80608d1ec566561aabd25a4e7"},
+    "vllm_base_url": "http://127.0.0.1:8000/v1",
+    "vllm_gpu_memory_utilization": 0.8,
+    "vllm_max_model_len": 32768,
+    "vllm_start_timeout_sec": 900
   }
 }

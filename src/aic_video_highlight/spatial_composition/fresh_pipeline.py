@@ -29,10 +29,51 @@ from aic_video_highlight.spatial_composition.temporal_smoothing import (
 TS5_REVISED_METHOD = "projected_state_canonical_center_ema_v1"
 TS0_METHOD = "stage5_3_final_frozen_cmp1"
 FRESH_SHARD_SCHEMA_VERSION = "aic.vhicraft.fresh-stage5_4-shard/v1"
+FRESH_CACHE_BINDING_SCHEMA_VERSION = "aic.vhicraft.fresh-cache-binding/v1"
 
 
 class FreshPipelineError(RuntimeError):
     """Raised when a fresh-orchestration invariant is violated."""
+
+
+def validate_fresh_candidate_cache_binding(
+    manifest: Mapping[str, Any],
+    *,
+    stage1_predictions_path: Path,
+    expected_video_ids: Sequence[str],
+    forbidden_global_sha256: str,
+) -> dict[str, Any]:
+    """Prove that a candidate cache was built from this run's Stage 1 output.
+
+    The cache builder already records the source predictions byte hash.  This
+    gate makes that link mandatory and separately rejects the historical
+    FROZEN_REPLAY cache identity.
+    """
+    global_sha = str(manifest.get("global_semantic_sha256", ""))
+    if not global_sha or global_sha == forbidden_global_sha256:
+        raise FreshPipelineError("fresh cache is missing or uses the frozen cache identity")
+    source_sets = manifest.get("source_sets")
+    if not isinstance(source_sets, list) or len(source_sets) != 1:
+        raise FreshPipelineError("fresh cache must have exactly one Dev source set")
+    source = source_sets[0]
+    hashes = source.get("source_artifact_hashes", {})
+    predictions_sha = file_sha256(stage1_predictions_path)
+    if hashes.get("predictions_jsonl_sha256") != predictions_sha:
+        raise FreshPipelineError("fresh cache does not consume this run's Stage 1 predictions")
+    records = manifest.get("records")
+    if not isinstance(records, list):
+        raise FreshPipelineError("fresh cache records are missing")
+    actual_ids = [str(record.get("video_id")) for record in records]
+    if actual_ids != [str(video_id) for video_id in expected_video_ids]:
+        raise FreshPipelineError("fresh cache video membership/order mismatch")
+    return {
+        "schema_version": FRESH_CACHE_BINDING_SCHEMA_VERSION,
+        "stage1_predictions_sha256": predictions_sha,
+        "fresh_cache_global_semantic_sha256": global_sha,
+        "record_count": len(actual_ids),
+        "downstream_consumer": "stage4_candidate_cache",
+        "frozen_fallback": False,
+    }
 
 
 def build_fresh_index(

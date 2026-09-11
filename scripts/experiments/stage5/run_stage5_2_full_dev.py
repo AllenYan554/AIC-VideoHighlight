@@ -179,12 +179,22 @@ def run(args: argparse.Namespace) -> int:
     inference_ms = []
     decode_ms = []
     started = time.perf_counter()
+    total_videos = len(predictions)
     work_root = Path(args.work_dir) if args.work_dir else Path(tempfile.gettempdir()) / "stage52_fulldev"
 
     for video_id in sorted(predictions):
         frame_ids = sorted(predictions[video_id])
         if shard_is_complete(output_dir, video_id, frame_ids):
             skipped += 1
+            elapsed = time.perf_counter() - started
+            finished = processed + skipped
+            eta = elapsed * (total_videos - finished) / finished if finished else 0.0
+            print(
+                f"[stage5.2] video {finished}/{total_videos} {video_id} resumed=yes "
+                f"completed={processed} skipped={skipped} failed={model_error_frames} "
+                f"elapsed={elapsed:.0f}s eta={eta:.0f}s",
+                flush=True,
+            )
             continue
         video_path = video_base / index[video_id]["video_path"]
         meta = meta_cache[video_id]
@@ -293,9 +303,15 @@ def run(args: argparse.Namespace) -> int:
         del frames
         write_shard(output_dir, video_id, raw_records, policy_records, crop_records)
         processed += 1
-        if processed % 20 == 0:
-            elapsed = time.perf_counter() - started
-            print(f"progress: {processed} processed / {skipped} skipped, {elapsed:.0f}s", flush=True)
+        elapsed = time.perf_counter() - started
+        finished = processed + skipped
+        eta = elapsed * (total_videos - finished) / finished if finished else 0.0
+        print(
+            f"[stage5.2] video {finished}/{total_videos} {video_id} "
+            f"frames={len(frame_ids)} completed={processed} skipped={skipped} "
+            f"failed={model_error_frames} elapsed={elapsed:.0f}s eta={eta:.0f}s",
+            flush=True,
+        )
 
     report = merge_and_verify(output_dir, expected_keys)
     total_wall = time.perf_counter() - started

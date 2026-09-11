@@ -2,7 +2,7 @@
   "protocol_schema_version": "aic.stage5.6-experiment-protocol/v1",
   "protocol_id": "stage5_6_formal_protocol",
   "title": "Stage 5.6 VHiCraft-v1 Final Freeze Formal Protocol",
-  "status": "PREREGISTERED_BEFORE_ANY_STAGE5_6_EXPERIMENT",
+  "status": "CORRECTIVE_PREREGISTERED_BEFORE_TRUE_FRESH_FORMAL",
   "created": "2026-09-11",
   "framework": {
     "name": "VHiCraft",
@@ -18,7 +18,7 @@
     },
     "VC-1": {
       "arm": "fresh_v1_pipeline",
-      "description": "fresh full VHiCraft-v1 pipeline from raw video; requires fresh_orchestration.commands",
+      "description": "true fresh VHiCraft-v1 pipeline from raw Dev video; generated Stage 1 output is the mandatory downstream temporal input",
       "stage5_4_key": "ts5"
     },
     "VC-A0": {
@@ -141,6 +141,12 @@
     "treating weak reference as GT",
     "post-hoc method changes"
   ],
-  "scope": "Full Dev166 final freeze: cache replay + Stage 5.4 ablation; VC-1 fresh reproduction is declared.",
-  "protocol_semantic_sha256": "88323a1b2697ca19b2f0eabe46b8d1e36171f70fbedbab5a171d6339a28201f7"
+  "corrective_preregistration": {
+    "prior_state": "SUPERSEDED_BEFORE_TRUE_FRESH_FORMAL",
+    "reason": "VC-1 had been declared but its generated output was not consumed by downstream stages.",
+    "timing": "pre-result correction; no true VC-1 scientific result existed",
+    "integration_resource_policy": "Stage5.6 may run Qwen and RT-DETR on GPU upstream; TS-5 Revised itself remains the frozen CPU transform"
+  },
+  "scope": "Full Dev166 true-fresh final freeze: VC-0 cached replay, VC-1 fresh pipeline, and VC-A0 sharing the complete VC-1 upstream with only TS-0 replacing TS-5 Revised.",
+  "protocol_semantic_sha256": "f1a3a0def3605e9acd49e215a59dc18e8e10a0ff4e646f4c3aafe934e167a8cf"
 }

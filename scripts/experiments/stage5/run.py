@@ -12,8 +12,8 @@ Registered experiments:
 - stage5_5_dev_formal     : Stage 5.5 frame-level calibration Dev166 (FS-0/FS-1/FS-2)
 - stage5_5_hard_confirmation: conditional Hard229 (not run; Dev had no winner)
 - stage5_6_vhicraft_smoke / stage5_6_vhicraft_formal / stage5_6_vhicraft_ablation:
-  VHiCraft-v1 validation & final freeze (cached replay + Stage 5.4
-  ablation; fresh full pipeline is user-triggered; Full Formal DEFAULT NOT RUN)
+  VHiCraft-v1 validation & final freeze (VC-0 cached replay + true-fresh
+  VC-1/VC-A0 shared pipeline; Full Formal DEFAULT NOT RUN)
 
 Environment auto-selection: on Windows the default environment is
 configs/environments/windows_local.json, otherwise configs/environments/autodl.json.
@@ -82,16 +82,13 @@ LAUNCH = {
         "forbid_active_processes": ["vllm", "qwen"],
     },
     "stage5_6_vhicraft_smoke": {
-        "target": "AUTODL", "gpu": "NONE", "strict_git_preflight": True,
-        "forbid_active_processes": ["vllm", "qwen"],
+        "target": "AUTODL", "gpu": "REQUIRED", "strict_git_preflight": True,
     },
     "stage5_6_vhicraft_formal": {
-        "target": "AUTODL", "gpu": "NONE", "strict_git_preflight": True,
-        "forbid_active_processes": ["vllm", "qwen"],
+        "target": "AUTODL", "gpu": "REQUIRED", "strict_git_preflight": True,
     },
     "stage5_6_vhicraft_ablation": {
-        "target": "AUTODL", "gpu": "NONE", "strict_git_preflight": True,
-        "forbid_active_processes": ["vllm", "qwen"],
+        "target": "AUTODL", "gpu": "REQUIRED", "strict_git_preflight": True,
     },
 }
 

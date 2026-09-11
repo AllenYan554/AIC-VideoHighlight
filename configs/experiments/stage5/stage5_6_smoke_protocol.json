@@ -2,7 +2,7 @@
   "protocol_schema_version": "aic.stage5.6-experiment-protocol/v1",
   "protocol_id": "stage5_6_smoke_protocol",
   "title": "Stage 5.6 VHiCraft-v1 Engineering Smoke Protocol",
-  "status": "PREREGISTERED_BEFORE_SMOKE",
+  "status": "CORRECTIVE_PREREGISTERED_BEFORE_TRUE_FRESH_SMOKE",
   "created": "2026-09-11",
   "framework": {
     "name": "VHiCraft",
@@ -18,7 +18,7 @@
     },
     "VC-1": {
       "arm": "fresh_v1_pipeline",
-      "description": "fresh full VHiCraft-v1 pipeline from raw video; requires fresh_orchestration.commands",
+      "description": "true fresh VHiCraft-v1 pipeline from raw Dev video; generated Stage 1 output is the mandatory downstream temporal input",
       "stage5_4_key": "ts5"
     },
     "VC-A0": {
@@ -141,6 +141,12 @@
     "treating weak reference as GT",
     "post-hoc method changes"
   ],
-  "scope": "3-video engineering smoke: orchestration, JSONL validity, resume, determinism only.",
-  "protocol_semantic_sha256": "bb22e2368a133f5ae6ffb9e4e17fb64f12d0e957f7dfb1ca869f50050396e099"
+  "corrective_preregistration": {
+    "prior_state": "SUPERSEDED_BEFORE_TRUE_FRESH_FORMAL",
+    "reason": "VC-1 had been declared but its generated output was not consumed by downstream stages.",
+    "timing": "before true-fresh GPU smoke",
+    "integration_resource_policy": "Qwen and RT-DETR GPU inference allowed upstream; TS-5 remains the frozen CPU transform"
+  },
+  "scope": "3-video true-fresh GPU engineering smoke: complete provenance chain, shared-upstream VC-A0, official JSONL validity, and identity-bound resume.",
+  "protocol_semantic_sha256": "a68e6fcaf11c31d1c94accbfc8fae23b703418e6cf44fc99adb215f914e469fa"
 }

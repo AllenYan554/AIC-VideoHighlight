@@ -1,14 +1,20 @@
 {
   "preregistration_id": "stage5_6_master_preregistration_v1",
   "title": "Stage 5.6 VHiCraft-v1 Validation & Final Freeze Master Preregistration",
-  "status": "PREREGISTERED_BEFORE_ANY_STAGE5_6_EXPERIMENT",
+  "status": "CORRECTIVE_PREREGISTERED_BEFORE_TRUE_FRESH_FORMAL",
   "created": "2026-09-11",
   "framework": {
     "name": "VHiCraft",
     "full_name": "Video Highlight Context-Aware Retrieval and Adaptive Framing with Temporal Stabilization",
     "version": "v1"
   },
-  "scope": "Development and preregistration only. Full Formal is future user-triggered and fail-closed.",
+  "scope": "Corrective preregistration before any true-fresh scientific result. Full Formal covers VC-0 cached replay, VC-1 true fresh pipeline, and VC-A0 shared-upstream TS-0 control; execution remains future user-triggered and fail-closed.",
+  "prior_formal_state": {
+    "status": "SUPERSEDED_BEFORE_TRUE_FRESH_FORMAL",
+    "reason": "VC-1 had been declared but its generated output was not consumed by downstream stages.",
+    "scientific_result_exists": false,
+    "correction_class": "validation/orchestration correction; pre-result"
+  },
   "method": "stage5_6_vhicraft_v1",
   "arms": {
     "VC-0": {
@@ -18,7 +24,7 @@
     },
     "VC-1": {
       "arm": "fresh_v1_pipeline",
-      "description": "fresh full VHiCraft-v1 pipeline from raw video; requires fresh_orchestration.commands",
+      "description": "true fresh VHiCraft-v1 pipeline from raw Dev video; every downstream stage is identity-bound to the generated Stage 1 artifact",
       "stage5_4_key": "ts5"
     },
     "VC-A0": {
@@ -68,35 +74,35 @@
   "artifacts": {
     "smoke_protocol": {
       "path": "configs/experiments/stage5/stage5_6_smoke_protocol.json",
-      "byte_sha256": "73de6ac4fa53c6c85371e47fd06d45f4ed02703c03c90226f97dbf3d79ed8eb8",
-      "semantic_sha256": "bb22e2368a133f5ae6ffb9e4e17fb64f12d0e957f7dfb1ca869f50050396e099"
+      "byte_sha256": "d028408e752e35fa4688990a230f449192ac15e5ef032e507d693f95a13f3f69",
+      "semantic_sha256": "a68e6fcaf11c31d1c94accbfc8fae23b703418e6cf44fc99adb215f914e469fa"
     },
     "formal_protocol": {
       "path": "configs/experiments/stage5/stage5_6_formal_protocol.json",
-      "byte_sha256": "f4236326e05eb430e3d03d552700b305d5c9e5801baad2e9b4cfab36810de8fb",
-      "semantic_sha256": "88323a1b2697ca19b2f0eabe46b8d1e36171f70fbedbab5a171d6339a28201f7"
+      "byte_sha256": "60c2f9a6770915a37dee649cde6cbe2726c23261741a1400bfb5bceb61e1fbe2",
+      "semantic_sha256": "f1a3a0def3605e9acd49e215a59dc18e8e10a0ff4e646f4c3aafe934e167a8cf"
     },
     "ablation_protocol": {
       "path": "configs/experiments/stage5/stage5_6_ablation_protocol.json",
-      "byte_sha256": "5b44ff739d5b7f0d5e79a24403e359bcb3e788fbea62eea7a8205eb0b9eba169",
-      "semantic_sha256": "9a00ecc033232fb14070029b07ceb2f070ccad783fbe63c411f8b84ce6ced507"
+      "byte_sha256": "0bc68aca0f771fcb396a23b1847216439c92905fcba0154346eb4a2e78dcd389",
+      "semantic_sha256": "59ca43d4fc8c2675f85beae99d8d3f36db247dec0fcc9df8466682d399f984d2"
     },
     "smoke_config": {
       "path": "configs/experiments/stage5/stage5_6_vhicraft_smoke.json",
-      "byte_sha256": "a28332e2542bab58eb7d979db55a507ece8db51499cd705d559a5d8a1232ebd6"
+      "byte_sha256": "2b4ff1e352c4a0bd00cfdaeca7d489161d8bdcf7e19cbfc81da42c6580c9e0be"
     },
     "formal_config": {
       "path": "configs/experiments/stage5/stage5_6_vhicraft_formal.json",
-      "byte_sha256": "e337c0bfb45895039d7ffdfee2a6b00890af0fa41b5fefc5b9e56223d6bd0681"
+      "byte_sha256": "7a0a010eb3aad67a1c995a2789e1f6a44d29d060fb5447d77cf0e06b38a780c1"
     },
     "ablation_config": {
       "path": "configs/experiments/stage5/stage5_6_vhicraft_ablation.json",
-      "byte_sha256": "8ae479a195564985a9d13199478fb7dcef230eb78c9b85c0c0570ce339ca8ed3"
+      "byte_sha256": "7043ed9840889547b8505d110a86c61cc339d5afc6d35f6b10454a4a593bc71f"
     }
   },
   "execution_locks": {
-    "gpu": "NONE",
-    "model_inference": 0,
+    "gpu": "REQUIRED",
+    "model_inference": "Qwen and RT-DETR required upstream; TS-5 remains the frozen CPU transform",
     "heldout_access": 0,
     "official_test_access": 0
   }

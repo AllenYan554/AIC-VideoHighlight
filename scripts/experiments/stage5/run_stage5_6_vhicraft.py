@@ -68,6 +68,11 @@ from scripts.experiments.stage5.run_stage5_5_frame_calibration import (
     final_segments_from_record,
     parse_chunk_evidence,
 )
+from scripts.experiments.stage5.run_stage5_6_fresh import (
+    FROZEN_CACHE_SHA256 as FRESH_FORBIDDEN_CACHE_SHA256,
+    FreshPipelineError,
+    run_fresh_pipeline,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 STAGE5_CONFIGS = REPO_ROOT / "configs" / "experiments" / "stage5"
@@ -81,7 +86,7 @@ FORMAL_CONFIG_PATH = STAGE5_CONFIGS / "stage5_6_vhicraft_formal.json"
 ABLATION_CONFIG_PATH = STAGE5_CONFIGS / "stage5_6_vhicraft_ablation.json"
 
 STAGE5_6_METHOD = "stage5_6_vhicraft_v1"
-MASTER_STATUS = "PREREGISTERED_BEFORE_ANY_STAGE5_6_EXPERIMENT"
+MASTER_STATUS = "CORRECTIVE_PREREGISTERED_BEFORE_TRUE_FRESH_FORMAL"
 PROTOCOL_SCHEMA_VERSION = "aic.stage5.6-experiment-protocol/v1"
 EXECUTION_CONFIG_SCHEMA_VERSION = "aic.stage5.6-execution-config/v1"
 OUTPUT_SCHEMA_VERSION = "aic.official-prediction-jsonl/v1"
@@ -303,22 +308,6 @@ def _write_jsonl(path: Path, rows: Sequence[Mapping[str, Any]]) -> None:
     )
 
 
-def _run_fresh_orchestration(config: Mapping[str, Any], environment: EnvironmentPaths) -> None:
-    """Run the canonical upstream stages declared by the protocol (Formal only)."""
-    steps = config.get("fresh_orchestration", {}).get("commands", [])
-    if not steps:
-        raise FrozenInputError(
-            "fresh arm requires fresh_orchestration.commands in the execution config"
-        )
-    for step in steps:
-        command = [str(part) for part in step]
-        command = [part.replace("{environment}", str(environment.repo / "configs/environments/autodl.json")) for part in command]
-        print(f"[stage5.6] fresh orchestration step: {' '.join(command)}", flush=True)
-        result = subprocess.call(command)
-        if result != 0:
-            raise FrozenInputError(f"fresh orchestration step failed ({result}): {command}")
-
-
 def run_arm(
     config: Mapping[str, Any],
     environment: EnvironmentPaths,
@@ -330,14 +319,15 @@ def run_arm(
 ) -> dict[str, Any]:
     if arm not in ARMS:
         raise FrozenInputError(f"unknown Stage 5.6 arm: {arm}")
+    if arm != VC0:
+        raise FrozenInputError(
+            "fresh arms must use run_stage5_6_fresh.py; frozen-chain fallback is forbidden"
+        )
     output = environment.outputs / "stage5" / str(config["output_run_id"]) / arm.lower().replace("-", "_")
     shards_out = output / "shards"
     machine = output / "machine"
     shards_out.mkdir(parents=True, exist_ok=True)
     machine.mkdir(parents=True, exist_ok=True)
-
-    if arm == VC1:
-        _run_fresh_orchestration(config, environment)
 
     cache_dir, records, role, metadata, shards_dir = load_frozen_chain(config, environment)
     role_ids = [item["video_id"] for item in role["records"]]
@@ -553,10 +543,22 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.validate_only or args.dry_run:
         preflight_result = preflight(config, environment)
+        fresh_validation = None
+        if any(arm in config.get("arms", []) for arm in (VC1, VCA0)):
+            fresh_validation = run_fresh_pipeline(
+                config,
+                environment,
+                config_path=args.config.resolve(),
+                protocol_path=protocol_path,
+                videos=(int(config["smoke"]["max_videos"]) if args.smoke else None),
+                resume=args.resume,
+                validate_only=True,
+            )
         print(json.dumps({
             "experiment_id": config.get("experiment_id"),
             "status": "VALIDATED_BEFORE_EXECUTION",
             "preflight": preflight_result,
+            "fresh_pipeline": fresh_validation,
             "executed": False,
         }, ensure_ascii=False, indent=2))
         return 0
@@ -572,24 +574,60 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.resume:
         config = {**config, "runtime": {**config.get("runtime", {}), "resume": True}}
     execution_head = _resolve_execution_head()
+    configured_arms = list(config.get("arms", []))
     results = []
-    for arm in config.get("arms", []):
-        results.append(
-            run_arm(
-                config,
-                environment,
-                arm=arm,
-                video_ids=[item["video_id"] for item in _role_ids(config, environment)],
-                mode=mode,
-                execution_head=execution_head,
-            )
+    frozen_result = None
+    if VC0 in configured_arms:
+        frozen_result = run_arm(
+            config,
+            environment,
+            arm=VC0,
+            video_ids=[item["video_id"] for item in _role_ids(config, environment)],
+            mode=mode,
+            execution_head=execution_head,
         )
+        results.append(frozen_result)
+
+    fresh_result = None
+    if VC1 in configured_arms or VCA0 in configured_arms:
+        smoke_videos = int(config["smoke"]["max_videos"]) if mode == "smoke" else None
+        fresh_result = run_fresh_pipeline(
+            config,
+            environment,
+            config_path=args.config.resolve(),
+            protocol_path=protocol_path,
+            videos=smoke_videos,
+            resume=args.resume or bool(config.get("runtime", {}).get("resume")),
+        )
+        if fresh_result.get("fresh_candidate_cache_sha256") == FRESH_FORBIDDEN_CACHE_SHA256:
+            raise FreshPipelineError("VC-1 consumed the frozen Stage 4 cache")
+        for arm in (VC1, VCA0):
+            if arm in configured_arms:
+                results.append(fresh_result["arms"][arm])
+
+    metrics = None
+    if frozen_result is not None and fresh_result is not None and VC1 in configured_arms:
+        cached = _load_prediction_rows(Path(frozen_result["predictions_path"]))
+        fresh = _load_prediction_rows(Path(fresh_result["arms"][VC1]["predictions_path"]))
+        comparison = compare_replays(cached, fresh)
+        gate = evaluate_fresh_reproduction(
+            comparison,
+            schema_success_rate=1.0,
+            contract_valid=bool(fresh_result["arms"][VC1]["contract"]["is_valid"]),
+        )
+        metrics = {"fresh_vs_frozen": comparison, "fresh_reproduction_gate": gate}
     output = environment.outputs / "stage5" / str(config["output_run_id"])
+    all_contracts_pass = all(r["contract"]["is_valid"] and not r["errors"] for r in results)
+    fresh_gate_pass = bool(
+        metrics is None or metrics["fresh_reproduction_gate"]["all_pass"]
+    )
     validation = {
-        "status": "PASS" if all(r["contract"]["is_valid"] and not r["errors"] for r in results) else "FAIL",
+        "status": "PASS" if all_contracts_pass and fresh_gate_pass else "FAIL",
         "arms": results,
     }
-    render_stage5_6_report(output / "experiment_report.md", config=config, validation=validation, metrics=None, runtime=None)
+    if fresh_result is not None:
+        validation["fresh_pipeline"] = fresh_result
+    render_stage5_6_report(output / "experiment_report.md", config=config, validation=validation, metrics=metrics, runtime=None)
     print(json.dumps({"experiment_id": config.get("experiment_id"), "arms": [r["arm"] for r in results]}, indent=2))
     return 0
 
@@ -603,6 +641,10 @@ def _role_ids(config: Mapping[str, Any], environment: EnvironmentPaths) -> list[
         )
     )
     return role["records"]
+
+
+def _load_prediction_rows(path: Path) -> list[dict[str, Any]]:
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
 if __name__ == "__main__":

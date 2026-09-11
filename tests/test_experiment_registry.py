@@ -53,7 +53,7 @@ def test_describe_autodl_spec(registry):
     assert spec["schema_version"] == "aic.experiment-launch-spec/v1"
     assert spec["experiment"] == "stage5_6_vhicraft_formal"
     assert spec["target"] == "AUTODL"
-    assert spec["gpu"] == "NONE"
+    assert spec["gpu"] == "REQUIRED"
     assert spec["stage_launcher"] == "scripts/experiments/stage5/run.py"
     assert spec["canonical_args"] == ["--experiment", "stage5_6_vhicraft_formal"]
     assert spec["config"] == "configs/experiments/stage5/stage5_6_vhicraft_formal.json"
@@ -67,7 +67,7 @@ def test_describe_vhicraft_smoke_and_ablation(registry):
         spec = registry.describe(name)
         assert spec["experiment"] == name
         assert spec["target"] == "AUTODL"
-        assert spec["gpu"] == "NONE"
+        assert spec["gpu"] == "REQUIRED"
         assert spec["canonical_args"] == ["--experiment", name]
         assert spec["config"] == f"configs/experiments/stage5/{name}.json"
 

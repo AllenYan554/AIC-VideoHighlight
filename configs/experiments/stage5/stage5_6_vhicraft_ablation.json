@@ -12,10 +12,11 @@
   "config_repo_path": "configs/experiments/stage5/stage5_6_vhicraft_ablation.json",
   "master_preregistration": "configs/experiments/stage5/stage5_6_master_preregistration.json",
   "protocol": "configs/experiments/stage5/stage5_6_ablation_protocol.json",
-  "protocol_sha256": "5b44ff739d5b7f0d5e79a24403e359bcb3e788fbea62eea7a8205eb0b9eba169",
-  "protocol_semantic_sha256": "9a00ecc033232fb14070029b07ceb2f070ccad783fbe63c411f8b84ce6ced507",
+  "protocol_sha256": "0bc68aca0f771fcb396a23b1847216439c92905fcba0154346eb4a2e78dcd389",
+  "protocol_semantic_sha256": "59ca43d4fc8c2675f85beae99d8d3f36db247dec0fcc9df8466682d399f984d2",
   "arms": [
     "VC-0",
+    "VC-1",
     "VC-A0"
   ],
   "output_run_id": "stage5_6_vhicraft_ablation",
@@ -72,13 +73,13 @@
     "max_videos": 0
   },
   "runtime": {
-    "device": "cpu",
-    "gpu": "NONE",
+    "device": "cuda",
+    "gpu": "REQUIRED",
     "resume": true,
     "report": "experiment_report.md"
   },
   "local_model_snapshot": {
-    "path": "D:\\CDUT\\硕士\\2026-09 AIC\\models\\Qwen3.5-4B",
+    "path": "/root/autodl-tmp/hf-cache/hub/models--Qwen--Qwen3.5-4B/snapshots/851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
     "revision": "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
     "matches_formal_revision": true
   },
@@ -89,5 +90,18 @@
   "official_test_lock": {
     "official_test": "ABSOLUTELY_LOCKED",
     "allowed_access": 0
+  },
+  "fresh_pipeline": {
+    "schema_version": "aic.vhicraft.true-fresh-pipeline/v1",
+    "python": "/root/miniconda3/envs/aic-video-highlight/bin/python",
+    "dev_manifest": {"base": "datasets", "path": "aic_highlight_dev/manifests/dev.jsonl"},
+    "video_root": {"base": "datasets", "path": "aic_highlight_dev"},
+    "source_index": {"base": "outputs", "path": "stage5/stage5_1_dev_baseline/dev166_stage5_index.jsonl"},
+    "qwen_snapshot": {"base": "hf_cache", "path": "hub/models--Qwen--Qwen3.5-4B/snapshots/851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a"},
+    "rtdetr_snapshot": {"base": "hf_cache", "path": "hub/models--PekingU--rtdetr_r50vd/snapshots/df939e661d8c52e80608d1ec566561aabd25a4e7"},
+    "vllm_base_url": "http://127.0.0.1:8000/v1",
+    "vllm_gpu_memory_utilization": 0.8,
+    "vllm_max_model_len": 32768,
+    "vllm_start_timeout_sec": 900
   }
 }

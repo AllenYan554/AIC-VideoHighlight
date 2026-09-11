@@ -2,7 +2,7 @@
   "protocol_schema_version": "aic.stage5.6-experiment-protocol/v1",
   "protocol_id": "stage5_6_ablation_protocol",
   "title": "Stage 5.6 VHiCraft-v1 TS-0 vs TS-5 Revised Ablation Protocol",
-  "status": "PREREGISTERED_BEFORE_ANY_STAGE5_6_EXPERIMENT",
+  "status": "CORRECTIVE_PREREGISTERED_BEFORE_TRUE_FRESH_FORMAL",
   "created": "2026-09-11",
   "framework": {
     "name": "VHiCraft",
@@ -18,7 +18,7 @@
     },
     "VC-1": {
       "arm": "fresh_v1_pipeline",
-      "description": "fresh full VHiCraft-v1 pipeline from raw video; requires fresh_orchestration.commands",
+      "description": "true fresh VHiCraft-v1 pipeline from raw Dev video; generated Stage 1 output is the mandatory downstream temporal input",
       "stage5_4_key": "ts5"
     },
     "VC-A0": {
@@ -141,6 +141,12 @@
     "treating weak reference as GT",
     "post-hoc method changes"
   ],
-  "scope": "Stage 5.4 fork only: VC-A0 (TS-0) vs VC-1/VC-0 (TS-5 Revised); no Qwen re-run twice.",
-  "protocol_semantic_sha256": "9a00ecc033232fb14070029b07ceb2f070ccad783fbe63c411f8b84ce6ced507"
+  "corrective_preregistration": {
+    "prior_state": "SUPERSEDED_BEFORE_TRUE_FRESH_FORMAL",
+    "reason": "VC-1 had been declared but its generated output was not consumed by downstream stages.",
+    "timing": "pre-result correction",
+    "integration_resource_policy": "Qwen and RT-DETR GPU inference allowed upstream; TS-5 remains the frozen CPU transform"
+  },
+  "scope": "Stage 5.4 fork only on one true-fresh shared upstream: VC-A0 uses TS-0 and VC-1 uses TS-5 Revised; Qwen, Stage4, Stage5.1, RT-DETR and CMP-1 each run once.",
+  "protocol_semantic_sha256": "59ca43d4fc8c2675f85beae99d8d3f36db247dec0fcc9df8466682d399f984d2"
 }
