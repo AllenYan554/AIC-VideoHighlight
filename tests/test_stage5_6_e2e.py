@@ -246,11 +246,9 @@ def test_registry_and_launcher():
 
 
 def test_validate_only_mode_returns_without_execution():
-    import argparse
-
     config = CONF / "stage5_6_e2e_smoke.json"
     environment = REPO / "configs" / "environments" / "windows_local.json"
-    assert runner.main(["--config", str(config), "--environment", str(environment)]) == 0
+    assert runner.main(["--config", str(config), "--environment", str(environment), "--validate-only"]) == 0
 
 
 def test_deterministic_serialization(tmp_path):

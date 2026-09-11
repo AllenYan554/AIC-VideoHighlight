@@ -550,7 +550,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     protocol = validate_execution_config(config, protocol_path)
     validate_protocol(protocol, protocol.get("status"))
 
-    if args.validate_only or not (args.smoke or args.execute):
+    if args.validate_only or args.dry_run:
         preflight_result = preflight(config, environment)
         print(json.dumps({
             "experiment_id": config.get("experiment_id"),
@@ -563,7 +563,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     if platform.system() == "Windows":
         raise FrozenInputError("Stage 5.6 execution is AutoDL-only; refused on Windows")
 
-    mode = "smoke" if args.smoke else "execute"
+    mode = "execute"
+    if args.execute:
+        mode = "execute"
+    elif args.smoke or str(config.get("experiment_id")) == "stage5_6_e2e_smoke":
+        mode = "smoke"
     if args.resume:
         config = {**config, "runtime": {**config.get("runtime", {}), "resume": True}}
     execution_head = _resolve_execution_head()
