@@ -27,6 +27,65 @@ from aic_video_highlight.spatial_localization import (
     write_shard,
 )
 
+FROZEN_REPLAY_MODE = "FROZEN_REPLAY"
+FRESH_PIPELINE_MODE = "FRESH_PIPELINE"
+FROZEN_REPLAY_VIDEO_COUNT = 166
+FROZEN_REPLAY_FRAME_COUNT = 51256
+
+
+def validate_prediction_manifest(
+    predictions: dict[str, list[int]],
+    *,
+    mode: str,
+    expected_videos: int | None = None,
+) -> str | None:
+    """Validate the Stage 5.1 prediction manifest before inference.
+
+    ``FROZEN_REPLAY`` preserves the historical frozen integrity gate exactly
+    (166 videos / 51256 frames) so VC-0 replay behaviour is unchanged.
+
+    ``FRESH_PIPELINE`` validates only internal consistency: a fresh Qwen run may
+    legitimately emit a different frame set, and the preregistered fresh
+    reproduction gate is structural (frame-set Jaccard / bbox match), not exact
+    equality with the frozen frame count.
+    """
+    if mode not in (FROZEN_REPLAY_MODE, FRESH_PIPELINE_MODE):
+        return f"INPUT GATE FAILED: unknown mode {mode!r}"
+    if not predictions:
+        return "INPUT GATE FAILED: no videos"
+
+    total = 0
+    for video_id in sorted(predictions):
+        frames = [int(frame) for frame in predictions[video_id]]
+        if not frames:
+            return f"INPUT GATE FAILED: video {video_id} has no frames"
+        if any(frame < 0 for frame in frames):
+            return f"INPUT GATE FAILED: negative frame for {video_id}"
+        if mode == FRESH_PIPELINE_MODE:
+            if len(set(frames)) != len(frames):
+                return f"INPUT GATE FAILED: duplicate frames for {video_id}"
+            if frames != sorted(frames):
+                return f"INPUT GATE FAILED: unsorted frames for {video_id}"
+        total += len(frames)
+
+    if mode == FROZEN_REPLAY_MODE:
+        if (
+            len(predictions) != FROZEN_REPLAY_VIDEO_COUNT
+            or total != FROZEN_REPLAY_FRAME_COUNT
+        ):
+            return (
+                "INPUT GATE FAILED: "
+                f"videos={len(predictions)} frames={total} "
+                f"(FROZEN_REPLAY requires {FROZEN_REPLAY_VIDEO_COUNT}/"
+                f"{FROZEN_REPLAY_FRAME_COUNT})"
+            )
+    elif expected_videos is not None and len(predictions) != expected_videos:
+        return (
+            "INPUT GATE FAILED: "
+            f"videos={len(predictions)} expected={expected_videos} (FRESH_PIPELINE)"
+        )
+    return None
+
 
 def decode_needed_frames(video_path: Path, frame_ids: list[int]) -> dict[int, np.ndarray]:
     """Sequential OpenCV grab; only needed frames retrieved and kept in memory."""
@@ -88,8 +147,13 @@ def run(args: argparse.Namespace) -> int:
             predictions[rec["video_id"]] = [p["frame"] for p in rec["predictions"]]
     meta_cache = json.loads(Path(args.metadata_cache).read_text(encoding="utf-8"))["records"]
     expected_keys = {(vid, f) for vid, frames in predictions.items() for f in frames}
-    if len(predictions) != 166 or len(expected_keys) != 51256:
-        print(f"INPUT GATE FAILED: videos={len(predictions)} frames={len(expected_keys)}")
+    gate_error = validate_prediction_manifest(
+        predictions,
+        mode=args.mode,
+        expected_videos=args.expected_videos,
+    )
+    if gate_error is not None:
+        print(gate_error)
         return 2
     video_base = Path(args.video_base)
     output_dir = Path(args.output_dir)
@@ -288,6 +352,21 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--local-path", default=None)
     parser.add_argument("--device", default=None)
     parser.add_argument("--dtype", default="float32", choices=["float32", "float16"])
+    parser.add_argument(
+        "--mode",
+        default=FROZEN_REPLAY_MODE,
+        choices=[FROZEN_REPLAY_MODE, FRESH_PIPELINE_MODE],
+        help=(
+            "FROZEN_REPLAY keeps the exact 166/51256 integrity gate; "
+            "FRESH_PIPELINE validates only fresh-manifest internal consistency"
+        ),
+    )
+    parser.add_argument(
+        "--expected-videos",
+        type=int,
+        default=None,
+        help="FRESH_PIPELINE only: require exactly this many videos (e.g. 166)",
+    )
     return parser.parse_args(argv)
 
 
