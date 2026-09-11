@@ -222,7 +222,18 @@ def start_vllm(
     ]
     log_path.parent.mkdir(parents=True, exist_ok=True)
     log = log_path.open("a", encoding="utf-8")
-    process = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+    child_environment = os.environ.copy()
+    # Invoking an environment's Python by absolute path does not activate that
+    # environment.  vLLM/FlashInfer launches the environment-provided ``ninja``
+    # executable during warm-up, so its bin directory must be on child PATH.
+    child_environment["PATH"] = str(Path(python).parent) + os.pathsep + child_environment.get("PATH", "")
+    process = subprocess.Popen(
+        command,
+        stdout=log,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+        env=child_environment,
+    )
     deadline = time.monotonic() + float(fresh.get("vllm_start_timeout_sec", 900))
     while time.monotonic() < deadline:
         if process.poll() is not None:
