@@ -538,6 +538,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--environment", type=Path, required=True)
     parser.add_argument("--validate-only", action="store_true")
+    parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--smoke", action="store_true")
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--resume", action="store_true")
