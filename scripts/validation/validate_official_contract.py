@@ -47,6 +47,7 @@ def validate_contract(
     *,
     role_manifest: Path | None = None,
     metadata_cache: Path | None = None,
+    require_full_index: bool = False,
 ) -> dict[str, Any]:
     raw_lines = [
         line for line in predictions_path.read_text(encoding="utf-8").splitlines() if line.strip()
@@ -104,9 +105,14 @@ def validate_contract(
 
     index = None
     metadata = None
+    present = set(seen)
     if role_manifest is not None:
         role = _read_json(role_manifest)
-        index = {item["video_id"]: [9, 16] for item in role["records"]}
+        index = {
+            item["video_id"]: [9, 16]
+            for item in role["records"]
+            if require_full_index or item["video_id"] in present
+        }
     if metadata_cache is not None:
         records_meta = _read_json(metadata_cache)["records"]
         metadata = {
@@ -116,6 +122,7 @@ def validate_contract(
                 "frame_count": int(meta["frame_count"]),
             }
             for video_id, meta in records_meta.items()
+            if require_full_index or video_id in present
         }
 
     base = validate_submission_file(predictions_path, index=index, metadata=metadata)
@@ -146,12 +153,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--predictions", type=Path, required=True)
     parser.add_argument("--role-manifest", type=Path)
     parser.add_argument("--metadata-cache", type=Path)
+    parser.add_argument("--require-full-index", action="store_true",
+                        help="require a line for every role-manifest entry (full Formal)")
     parser.add_argument("--report", type=Path)
     args = parser.parse_args(argv)
     report = validate_contract(
         args.predictions,
         role_manifest=args.role_manifest,
         metadata_cache=args.metadata_cache,
+        require_full_index=args.require_full_index,
     )
     if args.report:
         args.report.parent.mkdir(parents=True, exist_ok=True)

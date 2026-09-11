@@ -161,6 +161,18 @@ def test_contract_cli_detects_duplicate_video_and_passes_valid(tmp_path):
     assert report["is_valid"] is False
 
 
+def test_contract_cli_scopes_index_to_present_unless_full(tmp_path):
+    role = tmp_path / "role.json"
+    role.write_text(json.dumps({"records": [{"video_id": "v1"}, {"video_id": "v2"}]}), encoding="utf-8")
+    predictions = tmp_path / "predictions.jsonl"
+    write_predictions_jsonl(_lines(), predictions)
+    scoped = contract_cli.validate_contract(predictions, role_manifest=role)
+    assert scoped["is_valid"] is True
+    full = contract_cli.validate_contract(predictions, role_manifest=role, require_full_index=True)
+    assert full["is_valid"] is False
+    assert full["base_stats"]["missing_video_count"] == 1
+
+
 # ---------------------------------------------------------------------------
 # Cache / fresh comparator + gate
 # ---------------------------------------------------------------------------
