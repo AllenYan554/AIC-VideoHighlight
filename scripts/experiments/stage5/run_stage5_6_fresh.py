@@ -211,12 +211,14 @@ def start_vllm(
         return None, base_url
     python = str(fresh.get("python", sys.executable))
     model_path = _resolve(fresh["qwen_snapshot"], environment)
+    media_path = _resolve(fresh["video_root"], environment)
     command = [
         python, "-m", "vllm.entrypoints.openai.api_server",
         "--model", str(model_path),
         "--served-model-name", QWEN_MODEL,
         "--host", "127.0.0.1", "--port", "8000",
         "--trust-remote-code",
+        "--allowed-local-media-path", str(media_path),
         "--gpu-memory-utilization", str(fresh.get("vllm_gpu_memory_utilization", 0.80)),
         "--max-model-len", str(fresh.get("vllm_max_model_len", 32768)),
     ]
