@@ -123,3 +123,6 @@ def test_formal_registry_and_configs_require_true_fresh_gpu():
         assert config["runtime"]["gpu"] == "REQUIRED"
         assert config["fresh_pipeline"]["schema_version"] == fresh.FRESH_PIPELINE_SCHEMA
         assert registry.LAUNCH[name]["gpu"] == "REQUIRED"
+
+    launcher = (REPO / "scripts" / "experiments" / "launch_experiment.ps1").read_text(encoding="utf-8")
+    assert "/root/miniconda3/envs/aic-video-highlight/bin/python" in launcher

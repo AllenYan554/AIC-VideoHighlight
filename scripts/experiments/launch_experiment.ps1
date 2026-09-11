@@ -370,7 +370,11 @@ function Invoke-ExperimentRun {
     }
 
     # Resolve the concrete command without executing it.
-    $remotePython = if ($env:AIC_AUTODL_PYTHON) { $env:AIC_AUTODL_PYTHON } else { "python" }
+    $remotePython = if ($env:AIC_AUTODL_PYTHON) {
+        $env:AIC_AUTODL_PYTHON
+    } else {
+        "/root/miniconda3/envs/aic-video-highlight/bin/python"
+    }
     try {
         $runnerArgs = Build-RunnerArgs -Experiment $Spec.experiment -Resume:$Resume -DryRun:$DryRun -ValidateOnly:$ValidateOnly
         if ($target -eq "AUTODL") {
