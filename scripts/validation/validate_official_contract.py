@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Independent official-format predictions.jsonl contract validator (Stage 5.6).
 
-Deliberately independent of the E2E runner: it re-reads the written JSONL and
+Deliberately independent of the VHiCraft runner: it re-reads the written JSONL and
 re-checks the competition contract.  It reuses the project's canonical
 ``validate_submission_file`` and adds duplicate-video, non-finite-number,
 canonical-ordering and deterministic-serialization checks.

@@ -12,7 +12,7 @@ Registered experiments:
 - stage5_5_dev_formal     : Stage 5.5 frame-level calibration Dev166 (FS-0/FS-1/FS-2)
 - stage5_5_hard_confirmation: conditional Hard229 (not run; Dev had no winner)
 - stage5_6_vhicraft_smoke / stage5_6_vhicraft_formal / stage5_6_vhicraft_ablation:
-  VHiCraft-v1 End-to-End validation & final freeze (cached replay + Stage 5.4
+  VHiCraft-v1 validation & final freeze (cached replay + Stage 5.4
   ablation; fresh full pipeline is user-triggered; Full Formal DEFAULT NOT RUN)
 
 Environment auto-selection: on Windows the default environment is

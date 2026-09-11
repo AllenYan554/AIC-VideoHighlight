@@ -1,4 +1,4 @@
-"""Stage 5.6 end-to-end ablation / final-freeze tests (no GPU, no long run)."""
+"""Stage 5.6 VHiCraft-v1 validation / final-freeze tests (no GPU, no long run)."""
 
 from __future__ import annotations
 

@@ -506,7 +506,7 @@ def render_stage5_6_report(
     runtime: Mapping[str, Any] | None,
 ) -> None:
     lines = [
-        f"# Stage 5.6 End-to-End Ablation & Final Freeze: {config.get('experiment_id', '?')}",
+        f"# Stage 5.6 VHiCraft-v1 Validation & Final Freeze: {config.get('experiment_id', '?')}",
         "",
         "> Machine-generated factual evidence only.",
         "",
