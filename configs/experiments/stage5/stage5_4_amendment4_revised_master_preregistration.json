@@ -1,0 +1,108 @@
+{
+  "preregistration_id": "stage5_4_amendment4_revised_ts5_master_v1",
+  "title": "Stage 5.4 Amendment 4 Revised / TS-5 Canonical-Center Projected-State Master Preregistration",
+  "status": "PREREGISTERED_BEFORE_ANY_TS5_REVISED_EXPERIMENT",
+  "created": "2026-09-11",
+  "scope": "Development and preregistration only. Smoke and Formal are future user-triggered, separate, fail-closed executions. The original Amendment 4 TS-5 run at 4812783 remains immutable historical definition-failure evidence and is never overwritten, resumed or shard-reused.",
+  "prior_evidence": {
+    "original_ts5_smoke": {
+      "experiment_id": "stage5_4_amendment4_smoke",
+      "execution_head": "481278379f784a74d9ef8ce50fe5b725a4b32367",
+      "status": "SCIENTIFIC_METHOD_DEFINITION_GAP",
+      "scientific_outcome": "NOT_OBSERVED",
+      "failure_frame": "qvh_000194_9x16 frame 27",
+      "failure": "RuntimeError: projected EMA state does not reproduce projected output",
+      "root_cause": "integer top-left projection correction added to a continuous center state is not the inverse of the frozen floor/clamp placement map"
+    },
+    "ts4_smoke": {
+      "status": "PASS",
+      "mean_acceleration_relative_reduction": 0.38423
+    },
+    "ts4_formal_full_dev166": {
+      "status": "FAIL_ACCELERATION_ONLY",
+      "mean_acceleration_relative_reduction": 0.294639
+    },
+    "ts4_formal_confirmatory_dev142": {
+      "status": "FAIL_ACCELERATION_ONLY",
+      "mean_acceleration_relative_reduction": 0.292196
+    },
+    "interpretation": "Projected-output feedback remains a preregistered mechanistic hypothesis. The revised representation removes the old center/top-left space confusion by feeding the exact canonical center of the emitted integer placement back into the recursive EMA state."
+  },
+  "method": {
+    "method": "projected_state_canonical_center_ema_v1",
+    "proposal": "ema_crop_center_v1 fixed alpha=0.5",
+    "projection": "reuse_ts4_nearest_point_on_discrete_maximum_overlap_rectangle",
+    "state_space": "continuous_canonical_crop_center",
+    "state_update": "canonical_center_of_emitted_integer_placement",
+    "canonical_lift": "C(x,y,w,crop_h)=(x+w/2, y+crop_h/2)",
+    "output": "emitted_integer_placement",
+    "correction_feedback_to_ema_state": true,
+    "extra_hyperparameters": []
+  },
+  "single_scientific_variable": "Unlike TS-4, the emitted integer placement of the unchanged projection P_t is fed back into the recursive state as its canonical continuous center. No other method, dataset, gate, or runtime variable changes.",
+  "frozen_identifiers": {
+    "smoke24": {
+      "videos": 24,
+      "frames": 1080,
+      "semantic_sha256": "2909f7a831a1f90fb149f0b07033586ab2678ead398180d3715c2ee077e2d766",
+      "file_sha256": "046ebf18d4df2c05d9c51ba627001ce8fccd222d4940ffa1a593d5d8fdf1adfc"
+    },
+    "full_dev166": {
+      "videos": 166,
+      "frames": 51256,
+      "identity_sha256": "6d2c14877201ebf8fc6e8c11531f3a201d5e382f5ec5eb496f1d70f7c66d31c3"
+    },
+    "confirmatory_dev142": {
+      "videos": 142,
+      "frames": 43820,
+      "identity_sha256": "d00f99a044fc67a7ae484185cab5e8f94928ec3be350e2b27ac26250b72b7434",
+      "smoke_overlap": 0
+    }
+  },
+  "artifacts": {
+    "smoke": {
+      "config": "configs/experiments/stage5/stage5_4_amendment4_revised_smoke.json",
+      "config_sha256": "bff6c29523ffe668f6bb87a09377d3522943ffc242cf20fa72f2cd65de9af5d1",
+      "protocol": "configs/experiments/stage5/stage5_4_amendment4_revised_smoke_protocol.json",
+      "protocol_byte_sha256": "db6738b1a74c647f03d1fc84c6d4f2b0b5801513da66980bb7290c34161bfeae",
+      "protocol_semantic_sha256": "b66d8cc5f4a7d2cf6cbd417b85994355eb7e590bc51d89c99e0a3d8ad6c5662e"
+    },
+    "formal": {
+      "config": "configs/experiments/stage5/stage5_4_amendment4_revised_formal.json",
+      "config_sha256": "dbca19f690b286952ddd924cc942add0da5bb8527347008770a196145f565aa0",
+      "protocol": "configs/experiments/stage5/stage5_4_amendment4_revised_formal_protocol.json",
+      "protocol_byte_sha256": "c3aee402f808adafb756be658a5be4f751c490302fc1168c2f2ac2a55c4bcbc9",
+      "protocol_semantic_sha256": "b31f78931a714d0e2021b49752951e1d492766717a2b1f2f372ec2e9224a7618"
+    }
+  },
+  "promotion_and_terminal_tree": {
+    "smoke_all_exact_gates_pass": "SMOKE_PASS_TO_FORMAL",
+    "smoke_any_failure": "TS5_REVISED_SMOKE_FAILED_AND_STOP",
+    "formal_all_exact_gates_pass_on_both_sets": "TS5_REVISED_FINAL_FROZEN",
+    "formal_any_failure": [
+      "TS5_REVISED_NOT_READY_FOR_FREEZE",
+      "STAGE5_4_CLOSED"
+    ],
+    "near_pass": "FORBIDDEN",
+    "override": "FORBIDDEN",
+    "amendment5": "FORBIDDEN",
+    "ts6": "FORBIDDEN"
+  },
+  "archive_convention": {
+    "stage_root": "Stage5_逐帧高光预测与空间构图/05_Temporal_Composition_Stabilization",
+    "smoke_subdirectory": "amendment4_revised_smoke",
+    "formal_subdirectory": "amendment4_revised_formal",
+    "policy": "No result directory or experiment_report.md is created until the corresponding real run finishes."
+  },
+  "execution_locks": {
+    "gpu": "NONE",
+    "model_inference": 0,
+    "heldout_access": 0,
+    "official_test_access": 0,
+    "stage5_5": "FORBIDDEN",
+    "amendment5": "FORBIDDEN"
+  },
+  "references": [
+    "Kassis, T., Agarwal, V., He, Y., Patel, D., & Brueckner, A. M. (2026). Scientific Agent Skills: A Library of Procedural Knowledge for Research Agents. arXiv:2609.00065. https://doi.org/10.48550/arXiv.2609.00065"
+  ]
+}

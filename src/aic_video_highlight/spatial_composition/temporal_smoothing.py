@@ -49,6 +49,7 @@ PLACEMENT_TS2_ADAPTIVE_SMOOTHED = "TS2_ADAPTIVE_SMOOTHED"
 PLACEMENT_TS3_GUARDED_SMOOTHED = "TS3_GUARDED_SMOOTHED"
 PLACEMENT_TS4_BBOX_GUARDED_SMOOTHED = "TS4_BBOX_GUARDED_SMOOTHED"
 PLACEMENT_TS5_PROJECTED_STATE_SMOOTHED = "TS5_PROJECTED_STATE_SMOOTHED"
+PLACEMENT_TS5_CANONICAL_STATE_SMOOTHED = "TS5_CANONICAL_STATE_SMOOTHED"
 
 RESET_NEW_VIDEO = "NEW_VIDEO"
 RESET_FRAME_GAP = "FRAME_GAP"
@@ -500,6 +501,66 @@ def smooth_video_sequence_projected_state_bbox_guarded(
     )
 
 
+def canonical_center_from_placement(x: int, y: int, w: int, crop_h: int) -> tuple[float, float]:
+    """Canonical continuous crop center that inverts the frozen placement map.
+
+    ``place_crop_from_center`` maps a continuous center ``(cx, cy)`` to the
+    integer top-left ``(floor(cx - w/2), floor(cy - crop_h/2))`` and then clamps
+    to the legal frame range.  Its canonical inverse is the lower endpoint of the
+    preimage cell, which is reproduced exactly for every legal emitted placement::
+
+        place_crop_from_center(canonical_center_from_placement(x, y, w, crop_h)) == (x, y)
+
+    The vertical component uses the frozen internal integer crop height
+    ``crop_h`` (the scalar the placement map actually consumes), not the official
+    evaluator-derived height ``h = w * target_h / target_w``.  No rounding
+    parameter, tolerance or offset is introduced.
+    """
+    return (float(int(x)) + float(int(w)) / 2.0, float(int(y)) + float(int(crop_h)) / 2.0)
+
+
+def smooth_video_sequence_canonical_center_projected_state_bbox_guarded(
+    width: int,
+    height: int,
+    target_w: int | float,
+    target_h: int | float,
+    observations: Sequence[TemporalObservation],
+    primary_bboxes_by_frame: dict[int, tuple[float, float, float, float]],
+    alpha: float = DEFAULT_EMA_ALPHA,
+) -> list[SmoothedFrame]:
+    """TS-5 Revised: TS-4 projection with its emitted crop fed back as state.
+
+    The recursive state is the continuous canonical center of the *emitted*
+    integer crop of the previous frame: ``s_t = C(P_t(EMA(s_{t-1}, obs_t)))``.
+    The unchanged TS-4 projection ``P_t`` remains the only output operator; the
+    canonical lift ``C`` is the exact parameter-free inverse of the frozen
+    floor/clamp placement map, so the emitted placement is reproduced exactly on
+    the next recursion and the TS-4 spatial objective is untouched.
+    """
+    ema_alpha = _require_alpha(alpha)
+    return _smooth_video_sequence(
+        width,
+        height,
+        target_w,
+        target_h,
+        observations,
+        alpha_for_motion=lambda _motion: ema_alpha,
+        placement_status=PLACEMENT_TS1_SMOOTHED,
+        record_transition_parameters=False,
+        frame_projector=lambda proposal, observation: project_bbox_maximum_visibility(
+            width,
+            height,
+            target_w,
+            target_h,
+            proposal,
+            observation,
+            primary_bboxes_by_frame,
+            placement_status=PLACEMENT_TS5_CANONICAL_STATE_SMOOTHED,
+        ),
+        feedback_canonical_center=True,
+    )
+
+
 def project_bbox_maximum_visibility(
     width: int,
     height: int,
@@ -575,6 +636,7 @@ def _smooth_video_sequence(
     record_transition_parameters: bool,
     frame_projector: Callable[[SmoothedFrame, TemporalObservation], SmoothedFrame] | None = None,
     feedback_projected_state: bool = False,
+    feedback_canonical_center: bool = False,
 ) -> list[SmoothedFrame]:
     """Shared TS-1/TS-2 EMA state machine; only transition alpha varies."""
     _require_frame(width, height)
@@ -683,6 +745,27 @@ def _smooth_video_sequence(
             residual = abs(state_x_placement - emitted.x) + abs(state_y_placement - emitted.y)
             if residual != 0:
                 raise RuntimeError("projected EMA state does not reproduce projected output")
+            emitted = replace(
+                emitted,
+                ema_center_x=state_x,
+                ema_center_y=state_y,
+                proposal_center_x=proposal_center_x,
+                proposal_center_y=proposal_center_y,
+                projected_state_center_x=state_x,
+                projected_state_center_y=state_y,
+                state_output_residual_l1=float(residual),
+            )
+        elif feedback_canonical_center:
+            proposal_center_x, proposal_center_y = state_x, state_y
+            state_x, state_y = canonical_center_from_placement(
+                emitted.x, emitted.y, emitted.w, emitted.crop_h
+            )
+            state_x_placement, state_y_placement, _, _, _, _ = place_crop_from_center(
+                width, height, tw, th, (state_x, state_y)
+            )
+            residual = abs(state_x_placement - emitted.x) + abs(state_y_placement - emitted.y)
+            if residual != 0:
+                raise RuntimeError("canonical projected state does not reproduce projected output")
             emitted = replace(
                 emitted,
                 ema_center_x=state_x,

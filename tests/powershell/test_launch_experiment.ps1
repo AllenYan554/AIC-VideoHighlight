@@ -104,7 +104,7 @@ try {
 }
 
 $listData = (Get-RegistryList -Context $context).Data
-Check "U11 registry list has fourteen experiments" ($listData.experiments.Count -eq 14)
+Check "U11 registry list has sixteen experiments" ($listData.experiments.Count -eq 16)
 $gpuByExperiment = @{}
 foreach ($entry in $listData.experiments) { $gpuByExperiment[$entry.experiment] = $entry }
 Check "U11b stage5_3_formal targets AUTODL" ($gpuByExperiment["stage5_3_formal"].target -eq "AUTODL")
@@ -132,6 +132,25 @@ Check "U11k TS-5 remote command binds HEAD, clean tree and process audit" (
     $strictCommand -match "AIC_WINDOWS_GIT_CLEAN=1" -and
     $strictCommand -match "git status --porcelain" -and
     $strictCommand -match "pgrep -af"
+)
+$ts5RevisedSmokeSpec = (Get-LaunchSpec -Context $context -Name "stage5_4_amendment4_revised_smoke").Data
+$ts5RevisedFormalSpec = (Get-LaunchSpec -Context $context -Name "stage5_4_amendment4_revised_formal").Data
+Check "U11l TS-5 Revised Smoke/Formal are AUTODL CPU-only" (
+    $ts5RevisedSmokeSpec.target -eq "AUTODL" -and $ts5RevisedSmokeSpec.gpu -eq "NONE" -and
+    $ts5RevisedFormalSpec.target -eq "AUTODL" -and $ts5RevisedFormalSpec.gpu -eq "NONE"
+)
+Check "U11m TS-5 Revised Smoke/Formal require strict Git preflight" (
+    $ts5RevisedSmokeSpec.strict_git_preflight -and $ts5RevisedFormalSpec.strict_git_preflight
+)
+$revisedStrictCommand = Build-RemoteCommand -Spec $ts5RevisedSmokeSpec `
+    -RunnerArgs @("--experiment", "stage5_4_amendment4_revised_smoke") -RemotePython "python" `
+    -LaunchProvenance (Get-LaunchProvenance -Target "AUTODL" -WindowMode:$false) `
+    -ExpectedGitHead "d1c731ce596304d0a2f358c11c50d51f497d34ff"
+Check "U11n TS-5 Revised remote command binds HEAD, clean tree and process audit" (
+    $revisedStrictCommand -match "AIC_EXPECTED_GIT_HEAD=d1c731" -and
+    $revisedStrictCommand -match "AIC_WINDOWS_GIT_CLEAN=1" -and
+    $revisedStrictCommand -match "git status --porcelain" -and
+    $revisedStrictCommand -match "pgrep -af"
 )
 
 # ---------------------------------------------------------------------------

@@ -65,6 +65,28 @@ def build_promotion_marker(
     }
 
 
+def adjudicate_ts5_revised_formal(validation: dict) -> dict:
+    """Exact, non-rounded TS-5 Revised terminal decision."""
+    engineering = validation.get("gates", {})
+    scientific = validation.get("scientific_gates") or {}
+    deterministic = validation.get("deterministic_replay") is True
+    passed = (
+        validation.get("status") == "PASS"
+        and bool(engineering)
+        and all(value is True for value in engineering.values())
+        and scientific.get("status") == "PASS"
+        and scientific.get("all_pass") is True
+        and deterministic
+    )
+    return {
+        "status": "TS5_REVISED_FINAL_FROZEN" if passed else "TS5_REVISED_NOT_READY_FOR_FREEZE",
+        "stage5_4_terminal": "STAGE5_4_CLOSED",
+        "all_pass": passed,
+        "near_pass_allowed": False,
+        "automatic_amendment5_allowed": False,
+    }
+
+
 def adjudicate_ts5_formal(validation: dict) -> dict:
     """Exact, non-rounded Amendment 4 terminal decision."""
     engineering = validation.get("gates", {})

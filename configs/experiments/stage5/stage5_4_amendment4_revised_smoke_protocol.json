@@ -1,0 +1,154 @@
+{
+  "protocol_id": "stage5_4_amendment4_revised_smoke",
+  "title": "Stage 5.4 Amendment 4 Revised TS-5 Canonical-Center Projected-State EMA Smoke",
+  "status": "PREREGISTERED_BEFORE_ANY_TS5_REVISED_EXPERIMENT",
+  "created": "2026-09-11",
+  "protocol_semantic_sha256": "b66d8cc5f4a7d2cf6cbd417b85994355eb7e590bc51d89c99e0a3d8ad6c5662e",
+  "unique_hypothesis": "Feeding the canonical continuous center of TS-4's emitted integer placement back into the recursive EMA state removes the latent-state/output separation that is the preregistered mechanistic explanation for TS-4's acceleration shortfall, without changing the TS-4 projection, spatial objective, alpha, reset rules or any gate.",
+  "history": {
+    "original_ts5_experiment_id": "stage5_4_amendment4_smoke",
+    "original_ts5_execution_head": "481278379f784a74d9ef8ce50fe5b725a4b32367",
+    "original_ts5_status": "SCIENTIFIC_METHOD_DEFINITION_GAP",
+    "original_ts5_scientific_outcome": "NOT_OBSERVED",
+    "original_ts5_failure": "RuntimeError: projected EMA state does not reproduce projected output at qvh_000194_9x16 frame 27",
+    "original_ts5_root_cause": "adding the exact integer top-left projection correction to a continuous center state is not an inverse of the frozen floor/clamp placement map, so state feedback could not reproduce the emitted placement at clamp boundaries",
+    "amendment5": "FORBIDDEN"
+  },
+  "method": {
+    "name": "projected_state_canonical_center_ema_v1",
+    "proposal": "ema_crop_center_v1 fixed alpha=0.5",
+    "projection": "reuse_ts4_nearest_point_on_discrete_maximum_overlap_rectangle",
+    "state_space": "continuous_canonical_crop_center",
+    "state_update": "canonical_center_of_emitted_integer_placement",
+    "canonical_lift": "C(x,y,w,crop_h)=(x+w/2, y+crop_h/2)",
+    "output": "emitted_integer_placement",
+    "correction_feedback_to_ema_state": true,
+    "extra_hyperparameters": [],
+    "exact_semantics": "Compute the ordinary continuous TS-1 EMA proposal. Place the frozen crop with the unchanged floor/clamp convention, apply the exact TS-4 discrete maximum-overlap projection P_t, emit that integer placement, and set the recursive state to its canonical continuous center C = (x + w/2, y + crop_h/2), where crop_h is the frozen internal integer crop height consumed by the placement map. The official evaluator-derived height h = w * target_h / target_w is emitted unchanged and is not a state variable.",
+    "state_verification": "By construction place_crop_from_center(C(emitted)) reproduces the emitted integer top-left exactly, so a zero reconstruction residual is a mechanism invariant, not a tunable criterion.",
+    "reset_rules": [
+      "NEW_VIDEO",
+      "FRAME_GAP_GT_1",
+      "FALLBACK"
+    ],
+    "fallback": "Emit frozen TS-0 and clear state exactly as TS-4.",
+    "unchanged": [
+      "alpha",
+      "crop size",
+      "target ratio",
+      "frame identity",
+      "primary bbox",
+      "TS-4 P_t",
+      "fallback",
+      "reset",
+      "all gates"
+    ]
+  },
+  "data": {
+    "manifest_id": "stage5_4_smoke_manifest_v1",
+    "manifest_semantic_sha256": "2909f7a831a1f90fb149f0b07033586ab2678ead398180d3715c2ee077e2d766",
+    "manifest_file_sha256": "046ebf18d4df2c05d9c51ba627001ce8fccd222d4940ffa1a593d5d8fdf1adfc",
+    "videos": 24,
+    "frames": 1080,
+    "reselection": false,
+    "treatments": [
+      "TS-0",
+      "TS-1",
+      "TS-2",
+      "TS-3",
+      "TS-4",
+      "TS-5 Revised"
+    ]
+  },
+  "decision_gates": {
+    "temporal_benefit": {
+      "minimum_mean_displacement_relative_reduction": 0.2,
+      "minimum_mean_acceleration_relative_reduction": 0.3,
+      "maximum_p95_displacement_relative_regression": 0.0,
+      "large_jump_nonincrease_thresholds": [
+        0.1,
+        0.2,
+        0.3
+      ],
+      "minimum_gt_0_20_relative_reduction": 0.25
+    },
+    "spatial_regression_guardrails": {
+      "minimum_mean_visible_fraction_delta": -0.03,
+      "minimum_visible_ge_0_90_delta": -0.05,
+      "minimum_subject_center_containment_delta": -0.02,
+      "minimum_strong_off_center_mean_visible_delta": -0.05
+    }
+  },
+  "mechanism_checks": [
+    "recursive state equals the canonical center of the emitted crop on every eligible frame (M1/M2)",
+    "the canonical state exactly reconstructs the emitted integer placement on every eligible frame (M3)",
+    "the EMA proposal recurs from the canonical previous state on every eligible transition (M1)",
+    "projected state placement is inside the exact TS-4 feasible set on every eligible frame",
+    "maximum-overlap objective is realized on every eligible frame",
+    "the canonical TS-4 projection operator reconstructs every revised projection",
+    "reset and fallback semantics equal TS-4",
+    "bbox visibility is pointwise equal to TS-4",
+    "invalid, NaN, OOB, and ratio violations are zero under the engineering validator",
+    "deterministic replay passes under the engineering validator"
+  ],
+  "diagnostics": {
+    "role": "DIAGNOSTIC_ONLY",
+    "decision_inputs": false,
+    "fields": [
+      "pre-projection correction",
+      "proposal-to-projected-state displacement",
+      "guard activation/runs/correction",
+      "acceleration by guard state and transitions",
+      "feasible-boundary movement",
+      "state-output residual"
+    ],
+    "exact_geometry": "Correction and state displacement use top-left L1 pixels. Feasible-boundary movement is the frame-to-frame L1 sum over safe_x_min, safe_x_max, safe_y_min, and safe_y_max. Acceleration keeps the canonical normalized crop-center definition."
+  },
+  "promotion_rule": {
+    "name": "SMOKE_PASS_TO_FORMAL",
+    "all_required": [
+      "all engineering gates",
+      "deterministic replay",
+      "all nine TS-5-Revised-vs-TS-0 gates",
+      "all mechanism checks",
+      "all frozen identities"
+    ],
+    "failure": "STOP_BEFORE_FORMAL",
+    "override_allowed": false,
+    "after_failure": [
+      "do not repair or rerun this Smoke",
+      "do not run Formal",
+      "do not create Amendment 5"
+    ]
+  },
+  "statistical_plan": "Deterministic paired complete-set effect sizes on frozen Smoke24; exact unrounded comparisons; no p-values, tuning, optional exclusions, near-pass, or post-result threshold changes.",
+  "engineering_contract": [
+    "six-arm frame identity exact",
+    "invalid/OOB/ratio/crop/fallback drift zero",
+    "TS-0 through TS-4 unchanged",
+    "protocol/config/master/git identity exact",
+    "Heldout and Official Test access zero",
+    "CPU-only and model-blind"
+  ],
+  "runtime_contract": {
+    "output_run_id": "stage5_4_amendment4_revised_smoke",
+    "fresh_output_or_identity-matched_resume_only": true,
+    "report": "experiment_report.md"
+  },
+  "forbidden": [
+    "execution during preregistration",
+    "parameter sweep",
+    "new threshold or margin",
+    "alpha change",
+    "new reset",
+    "model inference",
+    "GPU",
+    "Heldout",
+    "Official Test",
+    "Stage 5.5",
+    "Amendment 5"
+  ],
+  "references": [
+    "Kassis, T., Agarwal, V., He, Y., Patel, D., & Brueckner, A. M. (2026). Scientific Agent Skills: A Library of Procedural Knowledge for Research Agents. arXiv:2609.00065. https://doi.org/10.48550/arXiv.2609.00065"
+  ]
+}

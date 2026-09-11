@@ -22,6 +22,9 @@ Registered experiments:
 - stage5_4_amendment3_pipeline: fail-closed Smoke→Formal meta executor
 - stage5_4_amendment4_smoke/formal: separately preregistered six-arm projected-state
   constrained EMA; Formal requires the exact immutable Smoke promotion marker
+- stage5_4_amendment4_revised_smoke/formal: new preregistration replacing the
+  definition-gap original TS-5 with canonical-center projected-state feedback;
+  Formal requires the exact immutable revised Smoke promotion marker
 
 Environment auto-selection: on Windows the default environment is
 configs/environments/windows_local.json, otherwise configs/environments/autodl.json.
@@ -51,6 +54,8 @@ RUNNERS = {
     "stage5_4_amendment3_pipeline": "scripts/experiments/stage5/run_stage5_4_amendment3_pipeline.py",
     "stage5_4_amendment4_smoke": "scripts/experiments/stage5/run_stage5_4_temporal.py",
     "stage5_4_amendment4_formal": "scripts/experiments/stage5/run_stage5_4_temporal.py",
+    "stage5_4_amendment4_revised_smoke": "scripts/experiments/stage5/run_stage5_4_temporal.py",
+    "stage5_4_amendment4_revised_formal": "scripts/experiments/stage5/run_stage5_4_temporal.py",
 }
 
 CONFIGS = {
@@ -68,6 +73,8 @@ CONFIGS = {
     "stage5_4_amendment3_pipeline": "configs/experiments/stage5/stage5_4_amendment3_pipeline.json",
     "stage5_4_amendment4_smoke": "configs/experiments/stage5/stage5_4_amendment4_smoke.json",
     "stage5_4_amendment4_formal": "configs/experiments/stage5/stage5_4_amendment4_formal.json",
+    "stage5_4_amendment4_revised_smoke": "configs/experiments/stage5/stage5_4_amendment4_revised_smoke.json",
+    "stage5_4_amendment4_revised_formal": "configs/experiments/stage5/stage5_4_amendment4_revised_formal.json",
 }
 
 # Launch metadata consumed by scripts/experiments/registry.py (single source of
@@ -92,6 +99,14 @@ LAUNCH = {
         "forbid_active_processes": ["vllm", "qwen"],
     },
     "stage5_4_amendment4_formal": {
+        "target": "AUTODL", "gpu": "NONE", "strict_git_preflight": True,
+        "forbid_active_processes": ["vllm", "qwen"],
+    },
+    "stage5_4_amendment4_revised_smoke": {
+        "target": "AUTODL", "gpu": "NONE", "strict_git_preflight": True,
+        "forbid_active_processes": ["vllm", "qwen"],
+    },
+    "stage5_4_amendment4_revised_formal": {
         "target": "AUTODL", "gpu": "NONE", "strict_git_preflight": True,
         "forbid_active_processes": ["vllm", "qwen"],
     },

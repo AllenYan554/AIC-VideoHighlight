@@ -1,0 +1,212 @@
+{
+  "experiment_id": "stage5_4_amendment4_revised_smoke",
+  "stage": "stage5",
+  "run_type": "PREREGISTERED_DEVELOPMENT_SMOKE_TS5_REVISED",
+  "status_note": "PREREGISTERED_BEFORE_ANY_TS5_REVISED_EXPERIMENT; no TS-5 Revised experiment has run",
+  "config_repo_path": "configs/experiments/stage5/stage5_4_amendment4_revised_smoke.json",
+  "master_preregistration": "configs/experiments/stage5/stage5_4_amendment4_revised_master_preregistration.json",
+  "protocol": "configs/experiments/stage5/stage5_4_amendment4_revised_smoke_protocol.json",
+  "protocol_sha256": "db6738b1a74c647f03d1fc84c6d4f2b0b5801513da66980bb7290c34161bfeae",
+  "protocol_semantic_sha256": "b66d8cc5f4a7d2cf6cbd417b85994355eb7e590bc51d89c99e0a3d8ad6c5662e",
+  "output_run_id": "stage5_4_amendment4_revised_smoke",
+  "output_directory": "outputs/stage5/stage5_4_amendment4_revised_smoke/",
+  "history": {
+    "original_ts5_experiment_id": "stage5_4_amendment4_smoke",
+    "original_ts5_execution_head": "481278379f784a74d9ef8ce50fe5b725a4b32367",
+    "original_ts5_status": "SCIENTIFIC_METHOD_DEFINITION_GAP",
+    "original_ts5_scientific_outcome": "NOT_OBSERVED",
+    "ts5_revised_is": "NEW_SCIENTIFIC_PREREGISTRATION_NOT_AN_ENGINEERING_AMENDMENT"
+  },
+  "temporal_smoothing": {
+    "method": "ema_crop_center_v1",
+    "alpha": 0.5,
+    "reset_rules": [
+      "NEW_VIDEO",
+      "FRAME_GAP_GT_1",
+      "FALLBACK"
+    ],
+    "ts2": {
+      "method": "motion_adaptive_ema_v1",
+      "alpha_min": 0.5,
+      "smoothing_ceiling_motion_norm": 0.1,
+      "full_response_motion_norm": 0.2
+    },
+    "ts3": {
+      "method": "guarded_constrained_ema_v1",
+      "proposal": "ema_crop_center_v1 fixed alpha=0.5",
+      "constraint": "current_frozen_primary_subject_center_inside_final_crop",
+      "projection": "nearest_point_on_safe_integer_top_left_rectangle",
+      "correction_feedback_to_ema_state": false,
+      "extra_hyperparameters": []
+    },
+    "ts4": {
+      "method": "bbox_aware_constrained_ema_v1",
+      "proposal": "ema_crop_center_v1 fixed alpha=0.5",
+      "primary_objective": "maximize_current_frozen_primary_bbox_visible_fraction",
+      "secondary_objective": "minimum_integer_projection_distance_from_ts1_proposal",
+      "projection": "nearest_point_on_discrete_maximum_overlap_rectangle",
+      "correction_feedback_to_ema_state": false,
+      "extra_hyperparameters": []
+    },
+    "ts5": {
+      "method": "projected_state_canonical_center_ema_v1",
+      "proposal": "ema_crop_center_v1 fixed alpha=0.5",
+      "projection": "reuse_ts4_nearest_point_on_discrete_maximum_overlap_rectangle",
+      "state_space": "continuous_canonical_crop_center",
+      "state_update": "canonical_center_of_emitted_integer_placement",
+      "canonical_lift": "C(x,y,w,crop_h)=(x+w/2, y+crop_h/2)",
+      "output": "emitted_integer_placement",
+      "correction_feedback_to_ema_state": true,
+      "extra_hyperparameters": []
+    }
+  },
+  "composition": {
+    "target_ratio": [
+      9,
+      16
+    ],
+    "strata_thresholds": {
+      "near_center_lt": 0.1,
+      "strongly_off_center_gte": 0.25
+    },
+    "stage5_2_policy_thresholds": {
+      "reliable_score": 0.5,
+      "possible_score": 0.3,
+      "ambiguity_score_gap": 0.05,
+      "ambiguity_iou_threshold": 0.5,
+      "min_area_fraction": 0.002,
+      "full_frame_width_fraction": 0.98,
+      "full_frame_height_fraction": 0.98,
+      "full_frame_area_fraction": 0.995
+    }
+  },
+  "manifest": {
+    "input_name": "stage5_4_smoke_manifest",
+    "manifest_id": "stage5_4_smoke_manifest_v1",
+    "expected_manifest_sha256": "2909f7a831a1f90fb149f0b07033586ab2678ead398180d3715c2ee077e2d766",
+    "expected_video_count": 24,
+    "expected_frame_count": 1080
+  },
+  "decision_gates": {
+    "temporal_benefit": {
+      "minimum_mean_displacement_relative_reduction": 0.2,
+      "minimum_mean_acceleration_relative_reduction": 0.3,
+      "maximum_p95_displacement_relative_regression": 0.0,
+      "large_jump_nonincrease_thresholds": [
+        0.1,
+        0.2,
+        0.3
+      ],
+      "minimum_gt_0_20_relative_reduction": 0.25
+    },
+    "spatial_regression_guardrails": {
+      "minimum_mean_visible_fraction_delta": -0.03,
+      "minimum_visible_ge_0_90_delta": -0.05,
+      "minimum_subject_center_containment_delta": -0.02,
+      "minimum_strong_off_center_mean_visible_delta": -0.05
+    }
+  },
+  "expected_policy_semantic_sha256": "222258d1d7960639697bd6c3f36339443c85a27bee9dcee7742f24fda238871d",
+  "expected_raw_semantic_sha256": "44ae9383d20fe0afd290c10f8fb78c5bcd2ee5b0709fb7aedf61dbd83d52f399",
+  "defer_raw_loading": true,
+  "runtime": {
+    "device": "cpu",
+    "gpu": "NONE",
+    "resume": true,
+    "validate_only": true,
+    "report": "experiment_report.md",
+    "progress_fields": [
+      "videos",
+      "frames",
+      "percent",
+      "current_video",
+      "current_sequence",
+      "elapsed",
+      "ETA",
+      "errors",
+      "invalid",
+      "resume_state"
+    ]
+  },
+  "inputs": {
+    "stage5_4_smoke_manifest": {
+      "base": "outputs",
+      "path": "stage5/stage5_4_manifest/manifest/stage5_4_smoke_manifest_v1.json",
+      "sha256": "046ebf18d4df2c05d9c51ba627001ce8fccd222d4940ffa1a593d5d8fdf1adfc",
+      "format": "json"
+    },
+    "stage5_3_frozen_cmp1": {
+      "base": "outputs",
+      "path": "recovery_attempt_02/stage5/stage5_3_formal/cmp1_predictions.jsonl",
+      "sha256": "dce61c4ce1e83358a02a0c4a0ef38666eae2726fa116826980506997005580b1",
+      "format": "jsonl"
+    },
+    "stage5_3_final_freeze": {
+      "base": "repo",
+      "path": "configs/stage5_3_final_freeze.json",
+      "sha256": "2b7081443cbb0e6ed0fd73d49217f6d4ff071a1e094146bbfd0c78b5696beb49",
+      "format": "json"
+    },
+    "stage5_2_final_freeze": {
+      "base": "repo",
+      "path": "configs/stage5_2_final_freeze.json",
+      "sha256": "4d407b2578e92a6b02820651de369f5fa6728cbda6f8b94efdf54689d49cc03a",
+      "format": "json"
+    },
+    "stage5_1_predictions": {
+      "base": "outputs",
+      "path": "stage5/stage5_1_dev_baseline/predictions_runA.jsonl",
+      "sha256": "ca44cc2831e935e82fa7b05820b1269d7f2cc0d360c030b5847a192ede11b9a5",
+      "format": "jsonl"
+    },
+    "video_metadata_cache": {
+      "base": "outputs",
+      "path": "stage5/stage5_1_dev_baseline/metadata_cache.json",
+      "sha256": "52e46f16cfe5012aa68cfb8d7440f4d53e31b7cc133add7e29b78d648a9d5675",
+      "format": "json"
+    },
+    "dev166_index": {
+      "base": "outputs",
+      "path": "stage5/stage5_1_dev_baseline/dev166_stage5_index.jsonl",
+      "sha256": "b541ade5c05e066dd5163f5d1cf2f7deb8780613589839000b55b1c55803a04e",
+      "format": "jsonl"
+    },
+    "stage5_2_policy_artifact": {
+      "base": "outputs",
+      "path": "stage5/stage5_2_full_dev/policy_v1",
+      "sha256": null,
+      "format": "policy_shard_dir"
+    },
+    "stage5_2_raw_detector": {
+      "base": "outputs",
+      "path": "stage5/stage5_2_full_dev/raw_detector",
+      "sha256": null,
+      "format": "raw_shard_dir"
+    },
+    "weak_spatial_reference": {
+      "base": "outputs",
+      "path": "stage5/stage5_3_inputs/dev166_weak_spatial_reference.jsonl",
+      "sha256": "702f0bf1c74c33b3240a1d24409640d7b4bab8d62a4b84a1857838c6dcb5d5e2",
+      "format": "jsonl"
+    }
+  },
+  "heldout_lock": {
+    "heldout392": "ABSOLUTELY_LOCKED",
+    "allowed_access": 0
+  },
+  "official_test_lock": {
+    "official_test": "ABSOLUTELY_LOCKED",
+    "allowed_access": 0
+  },
+  "forbidden": [
+    "execution during preregistration",
+    "Formal without exact promotion marker",
+    "parameter sweep",
+    "Heldout",
+    "Official Test",
+    "GPU",
+    "model inference",
+    "Stage 5.5",
+    "Amendment 5"
+  ]
+}

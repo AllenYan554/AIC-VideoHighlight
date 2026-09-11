@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stage 5.4 Temporal Composition Stabilization runner (TS-0 through TS-5).
+"""Stage 5.4 Temporal Composition Stabilization runner (TS-0 through TS-5 Revised).
 
 Config-driven runner for Stage 5.4 Smoke/Formal/Amendment configs: consumes the frozen Stage 5.3 CMP-1
 composition as TS-0 (temporal control baseline), applies the deterministic TS-1
@@ -30,6 +30,7 @@ from aic_video_highlight.experiment_runtime.paths import EnvironmentPaths
 from aic_video_highlight.experiment_runtime.progress import ProgressReporter
 from aic_video_highlight.experiment_runtime.promotion import (
     adjudicate_ts5_formal,
+    adjudicate_ts5_revised_formal,
     build_promotion_marker,
     evaluate_smoke_promotion,
 )
@@ -70,6 +71,7 @@ from aic_video_highlight.spatial_composition.temporal_smoothing import (
     smooth_video_sequence_adaptive,
     smooth_video_sequence_guarded,
     smooth_video_sequence_bbox_guarded,
+    smooth_video_sequence_canonical_center_projected_state_bbox_guarded,
     smooth_video_sequence_projected_state_bbox_guarded,
     temporal_summary,
 )
@@ -100,13 +102,35 @@ FORMAL_EXPERIMENT_IDS = (
     "stage5_4_amendment2_formal",
     "stage5_4_amendment3_formal",
     "stage5_4_amendment4_formal",
+    "stage5_4_amendment4_revised_formal",
 )
 AMENDMENT_SMOKE_EXPERIMENT_IDS = (
     "stage5_4_amendment_smoke",
     "stage5_4_amendment2_smoke",
     "stage5_4_amendment3_smoke",
     "stage5_4_amendment4_smoke",
+    "stage5_4_amendment4_revised_smoke",
 )
+
+# TS-5 Revised (canonical-center projected state) identities. The original
+# Amendment 4 TS-5 experiment ids remain frozen historical evidence and are
+# never overwritten or resumed.
+TS5_REVISED_SMOKE_EXPERIMENT_IDS = ("stage5_4_amendment4_revised_smoke",)
+TS5_REVISED_FORMAL_EXPERIMENT_IDS = ("stage5_4_amendment4_revised_formal",)
+AMENDMENT4_SMOKE_EXPERIMENT_IDS = (
+    "stage5_4_amendment4_smoke",
+    "stage5_4_amendment4_revised_smoke",
+)
+AMENDMENT4_FORMAL_EXPERIMENT_IDS = (
+    "stage5_4_amendment4_formal",
+    "stage5_4_amendment4_revised_formal",
+)
+TS5_REVISED_MASTER_STATUS = "PREREGISTERED_BEFORE_ANY_TS5_REVISED_EXPERIMENT"
+TS5_REVISED_METHOD = "projected_state_canonical_center_ema_v1"
+
+
+def _is_ts5_revised_experiment(experiment_id: str) -> bool:
+    return experiment_id in TS5_REVISED_SMOKE_EXPERIMENT_IDS + TS5_REVISED_FORMAL_EXPERIMENT_IDS
 
 AMENDMENT3_FORMAL_REPORT_SECTIONS = (
     "History", "Method", "TS-0~TS-4", "Smoke result", "Full Dev166", "Dev142",
@@ -265,6 +289,7 @@ def build_video_records(
     include_ts3: bool = False,
     include_ts4: bool = False,
     include_ts5: bool = False,
+    ts5_revised: bool = False,
 ) -> tuple[list[dict], list[str]]:
     """TS-0 plus optional TS-1/2/3/4/5 treatments for one frozen video."""
     manifest_by_frame = {int(entry["frame"]): entry for entry in video["frames"]}
@@ -348,16 +373,17 @@ def build_video_records(
         if include_ts4
         else {}
     )
-    projected_state_by_frame = (
-        {
+    projected_state_by_frame = {}
+    if include_ts5:
+        projector = (
+            smooth_video_sequence_canonical_center_projected_state_bbox_guarded
+            if ts5_revised
+            else smooth_video_sequence_projected_state_bbox_guarded
+        )
+        projected_state_by_frame = {
             item.frame: item
-            for item in smooth_video_sequence_projected_state_bbox_guarded(
-                width, height, tw, th, observations, primary_bboxes, alpha=alpha
-            )
+            for item in projector(width, height, tw, th, observations, primary_bboxes, alpha=alpha)
         }
-        if include_ts5
-        else {}
-    )
 
     records: list[dict] = []
     for composed in composed_records:
@@ -1265,6 +1291,32 @@ def _expected_ts5_definition() -> dict:
     }
 
 
+def _expected_ts5_revised_definition() -> dict:
+    return {
+        "method": TS5_REVISED_METHOD,
+        "proposal": "ema_crop_center_v1 fixed alpha=0.5",
+        "projection": "reuse_ts4_nearest_point_on_discrete_maximum_overlap_rectangle",
+        "state_space": "continuous_canonical_crop_center",
+        "state_update": "canonical_center_of_emitted_integer_placement",
+        "canonical_lift": "C(x,y,w,crop_h)=(x+w/2, y+crop_h/2)",
+        "output": "emitted_integer_placement",
+        "correction_feedback_to_ema_state": True,
+        "extra_hyperparameters": [],
+    }
+
+
+def _expected_ts5_definition_for(experiment_id: str) -> dict:
+    if _is_ts5_revised_experiment(experiment_id):
+        return _expected_ts5_revised_definition()
+    return _expected_ts5_definition()
+
+
+def _expected_preregistration_status(experiment_id: str) -> str:
+    if _is_ts5_revised_experiment(experiment_id):
+        return TS5_REVISED_MASTER_STATUS
+    return "PREREGISTERED_BEFORE_ANY_AMENDMENT4_EXPERIMENT"
+
+
 def _protocol_semantic_sha(protocol: dict) -> str:
     return canonical_sha256({
         key: value for key, value in protocol.items() if key != "protocol_semantic_sha256"
@@ -1280,8 +1332,9 @@ def _validate_master_preregistration(config: dict, protocol: dict) -> dict:
     binding = master.get("artifacts", {}).get(role, {})
     checks = {
         "master_status": master.get("status")
-        == "PREREGISTERED_BEFORE_ANY_AMENDMENT4_EXPERIMENT",
-        "method": master.get("method") == _expected_ts5_definition(),
+        == _expected_preregistration_status(config["experiment_id"]),
+        "method": master.get("method")
+        == _expected_ts5_definition_for(config["experiment_id"]),
         "config_path": binding.get("config") == str(config.get("config_repo_path")),
         "config_sha": binding.get("config_sha256") == file_sha256(Path(config["config_repo_path"])),
         "protocol_path": binding.get("protocol") == config.get("protocol"),
@@ -1296,17 +1349,18 @@ def _validate_master_preregistration(config: dict, protocol: dict) -> dict:
 
 
 def validate_amendment4_smoke_contract(config: dict, protocol: dict, manifest: dict) -> dict:
-    """Validate frozen TS-5 Smoke science and identities without executing it."""
-    expected_status = "PREREGISTERED_BEFORE_ANY_AMENDMENT4_EXPERIMENT"
-    if config.get("experiment_id") != "stage5_4_amendment4_smoke":
+    """Validate frozen Amendment 4 (original or revised) Smoke identity without executing it."""
+    experiment_id = config.get("experiment_id")
+    if experiment_id not in AMENDMENT4_SMOKE_EXPERIMENT_IDS:
         raise FrozenInputError("unexpected Amendment 4 Smoke experiment id")
+    expected_status = _expected_preregistration_status(experiment_id)
     if protocol.get("status") != expected_status:
         raise FrozenInputError("Amendment 4 Smoke protocol is not preregistered")
     smoothing = config.get("temporal_smoothing", {})
     if (
         smoothing.get("alpha") != 0.5
         or smoothing.get("ts4") != _expected_ts4_definition()
-        or smoothing.get("ts5") != _expected_ts5_definition()
+        or smoothing.get("ts5") != _expected_ts5_definition_for(experiment_id)
         or smoothing.get("reset_rules") != ["NEW_VIDEO", "FRAME_GAP_GT_1", "FALLBACK"]
     ):
         raise FrozenInputError("Amendment 4 method, projection, alpha or reset semantics drifted")
@@ -1338,7 +1392,7 @@ def validate_amendment4_smoke_contract(config: dict, protocol: dict, manifest: d
         "protocol_status": expected_status,
         "protocol_sha256": actual_byte_sha,
         "protocol_semantic_sha256": actual_semantic_sha,
-        "algorithm": _expected_ts5_definition(),
+        "algorithm": _expected_ts5_definition_for(experiment_id),
         "manifest_id": manifest["manifest_id"],
         "manifest_sha256": manifest["manifest_sha256"],
         "videos": manifest["video_count"],
@@ -1419,7 +1473,7 @@ def write_amendment4_promotion_marker(
     marker = build_promotion_marker(
         validation,
         identity_ok=True,
-        method=_expected_ts5_definition()["method"],
+        method=_expected_ts5_definition_for(config["experiment_id"])["method"],
         smoke_manifest_identity=config["manifest"]["expected_manifest_sha256"],
         execution_head=execution_head,
         protocol_byte_sha256=file_sha256(Path(config["protocol"])),
@@ -1454,7 +1508,7 @@ def load_amendment4_promotion_evidence(config: dict, environment: EnvironmentPat
         file_sha256(paths["config"]) == spec.get("expected_smoke_config_sha256"),
         file_sha256(paths["protocol"]) == spec.get("expected_smoke_protocol_sha256"),
         marker.get("schema_version") == "aic.smoke-promotion/v1",
-        marker.get("method") == _expected_ts5_definition()["method"],
+        marker.get("method") == _expected_ts5_definition_for(config["experiment_id"])["method"],
         marker.get("smoke_manifest_identity") == spec.get("expected_smoke_manifest_sha256"),
         marker.get("execution_head") == current_head,
         marker.get("protocol_byte_sha256") == spec.get("expected_smoke_protocol_sha256"),
@@ -1519,6 +1573,7 @@ def validate_formal_contract(config: dict, protocol: dict, manifest: dict, smoke
         "PREREGISTERED_BEFORE_FORMAL",
         "PREREGISTERED_BEFORE_ANY_AMENDMENT3_EXPERIMENT",
         "PREREGISTERED_BEFORE_ANY_AMENDMENT4_EXPERIMENT",
+        TS5_REVISED_MASTER_STATUS,
     }:
         raise ValueError("formal protocol status is invalid")
     if config["experiment_id"] == "stage5_4_amendment2_formal":
@@ -1538,7 +1593,7 @@ def validate_formal_contract(config: dict, protocol: dict, manifest: dict, smoke
             raise ValueError("Amendment 3 Formal output run identity drifted")
         if protocol.get("execution_authorization") != "SMOKE_PASS_TO_FORMAL_ONLY":
             raise ValueError("Amendment 3 Formal promotion rule drifted")
-    if config["experiment_id"] == "stage5_4_amendment4_formal":
+    if config["experiment_id"] in AMENDMENT4_FORMAL_EXPERIMENT_IDS:
         expected_output_run_id = protocol.get("runtime_contract", {}).get("output_run_id")
         if not expected_output_run_id or config.get("output_run_id") != expected_output_run_id:
             raise ValueError("Amendment 4 Formal output run identity drifted")
@@ -1576,12 +1631,15 @@ def validate_formal_contract(config: dict, protocol: dict, manifest: dict, smoke
         if ts3.get("extra_hyperparameters"):
             raise ValueError("Formal TS-3 must remain parameter-free")
     if config["experiment_id"] in {
-        "stage5_4_amendment3_formal", "stage5_4_amendment4_formal"
+        "stage5_4_amendment3_formal", "stage5_4_amendment4_formal",
+        "stage5_4_amendment4_revised_formal",
     }:
         if config["temporal_smoothing"].get("ts4") != _expected_ts4_definition():
             raise ValueError("Formal TS-4 bbox guard definition drifted")
-    if config["experiment_id"] == "stage5_4_amendment4_formal":
-        if config["temporal_smoothing"].get("ts5") != _expected_ts5_definition():
+    if config["experiment_id"] in AMENDMENT4_FORMAL_EXPERIMENT_IDS:
+        if config["temporal_smoothing"].get("ts5") != _expected_ts5_definition_for(
+            config["experiment_id"]
+        ):
             raise ValueError("Formal TS-5 projected-state definition drifted")
         actual_byte_sha = file_sha256(Path(config["protocol"]))
         actual_semantic_sha = _protocol_semantic_sha(protocol)
@@ -2055,6 +2113,110 @@ def evaluate_amendment4_formal_scientific_gates(
     }
 
 
+def evaluate_ts5_revised_scientific_gates(
+    records: list[dict],
+    pooled: dict,
+    guardrails: dict,
+    gate_config: dict,
+    *,
+    role: str = "TS5_REVISED_SMOKE_PREREGISTERED_GATES / TS-5 Revised",
+) -> dict:
+    """Frozen 9 gates plus TS-5 Revised canonical-state mechanism invariants.
+
+    The canonical-center method inherits every Amendment 4 mechanism invariant
+    (TS-4 projection reused exactly, feasible-set membership, bbox objective,
+    reset/fallback equality, pointwise visibility) and adds the two revised
+    state-representation invariants M1/M2 plus the exact reconstruction M3.
+    """
+    base = evaluate_amendment4_scientific_gates(
+        records, pooled, guardrails, gate_config, role=role
+    )
+    eligible = [record for record in records if not record["ts0"]["fallback"]]
+    canonical_state_violations = sum(
+        float(record["ts5"]["ema_center_x"])
+        != float(int(record["ts5"]["x"])) + float(int(record["ts5"]["w"])) / 2.0
+        or float(record["ts5"]["ema_center_y"])
+        != float(int(record["ts5"]["y"])) + float(int(record["ts5"]["crop_h"])) / 2.0
+        for record in eligible
+    )
+    reconstruction_violations = sum(
+        float(record["ts5"]["state_output_residual_l1"]) != 0.0 for record in eligible
+    )
+    recursion_violations = 0
+    recursion_eligible = 0
+    by_video: dict[str, list[dict]] = {}
+    for record in records:
+        if "ts5" in record:
+            by_video.setdefault(record["video_id"], []).append(record)
+    for video_records in by_video.values():
+        ordered = sorted(video_records, key=lambda record: int(record["frame"]))
+        for previous, current in zip(ordered, ordered[1:]):
+            if previous["ts0"]["fallback"] or current["ts0"]["fallback"]:
+                continue
+            if int(current["frame"]) - int(previous["frame"]) != 1:
+                continue
+            if current["ts5"]["reset_reason"] is not None:
+                continue
+            if previous["ts5"]["ema_center_x"] is None:
+                continue
+            recursion_eligible += 1
+            xyxy = current["sanitized"]["xyxy"]
+            expected_x = 0.5 * (float(xyxy[0]) + float(xyxy[2])) / 2.0 + 0.5 * float(
+                previous["ts5"]["ema_center_x"]
+            )
+            expected_y = 0.5 * (float(xyxy[1]) + float(xyxy[3])) / 2.0 + 0.5 * float(
+                previous["ts5"]["ema_center_y"]
+            )
+            if (
+                abs(float(current["ts5"]["proposal_center_x"]) - expected_x) > 1e-9
+                or abs(float(current["ts5"]["proposal_center_y"]) - expected_y) > 1e-9
+            ):
+                recursion_violations += 1
+    canonical_checks = {
+        "recursive_state_is_canonical_center_of_emitted_crop": {
+            "eligible": len(eligible),
+            "violations": canonical_state_violations,
+            "pass": bool(eligible) and canonical_state_violations == 0,
+        },
+        "canonical_state_exactly_reconstructs_emitted_placement": {
+            "eligible": len(eligible),
+            "violations": reconstruction_violations,
+            "pass": bool(eligible) and reconstruction_violations == 0,
+        },
+        "ema_proposal_recurs_from_canonical_previous_state": {
+            "eligible": recursion_eligible,
+            "violations": recursion_violations,
+            "pass": recursion_eligible > 0 and recursion_violations == 0,
+        },
+    }
+    base["ts5_revised_canonical_state_checks"] = canonical_checks
+    all_pass = base["all_pass"] and all(check["pass"] for check in canonical_checks.values())
+    base["status"] = "PASS" if all_pass else "FAIL"
+    base["all_pass"] = all_pass
+    return base
+
+
+def evaluate_ts5_revised_formal_scientific_gates(
+    analysis_set_records: dict[str, list[dict]], gate_config: dict
+) -> dict:
+    results = {
+        name: evaluate_ts5_revised_scientific_gates(
+            records,
+            pooled_distributions(records),
+            spatial_metrics_for_all_treatments(records),
+            gate_config,
+            role="TS5_REVISED_FORMAL_PREREGISTERED_GATES / TS-5 Revised",
+        )
+        for name, records in analysis_set_records.items()
+    }
+    all_pass = bool(results) and all(result["all_pass"] for result in results.values())
+    return {
+        "status": "PASS" if all_pass else "FAIL",
+        "analysis_sets": results,
+        "all_pass": all_pass,
+    }
+
+
 def validate_formal_frozen_dependencies(
     config: dict, bindings: list[InputBinding], inputs, manifest: dict
 ) -> dict:
@@ -2332,7 +2494,7 @@ def amendment4_execution_preflight(
         include_raw=False,
         policy_semantic_expectation=config.get("expected_policy_semantic_sha256"),
     )
-    if config["experiment_id"] == "stage5_4_amendment4_formal":
+    if config["experiment_id"] in AMENDMENT4_FORMAL_EXPERIMENT_IDS:
         smoke_manifest = load_manifest_binding(config["smoke_binding"], bindings)
         contract = validate_formal_contract(config, protocol, manifest, smoke_manifest)
         promotion = load_amendment4_promotion_evidence(config, environment)
@@ -2380,7 +2542,8 @@ def amendment4_execution_preflight(
         "H_protocol_semantic_hash": config["protocol_semantic_sha256"] == _protocol_semantic_sha(protocol),
         "I_config_hash": master_binding["config_sha256"]
         == file_sha256(Path(config["config_repo_path"])),
-        "J_method_identity": config["temporal_smoothing"]["ts5"] == _expected_ts5_definition(),
+        "J_method_identity": config["temporal_smoothing"]["ts5"]
+        == _expected_ts5_definition_for(config["experiment_id"]),
         "K_smoke_promotion_identity": promotion is not None if config["experiment_id"].endswith("_formal") else True,
         "L_input_manifests": True,
         "M_ts0_frozen_baseline": bool(frozen),
@@ -2503,19 +2666,27 @@ def render_amendment4_experiment_report(
     smoke_result: dict | None = None,
     promotion_marker: dict | None = None,
 ) -> None:
-    """Write the frozen Amendment 4 Smoke/Formal report without invented results."""
-    if config.get("experiment_id") not in {
-        "stage5_4_amendment4_smoke", "stage5_4_amendment4_formal"
-    }:
+    """Write the frozen Amendment 4 (original or revised) report without invented results."""
+    if config.get("experiment_id") not in (
+        AMENDMENT4_SMOKE_EXPERIMENT_IDS + AMENDMENT4_FORMAL_EXPERIMENT_IDS
+    ):
         return
     formal = config["experiment_id"].endswith("_formal")
     adjudication = (
-        adjudicate_ts5_formal(validation)
+        (
+            adjudicate_ts5_revised_formal(validation)
+            if _is_ts5_revised_experiment(config["experiment_id"])
+            else adjudicate_ts5_formal(validation)
+        )
         if formal
         else {
             "status": "PROMOTE_TO_FORMAL"
             if validation["status"] == "PASS"
-            else "STOP_NO_FORMAL_NO_AMENDMENT5",
+            else (
+                "TS5_REVISED_SMOKE_FAILED"
+                if _is_ts5_revised_experiment(config["experiment_id"])
+                else "STOP_NO_FORMAL_NO_AMENDMENT5"
+            ),
             "all_pass": validation["status"] == "PASS",
         }
     )
@@ -2552,8 +2723,13 @@ def render_amendment4_experiment_report(
             "config": config.get("config_repo_path"),
         },
     }
+    edition = (
+        "Revised TS-5"
+        if _is_ts5_revised_experiment(config["experiment_id"])
+        else "TS-5"
+    )
     lines = [
-        f"# Stage 5.4 Amendment 4 — {config['experiment_id']} 自动实验报告",
+        f"# Stage 5.4 Amendment 4 {edition} — {config['experiment_id']} 自动实验报告",
         "",
         f"- 状态：**{adjudication['status']}**",
         "- 诊断性 attribution 不参与 9 项科学 gate；不得据此调参。",
@@ -2613,7 +2789,7 @@ def run(args) -> int:
                     load_amendment3_promotion_evidence(config, environment)
                     if config["experiment_id"] == "stage5_4_amendment3_formal"
                     else load_amendment4_promotion_evidence(config, environment)
-                    if config["experiment_id"] == "stage5_4_amendment4_formal"
+                    if config["experiment_id"] in AMENDMENT4_FORMAL_EXPERIMENT_IDS
                     else None
                 )
                 frozen = validate_formal_frozen_dependencies(config, bindings, inputs, manifest)
@@ -2645,6 +2821,7 @@ def run(args) -> int:
                     "stage5_4_amendment2_smoke": validate_amendment2_contract,
                     "stage5_4_amendment3_smoke": validate_amendment3_smoke_contract,
                     "stage5_4_amendment4_smoke": validate_amendment4_smoke_contract,
+                    "stage5_4_amendment4_revised_smoke": validate_amendment4_smoke_contract,
                 }[config["experiment_id"]]
                 result = validator(config, protocol, manifest)
                 frozen_ts0 = load_frozen_ts0_predictions(bindings, manifest, exact_identity=False)
@@ -2672,6 +2849,7 @@ def run(args) -> int:
             "PREREGISTERED_BEFORE_FORMAL",
             "PREREGISTERED_BEFORE_ANY_AMENDMENT3_EXPERIMENT",
             "PREREGISTERED_BEFORE_ANY_AMENDMENT4_EXPERIMENT",
+            TS5_REVISED_MASTER_STATUS,
         } or config.get(
             "protocol_sha256"
         ) != actual_protocol_sha:
@@ -2683,9 +2861,9 @@ def run(args) -> int:
             return 2
 
     execution_preflight = None
-    if config["experiment_id"] in {
-        "stage5_4_amendment4_smoke", "stage5_4_amendment4_formal"
-    }:
+    if config["experiment_id"] in (
+        AMENDMENT4_SMOKE_EXPERIMENT_IDS + AMENDMENT4_FORMAL_EXPERIMENT_IDS
+    ):
         try:
             execution_preflight = amendment4_execution_preflight(
                 config, environment, bindings, paths, resume=args.resume
@@ -2725,7 +2903,7 @@ def run(args) -> int:
                 smoke_promotion_result = load_amendment3_promotion_evidence(
                     config, environment
                 )
-            elif config["experiment_id"] == "stage5_4_amendment4_formal":
+            elif config["experiment_id"] in AMENDMENT4_FORMAL_EXPERIMENT_IDS:
                 smoke_promotion_result = load_amendment4_promotion_evidence(
                     config, environment
                 )
@@ -2740,6 +2918,7 @@ def run(args) -> int:
                 "stage5_4_amendment2_smoke": validate_amendment2_contract,
                 "stage5_4_amendment3_smoke": validate_amendment3_smoke_contract,
                 "stage5_4_amendment4_smoke": validate_amendment4_smoke_contract,
+                "stage5_4_amendment4_revised_smoke": validate_amendment4_smoke_contract,
             }[config["experiment_id"]]
             validator(config, protocol, manifest)
             formal_contract = None
@@ -2774,6 +2953,7 @@ def run(args) -> int:
         include_ts3 = "ts3" in config["temporal_smoothing"]
         include_ts4 = "ts4" in config["temporal_smoothing"]
         include_ts5 = "ts5" in config["temporal_smoothing"]
+        ts5_revised = _is_ts5_revised_experiment(config["experiment_id"])
 
         total_frames = int(manifest["frame_count"])
         reporter = ProgressReporter(config["experiment_id"], total_frames, paths.logs)
@@ -2813,6 +2993,7 @@ def run(args) -> int:
                 include_ts3,
                 include_ts4,
                 include_ts5,
+                ts5_revised,
             )
             all_mismatches.extend(mismatches)
             shard_store.write(video_id, video_records)
@@ -2878,6 +3059,7 @@ def run(args) -> int:
                 include_ts3,
                 include_ts4,
                 include_ts5,
+                ts5_revised,
             )
             deterministic_records.extend(video_records)
         deterministic_records.sort(key=lambda record: (record["video_id"], record["frame"]))
@@ -2944,7 +3126,7 @@ def run(args) -> int:
             ]
             if config["experiment_id"] in {
                 "stage5_4_amendment2_formal", "stage5_4_amendment3_formal",
-                "stage5_4_amendment4_formal",
+                "stage5_4_amendment4_formal", "stage5_4_amendment4_revised_formal",
             }:
                 analysis_set_records = {
                     "full_dev166": records,
@@ -2954,7 +3136,11 @@ def run(args) -> int:
                     name: build_analysis_metrics_all_treatments(set_records)
                     for name, set_records in analysis_set_records.items()
                 }
-                if config["experiment_id"] == "stage5_4_amendment4_formal":
+                if config["experiment_id"] in TS5_REVISED_FORMAL_EXPERIMENT_IDS:
+                    scientific_gates = evaluate_ts5_revised_formal_scientific_gates(
+                        analysis_set_records, config["decision_gates"]
+                    )
+                elif config["experiment_id"] == "stage5_4_amendment4_formal":
                     scientific_gates = evaluate_amendment4_formal_scientific_gates(
                         analysis_set_records, config["decision_gates"]
                     )
@@ -2980,21 +3166,24 @@ def run(args) -> int:
                 confirmatory_ids,
                 four_arm=config["experiment_id"] in {
                     "stage5_4_amendment2_formal", "stage5_4_amendment3_formal",
-                    "stage5_4_amendment4_formal",
+                    "stage5_4_amendment4_formal", "stage5_4_amendment4_revised_formal",
                 },
                 candidate_sides=(
                     TREATMENT_SIDES
                     if config["experiment_id"] in {
-                        "stage5_4_amendment3_formal", "stage5_4_amendment4_formal"
+                        "stage5_4_amendment3_formal", "stage5_4_amendment4_formal",
+                        "stage5_4_amendment4_revised_formal",
                     }
                     else ("ts1", "ts2", "ts3")
                 ),
             )
         elif include_ts5:
             analysis_metrics = None
-            scientific_gates = evaluate_amendment4_scientific_gates(
-                records, pooled, guardrails, config["decision_gates"]
-            )
+            scientific_gates = (
+                evaluate_ts5_revised_scientific_gates
+                if ts5_revised
+                else evaluate_amendment4_scientific_gates
+            )(records, pooled, guardrails, config["decision_gates"])
         elif include_ts4:
             analysis_metrics = None
             scientific_gates = evaluate_amendment3_scientific_gates(
@@ -3097,7 +3286,9 @@ def run(args) -> int:
             "metric_role": "PREREGISTERED_FORMAL_GATES"
             if analysis_metrics is not None
             else (
-                "PREREGISTERED_AMENDMENT4_SMOKE_PROMOTION_GATES"
+                "PREREGISTERED_TS5_REVISED_SMOKE_PROMOTION_GATES"
+                if include_ts5 and ts5_revised
+                else "PREREGISTERED_AMENDMENT4_SMOKE_PROMOTION_GATES"
                 if include_ts5
                 else "DRAFT_AMENDMENT_SMOKE_PROMOTION_GATES"
                 if additional_sides
@@ -3152,7 +3343,7 @@ def run(args) -> int:
         }
         atomic_write_json(machine / "validation.json", validation_payload)
         promotion_marker = None
-        if config["experiment_id"] == "stage5_4_amendment4_smoke":
+        if config["experiment_id"] in AMENDMENT4_SMOKE_EXPERIMENT_IDS:
             protocol = json.loads(Path(config["protocol"]).read_text(encoding="utf-8"))
             promotion_marker = write_amendment4_promotion_marker(
                 paths.output,
