@@ -199,6 +199,9 @@ def compare_replays(
     jaccards: list[float] = []
     bbox_matches = 0
     common_total = 0
+    fresh_only_total = 0
+    frozen_only_total = 0
+    bbox_exact_rates: list[float] = []
     deltas_x: list[float] = []
     deltas_y: list[float] = []
     completed = 0
@@ -219,6 +222,13 @@ def compare_replays(
                 exact += 1
         bbox_matches += exact
         common_total += len(inter)
+        fresh_only_total += len(f_frames - c_frames)
+        frozen_only_total += len(c_frames - f_frames)
+        # Macro bbox metric: per-video exact rate, then mean over videos that
+        # share at least one common frame (preregistered frozen definition).
+        bbox_exact_rate = (exact / len(inter)) if inter else None
+        if bbox_exact_rate is not None:
+            bbox_exact_rates.append(bbox_exact_rate)
         if c_frames == f_frames:
             completed += 1
         per_video.append(
@@ -228,7 +238,10 @@ def compare_replays(
                 "fresh_frames": len(f_frames),
                 "frame_jaccard": jaccard,
                 "common_frames": len(inter),
+                "fresh_only_frames": len(f_frames - c_frames),
+                "frozen_only_frames": len(c_frames - f_frames),
                 "bbox_exact_matches": exact,
+                "bbox_exact_rate": bbox_exact_rate,
             }
         )
     video_count = len(union_ids)
@@ -239,6 +252,13 @@ def compare_replays(
         "video_completion_rate": completed / video_count if video_count else 0.0,
         "frame_set_jaccard_macro": (sum(jaccards) / len(jaccards)) if jaccards else 0.0,
         "common_frame_count": common_total,
+        "fresh_only_frame_count": fresh_only_total,
+        "frozen_only_frame_count": frozen_only_total,
+        # Gate metric (preregistered): macro mean of per-video exact-bbox rate.
+        "bbox_exact_match_rate_macro": (
+            (sum(bbox_exact_rates) / len(bbox_exact_rates)) if bbox_exact_rates else 0.0
+        ),
+        # Reported diagnostic only (not the gate).
         "bbox_exact_match_rate": (bbox_matches / common_total) if common_total else 0.0,
         "mean_abs_delta_x": (sum(deltas_x) / len(deltas_x)) if deltas_x else 0.0,
         "mean_abs_delta_y": (sum(deltas_y) / len(deltas_y)) if deltas_y else 0.0,
@@ -280,10 +300,17 @@ def evaluate_fresh_reproduction(
             "pass": comparison["frame_set_jaccard_macro"] >= policy["frame_set_jaccard_macro_min"],
         },
         "bbox_exact_match_rate": {
-            "observed": comparison["bbox_exact_match_rate"],
+            "observed": comparison.get(
+                "bbox_exact_match_rate_macro", comparison["bbox_exact_match_rate"]
+            ),
+            "observed_micro": comparison["bbox_exact_match_rate"],
+            "metric": "macro_mean_per_video_exact_bbox_rate",
             "threshold": policy["bbox_exact_match_rate_min"],
             "operator": ">=",
-            "pass": comparison["bbox_exact_match_rate"] >= policy["bbox_exact_match_rate_min"],
+            "pass": comparison.get(
+                "bbox_exact_match_rate_macro", comparison["bbox_exact_match_rate"]
+            )
+            >= policy["bbox_exact_match_rate_min"],
         },
     }
     failed = [name for name, check in checks.items() if not check["pass"]]
