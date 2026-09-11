@@ -12,8 +12,8 @@
   "config_repo_path": "configs/experiments/stage5/stage5_6_vhicraft_formal.json",
   "master_preregistration": "configs/experiments/stage5/stage5_6_master_preregistration.json",
   "protocol": "configs/experiments/stage5/stage5_6_formal_protocol.json",
-  "protocol_sha256": "60c2f9a6770915a37dee649cde6cbe2726c23261741a1400bfb5bceb61e1fbe2",
-  "protocol_semantic_sha256": "f1a3a0def3605e9acd49e215a59dc18e8e10a0ff4e646f4c3aafe934e167a8cf",
+  "protocol_sha256": "ea4d8f58bd3b6cc9b133a38a8e22fd8ca3ca3cb0348438b1bbe82c748ca9dd1b",
+  "protocol_semantic_sha256": "2595018595d5e67f2fda79967e95d505ab2cc4661e03c6dba6d18e71576c2895",
   "arms": [
     "VC-0",
     "VC-1",
@@ -94,11 +94,26 @@
   "fresh_pipeline": {
     "schema_version": "aic.vhicraft.true-fresh-pipeline/v1",
     "python": "/root/miniconda3/envs/aic-video-highlight/bin/python",
-    "dev_manifest": {"base": "datasets", "path": "aic_highlight_dev/manifests/dev.jsonl"},
-    "video_root": {"base": "datasets", "path": "aic_highlight_dev"},
-    "source_index": {"base": "outputs", "path": "stage5/stage5_1_dev_baseline/dev166_stage5_index.jsonl"},
-    "qwen_snapshot": {"base": "hf_cache", "path": "hub/models--Qwen--Qwen3.5-4B/snapshots/851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a"},
-    "rtdetr_snapshot": {"base": "hf_cache", "path": "hub/models--PekingU--rtdetr_r50vd/snapshots/df939e661d8c52e80608d1ec566561aabd25a4e7"},
+    "dev_manifest": {
+      "base": "datasets",
+      "path": "aic_highlight_dev/manifests/dev.jsonl"
+    },
+    "video_root": {
+      "base": "datasets",
+      "path": "aic_highlight_dev"
+    },
+    "source_index": {
+      "base": "outputs",
+      "path": "stage5/stage5_1_dev_baseline/dev166_stage5_index.jsonl"
+    },
+    "qwen_snapshot": {
+      "base": "hf_cache",
+      "path": "hub/models--Qwen--Qwen3.5-4B/snapshots/851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a"
+    },
+    "rtdetr_snapshot": {
+      "base": "hf_cache",
+      "path": "hub/models--PekingU--rtdetr_r50vd/snapshots/df939e661d8c52e80608d1ec566561aabd25a4e7"
+    },
     "vllm_base_url": "http://127.0.0.1:8000/v1",
     "vllm_gpu_memory_utilization": 0.8,
     "vllm_max_model_len": 32768,

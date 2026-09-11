@@ -148,5 +148,17 @@
     "integration_resource_policy": "Stage5.6 may run Qwen and RT-DETR on GPU upstream; TS-5 Revised itself remains the frozen CPU transform"
   },
   "scope": "Full Dev166 true-fresh final freeze: VC-0 cached replay, VC-1 fresh pipeline, and VC-A0 sharing the complete VC-1 upstream with only TS-0 replacing TS-5 Revised.",
-  "protocol_semantic_sha256": "f1a3a0def3605e9acd49e215a59dc18e8e10a0ff4e646f4c3aafe934e167a8cf"
+  "protocol_semantic_sha256": "2595018595d5e67f2fda79967e95d505ab2cc4661e03c6dba6d18e71576c2895",
+  "rerun_provenance": {
+    "attempt_1": {
+      "execution_head": "3fbdbc464d0c39fd706a0e30e552733e9f7e1564",
+      "status": "STAGE5_6_FORMAL_NOT_PROMOTED",
+      "blocker": "BLOCKED_AT_STAGE5_2_EMPTY_FRESH_VIDEO",
+      "detail": "fresh Qwen legitimately returned has_highlight=false for qvh_000215_9x16; the FRESH_PIPELINE input gate rejected an empty video frame set at Stage 5.2 (exit 2). VC-0 passed; fresh Stage1/Stage4/Stage5.1 passed.",
+      "scientific_result_exists": false
+    },
+    "attempt_2_reason": "empty-video engineering support only; no model, prompt, algorithm, gate, threshold or metric change",
+    "scientific_gates_unchanged": true,
+    "model_identities_unchanged": true
+  }
 }

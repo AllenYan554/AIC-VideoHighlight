@@ -79,8 +79,8 @@
     },
     "formal_protocol": {
       "path": "configs/experiments/stage5/stage5_6_formal_protocol.json",
-      "byte_sha256": "60c2f9a6770915a37dee649cde6cbe2726c23261741a1400bfb5bceb61e1fbe2",
-      "semantic_sha256": "f1a3a0def3605e9acd49e215a59dc18e8e10a0ff4e646f4c3aafe934e167a8cf"
+      "byte_sha256": "ea4d8f58bd3b6cc9b133a38a8e22fd8ca3ca3cb0348438b1bbe82c748ca9dd1b",
+      "semantic_sha256": "2595018595d5e67f2fda79967e95d505ab2cc4661e03c6dba6d18e71576c2895"
     },
     "ablation_protocol": {
       "path": "configs/experiments/stage5/stage5_6_ablation_protocol.json",
@@ -93,7 +93,7 @@
     },
     "formal_config": {
       "path": "configs/experiments/stage5/stage5_6_vhicraft_formal.json",
-      "byte_sha256": "7a0a010eb3aad67a1c995a2789e1f6a44d29d060fb5447d77cf0e06b38a780c1"
+      "byte_sha256": "a495d16c56f2aca7ba0157dc53e6d184b119fc4a6ade05bdc0058c9be8375424"
     },
     "ablation_config": {
       "path": "configs/experiments/stage5/stage5_6_vhicraft_ablation.json",
@@ -105,5 +105,17 @@
     "model_inference": "Qwen and RT-DETR required upstream; TS-5 remains the frozen CPU transform",
     "heldout_access": 0,
     "official_test_access": 0
+  },
+  "attempt_history": {
+    "attempt_1": {
+      "execution_head": "3fbdbc464d0c39fd706a0e30e552733e9f7e1564",
+      "status": "STAGE5_6_FORMAL_NOT_PROMOTED",
+      "blocker": "BLOCKED_AT_STAGE5_2_EMPTY_FRESH_VIDEO",
+      "detail": "fresh Qwen legitimately returned has_highlight=false for qvh_000215_9x16; the FRESH_PIPELINE input gate rejected an empty video frame set at Stage 5.2 (exit 2). VC-0 passed; fresh Stage1/Stage4/Stage5.1 passed.",
+      "scientific_result_exists": false
+    },
+    "attempt_2_reason": "empty-video engineering support only; no model, prompt, algorithm, gate, threshold or metric change",
+    "scientific_gates_unchanged": true,
+    "model_identities_unchanged": true
   }
 }
