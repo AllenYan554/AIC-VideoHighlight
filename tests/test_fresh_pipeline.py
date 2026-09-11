@@ -77,9 +77,15 @@ def test_shard_records_are_schema_stable_and_reference_ts0():
     assert shard == again
 
 
-def test_ts5_requires_nonempty_sequence():
-    with pytest.raises(FreshPipelineError):
-        build_ts5_by_frame([], width=WIDTH, height=HEIGHT, target_ratio=TARGET_RATIO)
+def test_empty_sequence_is_identity_empty():
+    assert build_ts5_by_frame([], width=WIDTH, height=HEIGHT, target_ratio=TARGET_RATIO) == {}
+    assert build_shard_records([], {}) == []
+
+
+def test_empty_shard_audit_is_identity():
+    audit = audit_fresh_shard("empty-video", [])
+    assert audit.frame_count == 0
+    assert audit.frames_sha256 == audit_fresh_shard("empty-video", []).frames_sha256
 
 
 def test_fresh_index_projects_frozen_membership_in_role_order():

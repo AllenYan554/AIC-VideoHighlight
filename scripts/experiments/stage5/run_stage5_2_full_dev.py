@@ -45,9 +45,12 @@ def validate_prediction_manifest(
     (166 videos / 51256 frames) so VC-0 replay behaviour is unchanged.
 
     ``FRESH_PIPELINE`` validates only internal consistency: a fresh Qwen run may
-    legitimately emit a different frame set, and the preregistered fresh
-    reproduction gate is structural (frame-set Jaccard / bbox match), not exact
-    equality with the frozen frame count.
+    legitimately emit a different frame set, and may legitimately emit **zero**
+    frames for a video whose fresh retrieval returned no highlight
+    (``has_highlight: false``).  An empty frame set is a valid member of the
+    video membership, not a missing/failed video, and must not be rejected here.
+    The preregistered fresh reproduction gate is structural (frame-set Jaccard /
+    bbox match), not exact equality with the frozen frame count.
     """
     if mode not in (FROZEN_REPLAY_MODE, FRESH_PIPELINE_MODE):
         return f"INPUT GATE FAILED: unknown mode {mode!r}"
@@ -57,10 +60,10 @@ def validate_prediction_manifest(
     total = 0
     for video_id in sorted(predictions):
         frames = [int(frame) for frame in predictions[video_id]]
-        if not frames:
-            return f"INPUT GATE FAILED: video {video_id} has no frames"
         if any(frame < 0 for frame in frames):
             return f"INPUT GATE FAILED: negative frame for {video_id}"
+        if mode == FROZEN_REPLAY_MODE and not frames:
+            return f"INPUT GATE FAILED: video {video_id} has no frames"
         if mode == FRESH_PIPELINE_MODE:
             if len(set(frames)) != len(frames):
                 return f"INPUT GATE FAILED: duplicate frames for {video_id}"
@@ -174,6 +177,7 @@ def run(args: argparse.Namespace) -> int:
     }
     processed = 0
     skipped = 0
+    empty_video_ids: list[str] = []
     retry_frames = 0
     model_error_frames = 0
     inference_ms = []
@@ -186,11 +190,31 @@ def run(args: argparse.Namespace) -> int:
         frame_ids = sorted(predictions[video_id])
         if shard_is_complete(output_dir, video_id, frame_ids):
             skipped += 1
+            if not frame_ids:
+                empty_video_ids.append(video_id)
             elapsed = time.perf_counter() - started
             finished = processed + skipped
             eta = elapsed * (total_videos - finished) / finished if finished else 0.0
             print(
                 f"[stage5.2] video {finished}/{total_videos} {video_id} resumed=yes "
+                f"completed={processed} skipped={skipped} failed={model_error_frames} "
+                f"elapsed={elapsed:.0f}s eta={eta:.0f}s",
+                flush=True,
+            )
+            continue
+        if not frame_ids:
+            # A fresh video with zero candidate frames is a valid empty video
+            # (fresh Qwen returned no highlight).  Write an explicit empty shard
+            # so downstream can distinguish "legitimately empty" from
+            # "artifact missing"; no RT-DETR call is made for this video.
+            write_shard(output_dir, video_id, [], [], [])
+            empty_video_ids.append(video_id)
+            processed += 1
+            elapsed = time.perf_counter() - started
+            finished = processed + skipped
+            eta = elapsed * (total_videos - finished) / finished if finished else 0.0
+            print(
+                f"[stage5.2] video {finished}/{total_videos} {video_id} frames=0 empty=yes "
                 f"completed={processed} skipped={skipped} failed={model_error_frames} "
                 f"elapsed={elapsed:.0f}s eta={eta:.0f}s",
                 flush=True,
@@ -333,12 +357,17 @@ def run(args: argparse.Namespace) -> int:
 
     summary = {
         "videos": len(predictions),
+        "processed_video_count": processed,
         "frames": report["frame_count"],
         "missing": report["missing_keys"],
         "extra": report["extra_keys"],
         "duplicates": report["duplicate_keys"],
         "processed_shards": processed,
         "skipped_shards": skipped,
+        "empty_video_count": len(empty_video_ids),
+        "empty_video_ids": sorted(empty_video_ids),
+        "requested_frame_count": len(expected_keys),
+        "localized_frame_count": report["frame_count"],
         "model_error_frames": model_error_frames,
         "retry_frames": retry_frames,
         "total_wall_sec": round(total_wall, 1),

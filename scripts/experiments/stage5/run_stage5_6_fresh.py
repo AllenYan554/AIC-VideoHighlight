@@ -175,11 +175,19 @@ class Progress:
 
 def select_dev_manifest(
     source_path: Path, role_records: Sequence[Mapping[str, Any]], output_path: Path,
-    *, videos: int | None,
+    *, videos: int | None, video_ids: Sequence[str] | None = None,
 ) -> list[str]:
     source = {str(row["video_id"]): row for row in _read_jsonl(source_path)}
     ordered = [str(row["video_id"]) for row in role_records]
-    if videos is not None:
+    if video_ids is not None:
+        requested = [str(value) for value in video_ids]
+        if not requested:
+            raise FreshPipelineError("--video-ids must not be empty")
+        unknown = [value for value in requested if value not in set(ordered)]
+        if unknown:
+            raise FreshPipelineError(f"--video-ids not in Dev role: {unknown[:3]}")
+        ordered = requested
+    elif videos is not None:
         if videos <= 0:
             raise FreshPipelineError("--videos must be positive")
         ordered = ordered[:videos]
@@ -411,6 +419,7 @@ def _assemble_fresh_arm(
 def run_fresh_pipeline(
     config: Mapping[str, Any], environment: EnvironmentPaths, *, config_path: Path,
     protocol_path: Path, videos: int | None, resume: bool, validate_only: bool = False,
+    only_video_ids: Sequence[str] | None = None,
 ) -> dict[str, Any]:
     fresh = config.get("fresh_pipeline")
     if not isinstance(fresh, Mapping):
@@ -437,8 +446,11 @@ def run_fresh_pipeline(
     role = _read_json(role_path)
     root = environment.outputs / "stage5" / str(config["output_run_id"]) / "fresh_pipeline"
     selected_manifest = root / "input" / "dev_selected.jsonl"
-    video_ids = select_dev_manifest(source_manifest, role["records"], selected_manifest, videos=videos)
-    mode = "SMOKE" if videos is not None else "FORMAL"
+    video_ids = select_dev_manifest(
+        source_manifest, role["records"], selected_manifest,
+        videos=videos, video_ids=only_video_ids,
+    )
+    mode = "SMOKE" if (videos is not None or only_video_ids is not None) else "FORMAL"
     identity = build_run_identity(
         config_path=config_path, protocol_path=protocol_path,
         selected_manifest=selected_manifest, mode=mode,
@@ -650,6 +662,10 @@ def run_fresh_pipeline(
         "video_count": len(video_ids),
         "qwen_calls": qwen_calls,
         "rtdetr_calls": rtdetr_calls,
+        "empty_video_count": int(stage52_summary.get("empty_video_count", 0)),
+        "empty_video_ids": list(stage52_summary.get("empty_video_ids", [])),
+        "requested_frame_count": int(stage52_summary.get("requested_frame_count", rtdetr_calls)),
+        "localized_frame_count": int(stage52_summary.get("localized_frame_count", rtdetr_calls)),
         "resume_count": resume_count,
         "identity": identity,
         "stage1_artifact_sha256": file_sha256(stage1 / "predictions.jsonl"),
@@ -674,6 +690,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--environment", type=Path, required=True)
     parser.add_argument("--smoke", action="store_true")
     parser.add_argument("--videos", type=int)
+    parser.add_argument(
+        "--video-ids",
+        default=None,
+        help="comma-separated Dev video_ids to run (targeted smoke); overrides --videos",
+    )
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--validate-only", action="store_true")
     args = parser.parse_args(argv)
@@ -681,12 +702,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     config = _read_json(config_path)
     environment = EnvironmentPaths.from_json(args.environment)
     videos = args.videos
-    if args.smoke and videos is None:
+    if args.smoke and videos is None and not args.video_ids:
         videos = int(config.get("smoke", {}).get("max_videos", 3))
+    only_video_ids = (
+        [value.strip() for value in args.video_ids.split(",") if value.strip()]
+        if args.video_ids
+        else None
+    )
     result = run_fresh_pipeline(
         config, environment, config_path=config_path,
         protocol_path=REPO_ROOT / str(config["protocol"]), videos=videos,
         resume=args.resume, validate_only=args.validate_only,
+        only_video_ids=only_video_ids,
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0

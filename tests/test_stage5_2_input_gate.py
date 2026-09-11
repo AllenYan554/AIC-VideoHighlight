@@ -50,9 +50,17 @@ def test_fresh_pipeline_rejects_unsorted_frames():
     assert error is not None and "unsorted" in error
 
 
-def test_fresh_pipeline_rejects_empty_video_and_manifest():
-    assert validate_prediction_manifest({"a": []}, mode=FRESH_PIPELINE_MODE) is not None
+def test_fresh_pipeline_accepts_empty_video():
+    assert validate_prediction_manifest({"a": [], "b": [1]}, mode=FRESH_PIPELINE_MODE) is None
+    assert validate_prediction_manifest({"a": []}, mode=FRESH_PIPELINE_MODE) is None
     assert validate_prediction_manifest({}, mode=FRESH_PIPELINE_MODE) is not None
+
+
+def test_frozen_replay_still_rejects_empty_video():
+    manifest = _frozen_manifest()
+    manifest["v000"] = []
+    error = validate_prediction_manifest(manifest, mode=FROZEN_REPLAY_MODE)
+    assert error is not None and "has no frames" in error
 
 
 def test_fresh_pipeline_enforces_expected_video_count():

@@ -122,9 +122,14 @@ def build_ts5_by_frame(
     target_ratio: Sequence[int | float],
     alpha: float = 0.5,
 ) -> dict[int, SmoothedFrame]:
-    """Apply the canonical TS-5 Revised smoother to one video's CMP-1 records."""
+    """Apply the canonical TS-5 Revised smoother to one video's CMP-1 records.
+
+    An empty sequence is an input-boundary case: a legitimately empty fresh
+    video has no CMP-1 records, so TS-5 Revised (and TS-0) are empty by
+    identity.  The canonical recurrence is never invoked and is not modified.
+    """
     if not composed_records:
-        raise FreshPipelineError("cannot stabilize an empty frame sequence")
+        return {}
     records = sorted(composed_records, key=lambda item: int(item["frame"]))
     observations = observations_from_records(
         [
