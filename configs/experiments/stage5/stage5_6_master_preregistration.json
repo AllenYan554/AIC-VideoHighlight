@@ -1,0 +1,98 @@
+{
+  "preregistration_id": "stage5_6_master_preregistration_v1",
+  "title": "Stage 5.6 End-to-End Ablation & Final Freeze Master Preregistration",
+  "status": "PREREGISTERED_BEFORE_ANY_STAGE5_6_EXPERIMENT",
+  "created": "2026-09-11",
+  "scope": "Development and preregistration only. Full Formal is future user-triggered and fail-closed.",
+  "method": "stage5_6_e2e_v1",
+  "arms": {
+    "E2E-0": {
+      "arm": "cached_replay_final_v1",
+      "description": "replay the frozen artifact chain; no Qwen/RT-DETR recomputation",
+      "stage5_4_key": "ts5"
+    },
+    "E2E-1": {
+      "arm": "fresh_full_final_v1",
+      "description": "fresh full pipeline from raw video; requires fresh_orchestration.commands",
+      "stage5_4_key": "ts5"
+    },
+    "E2E-A0": {
+      "arm": "no_temporal_stabilization_control",
+      "description": "E2E-1 upstream with TS-0 (CMP-1) instead of TS-5 Revised; only Stage 5.4 differs",
+      "stage5_4_key": "ts0"
+    }
+  },
+  "stage_identities": {
+    "model": {
+      "repo_id": "Qwen/Qwen3.5-4B",
+      "revision": "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a"
+    },
+    "prompt": "high_recall_retrieval_v0",
+    "stage4_candidate_cache": "4b515a6d6fb47073413c686214c3fa5f97293655a3824241eb3305b9e7753246",
+    "stage4_role_dev166": "bceb82034bcc5eed42a5099d7f54dd0fa776fe240969dfada231d255a368ec71",
+    "stage5_1_predictions": "ca44cc2831e935e82fa7b05820b1269d7f2cc0d360c030b5847a192ede11b9a5",
+    "stage5_1_metadata_cache": "52e46f16cfe5012aa68cfb8d7440f4d53e31b7cc133add7e29b78d648a9d5675",
+    "stage5_1_index": "b541ade5c05e066dd5163f5d1cf2f7deb8780613589839000b55b1c55803a04e",
+    "stage5_2_freeze": "4d407b2578e92a6b02820651de369f5fa6728cbda6f8b94efdf54689d49cc03a",
+    "stage5_2_policy_v1": "222258d1d7960639697bd6c3f36339443c85a27bee9dcee7742f24fda238871d",
+    "stage5_3_freeze": "2b7081443cbb0e6ed0fd73d49217f6d4ff071a1e094146bbfd0c78b5696beb49",
+    "stage5_3_cmp1": "dce61c4ce1e83358a02a0c4a0ef38666eae2726fa116826980506997005580b1",
+    "stage5_3_manifest": "2af7d66468fc8d5546f2fabf20aba2f799a17d76ce7c8f4c281fb930539cb24d",
+    "stage5_4_method": "projected_state_canonical_center_ema_v1",
+    "stage5_4_protocol_semantic": "b31f78931a714d0e2021b49752951e1d492766717a2b1f2f372ec2e9224a7618",
+    "stage5_5_final_policy": "FS-0 (all_frames_v1)",
+    "stage5_5_terminal": "STAGE5_5_CLOSED"
+  },
+  "fresh_reproduction_policy": {
+    "schema_success_rate_min": 1.0,
+    "video_completion_rate_min": 1.0,
+    "official_contract_valid": true,
+    "frame_set_jaccard_macro_min": 0.98,
+    "bbox_exact_match_rate_min": 0.95
+  },
+  "final_freeze_criteria": {
+    "engineering_pass": true,
+    "official_contract_pass": true,
+    "frozen_identity_pass": true,
+    "cache_replay_pass": true,
+    "stage5_5_fs0_identity_pass": true,
+    "stage5_4_ablation_regression_pass": true,
+    "determinism_reproducibility_pass": true,
+    "fresh_reproduction_pass": "required for FINAL_CANDIDATE_V1; if E2E-1 not executed, status = READY_FOR_USER_FORMAL_EXECUTION"
+  },
+  "artifacts": {
+    "smoke_protocol": {
+      "path": "configs/experiments/stage5/stage5_6_smoke_protocol.json",
+      "byte_sha256": "70b1782e4c717896fedb2e4f404b00cb6ad8e0f4af0f21a68a94fa9c35639d64",
+      "semantic_sha256": "da64efe3c54c6b34978162ec24f5a12d0d2083a81d1ed71cbc3e37b640beec34"
+    },
+    "formal_protocol": {
+      "path": "configs/experiments/stage5/stage5_6_formal_protocol.json",
+      "byte_sha256": "4bf223116b20cf24ea3b5d1b43ce641d98121c8167df86b83def1f941a831074",
+      "semantic_sha256": "e68cafab1677e296e9e3e11e2ff593e59ee1398d2093ca6813a7873019ada82e"
+    },
+    "ablation_protocol": {
+      "path": "configs/experiments/stage5/stage5_6_ablation_protocol.json",
+      "byte_sha256": "1fcd0b4e97e9dd20e81c4fde0b6ab44cfcfaf9b1488ebf85b7232e3275805628",
+      "semantic_sha256": "6b4683746974e7dd90ce9d75d7c32a22944ef28342d8293b9e83045ea8836225"
+    },
+    "smoke_config": {
+      "path": "configs/experiments/stage5/stage5_6_e2e_smoke.json",
+      "byte_sha256": "3083531495917fb0697a9459e195f743dd3ccba16229ad2ad23b35f41513a886"
+    },
+    "formal_config": {
+      "path": "configs/experiments/stage5/stage5_6_e2e_formal.json",
+      "byte_sha256": "0171b5b27464fd4930956956de55f8fe28501a6229def4406eafa598e80b2111"
+    },
+    "ablation_config": {
+      "path": "configs/experiments/stage5/stage5_6_e2e_ablation.json",
+      "byte_sha256": "1988551a251426eb37390de8974f19fd764953936e85b2a8cb206ae34384f07b"
+    }
+  },
+  "execution_locks": {
+    "gpu": "NONE",
+    "model_inference": 0,
+    "heldout_access": 0,
+    "official_test_access": 0
+  }
+}

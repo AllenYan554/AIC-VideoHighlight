@@ -1,0 +1,141 @@
+{
+  "protocol_schema_version": "aic.stage5.6-experiment-protocol/v1",
+  "protocol_id": "stage5_6_smoke_protocol",
+  "title": "Stage 5.6 End-to-End Engineering Smoke Protocol",
+  "status": "PREREGISTERED_BEFORE_SMOKE",
+  "created": "2026-09-11",
+  "method": "stage5_6_e2e_v1",
+  "arms": {
+    "E2E-0": {
+      "arm": "cached_replay_final_v1",
+      "description": "replay the frozen artifact chain; no Qwen/RT-DETR recomputation",
+      "stage5_4_key": "ts5"
+    },
+    "E2E-1": {
+      "arm": "fresh_full_final_v1",
+      "description": "fresh full pipeline from raw video; requires fresh_orchestration.commands",
+      "stage5_4_key": "ts5"
+    },
+    "E2E-A0": {
+      "arm": "no_temporal_stabilization_control",
+      "description": "E2E-1 upstream with TS-0 (CMP-1) instead of TS-5 Revised; only Stage 5.4 differs",
+      "stage5_4_key": "ts0"
+    }
+  },
+  "stage_identities": {
+    "model": {
+      "repo_id": "Qwen/Qwen3.5-4B",
+      "revision": "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a"
+    },
+    "prompt": "high_recall_retrieval_v0",
+    "stage4_candidate_cache": "4b515a6d6fb47073413c686214c3fa5f97293655a3824241eb3305b9e7753246",
+    "stage4_role_dev166": "bceb82034bcc5eed42a5099d7f54dd0fa776fe240969dfada231d255a368ec71",
+    "stage5_1_predictions": "ca44cc2831e935e82fa7b05820b1269d7f2cc0d360c030b5847a192ede11b9a5",
+    "stage5_1_metadata_cache": "52e46f16cfe5012aa68cfb8d7440f4d53e31b7cc133add7e29b78d648a9d5675",
+    "stage5_1_index": "b541ade5c05e066dd5163f5d1cf2f7deb8780613589839000b55b1c55803a04e",
+    "stage5_2_freeze": "4d407b2578e92a6b02820651de369f5fa6728cbda6f8b94efdf54689d49cc03a",
+    "stage5_2_policy_v1": "222258d1d7960639697bd6c3f36339443c85a27bee9dcee7742f24fda238871d",
+    "stage5_3_freeze": "2b7081443cbb0e6ed0fd73d49217f6d4ff071a1e094146bbfd0c78b5696beb49",
+    "stage5_3_cmp1": "dce61c4ce1e83358a02a0c4a0ef38666eae2726fa116826980506997005580b1",
+    "stage5_3_manifest": "2af7d66468fc8d5546f2fabf20aba2f799a17d76ce7c8f4c281fb930539cb24d",
+    "stage5_4_method": "projected_state_canonical_center_ema_v1",
+    "stage5_4_protocol_semantic": "b31f78931a714d0e2021b49752951e1d492766717a2b1f2f372ec2e9224a7618",
+    "stage5_5_final_policy": "FS-0 (all_frames_v1)",
+    "stage5_5_terminal": "STAGE5_5_CLOSED"
+  },
+  "frozen_identities": {
+    "model": {
+      "repo_id": "Qwen/Qwen3.5-4B",
+      "revision": "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a"
+    },
+    "prompt": "high_recall_retrieval_v0",
+    "stage5_4_method": "projected_state_canonical_center_ema_v1",
+    "stage5_5_final_policy": "FS-0 (all_frames_v1)",
+    "stage5_5_terminal": "STAGE5_5_CLOSED",
+    "dev166": {
+      "videos": 166,
+      "frames": 51256,
+      "identity_sha256": "6d2c14877201ebf8fc6e8c11531f3a201d5e382f5ec5eb496f1d70f7c66d31c3"
+    },
+    "candidate_cache_global_semantic_sha256": "4b515a6d6fb47073413c686214c3fa5f97293655a3824241eb3305b9e7753246"
+  },
+  "official_contract": {
+    "writer": "aic_video_highlight.spatial_composition.submission.write_predictions_jsonl",
+    "validator": "aic_video_highlight.spatial_composition.validation.validate_submission_file",
+    "independent_cli": "scripts/validation/validate_official_contract.py",
+    "record_fields": [
+      "video_id",
+      "targetRatioWH",
+      "predictions"
+    ],
+    "prediction_fields": [
+      "frame",
+      "bboxes"
+    ],
+    "bbox_format": "[x, y, w]; derived h from targetRatioWH, no explicit h in JSON",
+    "target_ratio": [
+      9,
+      16
+    ],
+    "ordering": "ascending frame within each video; videos sorted by id"
+  },
+  "determinism_policy": {
+    "A_cache_replay": {
+      "requirement": "byte-identical or canonical-JSON identical",
+      "enforcement": "exact"
+    },
+    "B_cpu_stage5_transforms": {
+      "requirement": "exact deterministic",
+      "enforcement": "exact"
+    },
+    "C_fresh_qwen_inference": {
+      "requirement": "temperature=0, thinking=false; vLLM byte-level determinism is NOT assumed; structural reproduction gate applies",
+      "enforcement": "structural"
+    }
+  },
+  "fresh_reproduction_policy": {
+    "schema_success_rate_min": 1.0,
+    "video_completion_rate_min": 1.0,
+    "official_contract_valid": true,
+    "frame_set_jaccard_macro_min": 0.98,
+    "bbox_exact_match_rate_min": 0.95
+  },
+  "final_freeze_criteria": {
+    "engineering_pass": true,
+    "official_contract_pass": true,
+    "frozen_identity_pass": true,
+    "cache_replay_pass": true,
+    "stage5_5_fs0_identity_pass": true,
+    "stage5_4_ablation_regression_pass": true,
+    "determinism_reproducibility_pass": true,
+    "fresh_reproduction_pass": "required for FINAL_CANDIDATE_V1; if E2E-1 not executed, status = READY_FOR_USER_FORMAL_EXECUTION"
+  },
+  "fs0_identity_requirement": "Stage 5.5 FS-0 must be a pure identity (frame ids, count, bbox, canonical JSON order)",
+  "stage5_4_ablation_invariant": "E2E-A0 vs E2E-1 differ only in Stage 5.4 (TS-0 vs TS-5 Revised); frame ids, count, crop width, subject source and target ratio identical",
+  "heldout_lock": {
+    "heldout392": "ABSOLUTELY_LOCKED",
+    "allowed_access": 0
+  },
+  "official_test_lock": {
+    "official_test": "ABSOLUTELY_LOCKED",
+    "allowed_access": 0
+  },
+  "forbidden": [
+    "re-designing Stage 5.5",
+    "re-running Hard229",
+    "modifying TS-5 Revised",
+    "modifying Stage 4 selection",
+    "prompt engineering",
+    "model swap",
+    "9B",
+    "SFT",
+    "LoRA",
+    "RL",
+    "Official Test",
+    "Heldout392",
+    "treating weak reference as GT",
+    "post-hoc method changes"
+  ],
+  "scope": "3-video engineering smoke: orchestration, JSONL validity, resume, determinism only.",
+  "protocol_semantic_sha256": "da64efe3c54c6b34978162ec24f5a12d0d2083a81d1ed71cbc3e37b640beec34"
+}
