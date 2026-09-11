@@ -19,7 +19,7 @@
     "VC-1",
     "VC-A0"
   ],
-  "output_run_id": "stage5_6_vhicraft_smoke",
+  "output_run_id": "stage5_6_vhicraft_smoke_true_fresh",
   "inputs": {
     "frozen_candidate_cache": {
       "base": "outputs",

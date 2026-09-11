@@ -123,4 +123,3 @@ def test_formal_registry_and_configs_require_true_fresh_gpu():
         assert config["runtime"]["gpu"] == "REQUIRED"
         assert config["fresh_pipeline"]["schema_version"] == fresh.FRESH_PIPELINE_SCHEMA
         assert registry.LAUNCH[name]["gpu"] == "REQUIRED"
-

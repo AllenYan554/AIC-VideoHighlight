@@ -89,7 +89,7 @@
     },
     "smoke_config": {
       "path": "configs/experiments/stage5/stage5_6_vhicraft_smoke.json",
-      "byte_sha256": "2b4ff1e352c4a0bd00cfdaeca7d489161d8bdcf7e19cbfc81da42c6580c9e0be"
+      "byte_sha256": "d5462e9535bbd07ef83c861c321c81ad782499be9ae34069dae5a6e4b311c5ad"
     },
     "formal_config": {
       "path": "configs/experiments/stage5/stage5_6_vhicraft_formal.json",
