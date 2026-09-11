@@ -17,7 +17,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import platform
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -968,6 +970,21 @@ def _run_hard(config: Mapping[str, Any], environment: EnvironmentPaths, *, execu
     return 0
 
 
+def _resolve_execution_head() -> str:
+    """Actual committed HEAD bound into the Dev promotion marker."""
+    try:
+        return (
+            subprocess.check_output(
+                ["git", "-C", str(REPO_ROOT), "rev-parse", "HEAD"],
+                text=True,
+                encoding="utf-8",
+            ).strip()
+            or os.environ.get("AIC_EXPECTED_GIT_HEAD", "UNKNOWN")
+        )
+    except Exception:
+        return os.environ.get("AIC_EXPECTED_GIT_HEAD", "UNKNOWN")
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, required=True)
@@ -994,14 +1011,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         # Hard is fail-closed before any execution attempt.
         load_dev_promotion_marker(config, environment)
 
-    if args.validate_only or args.dry_run or not args.execute:
+    if args.validate_only or args.dry_run:
         print(
             json.dumps(
                 {
                     "experiment_id": experiment_id,
                     "status": "VALIDATED_BEFORE_EXECUTION",
                     "executed": False,
-                    "note": "development HEAD: no real Stage 5.5 experiment was run",
+                    "note": "validate/dry-run only; no Stage 5.5 experiment was run",
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -1013,7 +1030,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise FrozenInputError(
             "Stage 5.5 formal execution is AutoDL-only and is refused on Windows"
         )
-    execution_head = str(config.get("_execution_head", "")) or "UNKNOWN"
+    execution_head = _resolve_execution_head()
     return (
         _run_hard(config, environment, execution_head=execution_head)
         if is_hard
