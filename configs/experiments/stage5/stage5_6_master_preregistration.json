@@ -79,7 +79,7 @@
     },
     "formal_protocol": {
       "path": "configs/experiments/stage5/stage5_6_formal_protocol.json",
-      "byte_sha256": "ea4d8f58bd3b6cc9b133a38a8e22fd8ca3ca3cb0348438b1bbe82c748ca9dd1b",
+      "byte_sha256": "3fc8a55d5be28205a04bb7710ae174fa7cece64ef46b7918e2caacb7557fed27",
       "semantic_sha256": "2595018595d5e67f2fda79967e95d505ab2cc4661e03c6dba6d18e71576c2895"
     },
     "ablation_protocol": {
@@ -93,7 +93,7 @@
     },
     "formal_config": {
       "path": "configs/experiments/stage5/stage5_6_vhicraft_formal.json",
-      "byte_sha256": "a495d16c56f2aca7ba0157dc53e6d184b119fc4a6ade05bdc0058c9be8375424"
+      "byte_sha256": "198414eb5ef8e77bf3c25a84e1783747829e6494920bc92e6301c7a5bc0a1941"
     },
     "ablation_config": {
       "path": "configs/experiments/stage5/stage5_6_vhicraft_ablation.json",

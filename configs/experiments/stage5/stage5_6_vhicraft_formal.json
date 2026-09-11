@@ -12,7 +12,7 @@
   "config_repo_path": "configs/experiments/stage5/stage5_6_vhicraft_formal.json",
   "master_preregistration": "configs/experiments/stage5/stage5_6_master_preregistration.json",
   "protocol": "configs/experiments/stage5/stage5_6_formal_protocol.json",
-  "protocol_sha256": "ea4d8f58bd3b6cc9b133a38a8e22fd8ca3ca3cb0348438b1bbe82c748ca9dd1b",
+  "protocol_sha256": "3fc8a55d5be28205a04bb7710ae174fa7cece64ef46b7918e2caacb7557fed27",
   "protocol_semantic_sha256": "2595018595d5e67f2fda79967e95d505ab2cc4661e03c6dba6d18e71576c2895",
   "arms": [
     "VC-0",
