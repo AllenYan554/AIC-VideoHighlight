@@ -1,0 +1,96 @@
+{
+  "execution_config_schema_version": "aic.stage5.5-execution-config/v1",
+  "experiment_id": "stage5_5_dev_formal",
+  "stage": "stage5",
+  "run_type": "PREREGISTERED_STAGE5_5_DEV166_FRAME_CALIBRATION",
+  "status_note": "PREREGISTERED_BEFORE_DEV166; AutoDL CPU only",
+  "master_preregistration": "configs/experiments/stage5/stage5_5_master_preregistration.json",
+  "dev_protocol": "configs/experiments/stage5/stage5_5_dev_protocol.json",
+  "protocol_sha256": "ec0cf737a096dcf0ce9aa93a275f37cb81a861a734ad7e1546c253d202fe1f20",
+  "protocol_semantic_sha256": "b96a1be4f9f2b1ef36e67c4d5284b54cef1315195a622fbe1c848424d84730c8",
+  "policies": [
+    "FS-0",
+    "FS-1",
+    "FS-2"
+  ],
+  "arm_configs": {
+    "FS-0": "configs/experiments/stage5/stage5_5_fs0_all_frames.json",
+    "FS-1": "configs/experiments/stage5/stage5_5_fs1_singleton_edge_prune.json",
+    "FS-2": "configs/experiments/stage5/stage5_5_fs2_nonunanimous_edge_prune.json"
+  },
+  "analysis_set": {
+    "role": "dev_tune",
+    "record_count": 166,
+    "identity": "stage4_3_role_manifest dev_tune_166"
+  },
+  "output_run_id": "stage5_5_dev_formal",
+  "output_directory": "outputs/stage5/stage5_5_dev_formal/",
+  "inputs": {
+    "frozen_candidate_cache": {
+      "base": "outputs",
+      "path": "stage5/stage5_5_inputs/frozen_candidate_cache",
+      "sha256": null,
+      "format": "candidate_cache_dir",
+      "expected_global_semantic_sha256": "4b515a6d6fb47073413c686214c3fa5f97293655a3824241eb3305b9e7753246"
+    },
+    "role_manifest": {
+      "base": "outputs",
+      "path": "stage5/stage5_5_inputs/dev_tune_166.json",
+      "sha256": null,
+      "format": "json",
+      "expected_semantic_sha256": "bceb82034bcc5eed42a5099d7f54dd0fa776fe240969dfada231d255a368ec71"
+    },
+    "stage5_1_predictions": {
+      "base": "outputs",
+      "path": "stage5/stage5_1_dev_baseline/predictions_runA.jsonl",
+      "sha256": "ca44cc2831e935e82fa7b05820b1269d7f2cc0d360c030b5847a192ede11b9a5",
+      "format": "jsonl"
+    },
+    "stage5_1_metadata_cache": {
+      "base": "outputs",
+      "path": "stage5/stage5_1_dev_baseline/metadata_cache.json",
+      "sha256": "52e46f16cfe5012aa68cfb8d7440f4d53e31b7cc133add7e29b78d648a9d5675",
+      "format": "json"
+    },
+    "stage5_4_ts5_revised_predictions": {
+      "base": "outputs",
+      "path": "stage5/stage5_4_amendment4_revised_formal/ts5_canonical_state/predictions.jsonl",
+      "sha256": null,
+      "format": "jsonl",
+      "expected_method": "projected_state_canonical_center_ema_v1"
+    }
+  },
+  "runtime": {
+    "device": "cpu",
+    "gpu": "NONE",
+    "resume": true,
+    "validate_only": true,
+    "record_format": null,
+    "report": "experiment_report.md",
+    "progress_fields": [
+      "videos",
+      "frames",
+      "current_video",
+      "policy",
+      "elapsed",
+      "ETA",
+      "errors",
+      "resume_state"
+    ]
+  },
+  "heldout_lock": {
+    "heldout392": "ABSOLUTELY_LOCKED",
+    "allowed_access": 0
+  },
+  "official_test_lock": {
+    "official_test": "ABSOLUTELY_LOCKED",
+    "allowed_access": 0
+  },
+  "forbidden": [
+    "real execution before the frozen preregistration HEAD is pushed",
+    "Heldout",
+    "Official Test",
+    "GPU",
+    "model inference"
+  ]
+}

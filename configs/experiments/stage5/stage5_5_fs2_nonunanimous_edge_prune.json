@@ -1,0 +1,21 @@
+{
+  "arm_config_schema_version": "aic.stage5.5-arm-config/v1",
+  "arm_config_id": "stage5_5_fs2_nonunanimous_edge_prune",
+  "policy": "FS-2",
+  "arm": "cross_chunk_nonunanimous_edge_prune_v1",
+  "dev_protocol": "configs/experiments/stage5/stage5_5_dev_protocol.json",
+  "protocol_sha256": "ec0cf737a096dcf0ce9aa93a275f37cb81a861a734ad7e1546c253d202fe1f20",
+  "protocol_semantic_sha256": "b96a1be4f9f2b1ef36e67c4d5284b54cef1315195a622fbe1c848424d84730c8",
+  "definition": {
+    "policy": "FS-2",
+    "arm": "cross_chunk_nonunanimous_edge_prune_v1",
+    "description": "drop left/right edge-connected runs where E_t >= 2 and S_t < E_t, only when a unanimity core (S_t == E_t) exists",
+    "drop_condition": "E_t >= 2 and S_t < E_t",
+    "core_requirement": "exists frame with S_t == E_t",
+    "edge_only": true,
+    "internal_holes": "KEEP",
+    "no_unanimity_core": "KEEP_ALL",
+    "extra_hyperparameters": []
+  },
+  "extra_hyperparameters": []
+}

@@ -1,0 +1,158 @@
+{
+  "preregistration_id": "stage5_5_master_preregistration_v1",
+  "title": "Stage 5.5 Frame-Level Prediction Calibration Master Preregistration",
+  "status": "PREREGISTERED_BEFORE_ANY_STAGE5_5_EXPERIMENT",
+  "created": "2026-09-11",
+  "scope": "Development and preregistration only. Dev166 and Hard229 are future user-triggered, separate, fail-closed AutoDL CPU executions. This HEAD runs zero real Stage 5.5 experiments.",
+  "method": {
+    "name": "frame_level_prediction_calibration_v1",
+    "frozen_temporal_baseline": "projected_state_canonical_center_ema_v1",
+    "control_policy": "FS-0",
+    "policies": {
+      "FS-0": {
+        "policy": "FS-0",
+        "arm": "all_frames_v1",
+        "description": "identity control: keep every candidate frame; bbox unchanged",
+        "drop_condition": null,
+        "edge_only": false,
+        "internal_holes": "KEEP",
+        "extra_hyperparameters": []
+      },
+      "FS-1": {
+        "policy": "FS-1",
+        "arm": "cross_chunk_singleton_edge_prune_v1",
+        "description": "drop left/right edge-connected runs where E_t >= 2 and S_t == 1, only when a higher-consensus core (S_t >= 2) exists",
+        "drop_condition": "E_t >= 2 and S_t == 1",
+        "core_requirement": "exists frame with S_t >= 2",
+        "edge_only": true,
+        "internal_holes": "KEEP",
+        "all_singleton_segment": "KEEP_ALL",
+        "extra_hyperparameters": []
+      },
+      "FS-2": {
+        "policy": "FS-2",
+        "arm": "cross_chunk_nonunanimous_edge_prune_v1",
+        "description": "drop left/right edge-connected runs where E_t >= 2 and S_t < E_t, only when a unanimity core (S_t == E_t) exists",
+        "drop_condition": "E_t >= 2 and S_t < E_t",
+        "core_requirement": "exists frame with S_t == E_t",
+        "edge_only": true,
+        "internal_holes": "KEEP",
+        "no_unanimity_core": "KEEP_ALL",
+        "extra_hyperparameters": []
+      }
+    },
+    "stage5_1_mapping_reuse": {
+      "helper": "aic_video_highlight.spatial_composition.frame_projection.frames_in_segment",
+      "rule": "CFR_FPS: ceil(start*fps) .. ceil(end*fps)-1, clamped to [0, frame_count); PTS_TABLE: bisect_left on exact fractional PTS; no local fps rounding, start floor or end ceil is reimplemented"
+    },
+    "spatial_invariants": {
+      "new_frames_added": 0,
+      "bbox_changed": 0,
+      "duplicate_frames": 0,
+      "invalid_frames": 0,
+      "out_of_bounds": 0,
+      "ratio_violations": 0,
+      "rule": "Stage 5.5 only DROPs; every KEEP frame is bit-identical to Stage 5.4"
+    },
+    "dropped_frame_trajectory_rule": "the full TS-5 Revised trajectory is generated first; the emit mask never re-runs temporal smoothing",
+    "extra_hyperparameters": []
+  },
+  "scientific_question": "Which already-bboxed candidate frames should be emitted under frozen cross-chunk temporal evidence? Only emit/drop changes.",
+  "support_definition": {
+    "E_t": "number of original temporal inference chunks whose observable window covers frame t, using only the frozen Stage 5.1 mapping frames_in_segment(chunk_start_sec, chunk_end_sec)",
+    "S_t": "number of eligible chunks that produced at least one raw candidate covering frame t",
+    "provenance_source": "Stage 4.2 Frozen Candidate Cache record: source_chunks + raw_candidates",
+    "provenance_recoverable": true,
+    "no_reimplementation": "chunk/support membership reuses the Stage 5.1 canonical mapping"
+  },
+  "frozen_identifiers": {
+    "front_controller": "projected_state_canonical_center_ema_v1 (TS-5 Revised, FINAL_FROZEN)",
+    "stage5_4_execution_head": "8abd09892bb92711539200463d108a49a8ff458d",
+    "full_dev166": {
+      "videos": 166,
+      "frames": 51256,
+      "identity_sha256": "6d2c14877201ebf8fc6e8c11531f3a201d5e382f5ec5eb496f1d70f7c66d31c3"
+    },
+    "frozen_candidate_cache_global_semantic_sha256": "4b515a6d6fb47073413c686214c3fa5f97293655a3824241eb3305b9e7753246",
+    "dev_tune_166_size": 166,
+    "hard_stress_229_size": 229,
+    "audit36": "DIAGNOSTIC_ONLY / LOCKED",
+    "heldout392": "ABSOLUTELY_LOCKED"
+  },
+  "artifacts": {
+    "dev_protocol": {
+      "path": "configs/experiments/stage5/stage5_5_dev_protocol.json",
+      "byte_sha256": "ec0cf737a096dcf0ce9aa93a275f37cb81a861a734ad7e1546c253d202fe1f20",
+      "semantic_sha256": "b96a1be4f9f2b1ef36e67c4d5284b54cef1315195a622fbe1c848424d84730c8"
+    },
+    "hard_protocol": {
+      "path": "configs/experiments/stage5/stage5_5_hard_protocol.json",
+      "byte_sha256": "8bcad554f81c115a110830a5bea0955e78d1111026f6fb40d3816a26ddad9638",
+      "semantic_sha256": "c218f3d1e313a22f96a8b5c674da9a03adfdeccbf7da3303b60ef96a27d932ab"
+    },
+    "fs0": {
+      "path": "configs/experiments/stage5/stage5_5_fs0_all_frames.json",
+      "byte_sha256": "493b91309636917108839f66aeb0877a9d11985de1970d82d69fdc7d4135e3f0"
+    },
+    "fs1": {
+      "path": "configs/experiments/stage5/stage5_5_fs1_singleton_edge_prune.json",
+      "byte_sha256": "8363d3c713613022a4b5789b2cabebce6886d750f2e386bfcb5cd65673fc495e"
+    },
+    "fs2": {
+      "path": "configs/experiments/stage5/stage5_5_fs2_nonunanimous_edge_prune.json",
+      "byte_sha256": "0469fc6d7b7b45cb07e754d3dec76f65822b4c2c2e7dc659e469c1d2b10abbd5"
+    },
+    "dev_formal": {
+      "path": "configs/experiments/stage5/stage5_5_dev_formal.json",
+      "byte_sha256": "88be71014731caa916b545442dcb576bdfa5645a08782487dc2aa03e93d48654"
+    },
+    "hard_confirmation": {
+      "path": "configs/experiments/stage5/stage5_5_hard_confirmation.json",
+      "byte_sha256": "bb94eeffb13e4c249990eb061879245c83d797ed6214bae33c3ec1f18b5c88ed"
+    }
+  },
+  "dev_promotion_marker_schema": {
+    "schema_version": "aic.stage5.5-dev-promotion-marker/v1",
+    "binds": [
+      "execution_head",
+      "dev_protocol_sha256",
+      "dev_config_sha256",
+      "evaluation_sha256",
+      "selected_candidate",
+      "guard_results",
+      "all_pass"
+    ],
+    "override_allowed": false
+  },
+  "decision_tree": {
+    "no_dev_winner": "FS0_FINAL_FROZEN, STAGE5_5_CLOSED",
+    "dev_winner_then_hard_all_pass": "FS_CANDIDATE_FINAL_FROZEN, STAGE5_5_CLOSED",
+    "dev_winner_then_hard_any_fail": "FS0_FINAL_FROZEN, STAGE5_5_CLOSED",
+    "near_pass": "FORBIDDEN",
+    "amendment": "FORBIDDEN",
+    "override": "FORBIDDEN",
+    "heldout": "ABSOLUTELY_LOCKED",
+    "official_test": "ABSOLUTELY_LOCKED"
+  },
+  "archive_convention": {
+    "stage_root": "Stage5_逐帧高光预测与空间构图/06_Frame_Level_Prediction_Calibration",
+    "canonical_report": "06_Frame_Level_Prediction_Calibration/experiment_report.md",
+    "subdirectories": [
+      "00_PROTOCOL",
+      "01_FS0_All_Frames",
+      "02_FS1_Singleton_Edge_Prune",
+      "03_FS2_Nonunanimous_Edge_Prune",
+      "04_Dev166_Formal",
+      "05_Hard229_Confirmation",
+      "06_Final_Freeze"
+    ],
+    "policy": "no result directory is created before the corresponding real run"
+  },
+  "execution_locks": {
+    "gpu": "NONE",
+    "model_inference": 0,
+    "heldout_access": 0,
+    "official_test_access": 0,
+    "stage5_5_real_runs_at_preregistration": 0
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "arm_config_schema_version": "aic.stage5.5-arm-config/v1",
+  "arm_config_id": "stage5_5_fs0_all_frames",
+  "policy": "FS-0",
+  "arm": "all_frames_v1",
+  "dev_protocol": "configs/experiments/stage5/stage5_5_dev_protocol.json",
+  "protocol_sha256": "ec0cf737a096dcf0ce9aa93a275f37cb81a861a734ad7e1546c253d202fe1f20",
+  "protocol_semantic_sha256": "b96a1be4f9f2b1ef36e67c4d5284b54cef1315195a622fbe1c848424d84730c8",
+  "definition": {
+    "policy": "FS-0",
+    "arm": "all_frames_v1",
+    "description": "identity control: keep every candidate frame; bbox unchanged",
+    "drop_condition": null,
+    "edge_only": false,
+    "internal_holes": "KEEP",
+    "extra_hyperparameters": []
+  },
+  "extra_hyperparameters": []
+}

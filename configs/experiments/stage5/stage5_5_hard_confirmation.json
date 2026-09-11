@@ -1,0 +1,92 @@
+{
+  "execution_config_schema_version": "aic.stage5.5-execution-config/v1",
+  "experiment_id": "stage5_5_hard_confirmation",
+  "stage": "stage5",
+  "run_type": "PREREGISTERED_STAGE5_5_HARD229_CONDITIONAL_CONFIRMATION",
+  "status_note": "PREREGISTERED_BEFORE_DEV166; fail-closed unless the exact immutable Dev promotion marker exists",
+  "master_preregistration": "configs/experiments/stage5/stage5_5_master_preregistration.json",
+  "hard_protocol": "configs/experiments/stage5/stage5_5_hard_protocol.json",
+  "protocol_sha256": "8bcad554f81c115a110830a5bea0955e78d1111026f6fb40d3816a26ddad9638",
+  "protocol_semantic_sha256": "c218f3d1e313a22f96a8b5c674da9a03adfdeccbf7da3303b60ef96a27d932ab",
+  "dev_promotion_marker": {
+    "base": "outputs",
+    "path": "stage5/stage5_5_dev_formal/machine/dev_promotion_marker.json",
+    "schema_version": "aic.stage5.5-dev-promotion-marker/v1",
+    "override_allowed": false
+  },
+  "candidate_selection": "the exact immutable marker selected_candidate (FS-1 or FS-2); FS-0 control",
+  "analysis_set": {
+    "role": "hard_stress",
+    "record_count": 229,
+    "identity": "stage4_3_role_manifest hard_stress_229"
+  },
+  "output_run_id": "stage5_5_hard_confirmation",
+  "output_directory": "outputs/stage5/stage5_5_hard_confirmation/",
+  "inputs": {
+    "frozen_candidate_cache": {
+      "base": "outputs",
+      "path": "stage5/stage5_5_inputs/frozen_candidate_cache",
+      "sha256": null,
+      "format": "candidate_cache_dir",
+      "expected_global_semantic_sha256": "4b515a6d6fb47073413c686214c3fa5f97293655a3824241eb3305b9e7753246"
+    },
+    "role_manifest": {
+      "base": "outputs",
+      "path": "stage5/stage5_5_inputs/hard_stress_229.json",
+      "sha256": null,
+      "format": "json",
+      "expected_semantic_sha256": "81d734ee28ec38c096b908a573249c62713d358fb03ea135e5b55e1ae4405687"
+    },
+    "stage5_1_predictions": {
+      "base": "outputs",
+      "path": "stage5/stage5_1_dev_baseline/predictions_runA.jsonl",
+      "sha256": "ca44cc2831e935e82fa7b05820b1269d7f2cc0d360c030b5847a192ede11b9a5",
+      "format": "jsonl"
+    },
+    "stage5_1_metadata_cache": {
+      "base": "outputs",
+      "path": "stage5/stage5_1_dev_baseline/metadata_cache.json",
+      "sha256": "52e46f16cfe5012aa68cfb8d7440f4d53e31b7cc133add7e29b78d648a9d5675",
+      "format": "json"
+    },
+    "stage5_4_ts5_revised_predictions": {
+      "base": "outputs",
+      "path": "stage5/stage5_4_amendment4_revised_formal/ts5_canonical_state/predictions.jsonl",
+      "sha256": null,
+      "format": "jsonl",
+      "expected_method": "projected_state_canonical_center_ema_v1"
+    }
+  },
+  "runtime": {
+    "device": "cpu",
+    "gpu": "NONE",
+    "resume": true,
+    "validate_only": true,
+    "report": "experiment_report.md",
+    "progress_fields": [
+      "videos",
+      "frames",
+      "current_video",
+      "policy",
+      "elapsed",
+      "ETA",
+      "errors",
+      "resume_state"
+    ]
+  },
+  "heldout_lock": {
+    "heldout392": "ABSOLUTELY_LOCKED",
+    "allowed_access": 0
+  },
+  "official_test_lock": {
+    "official_test": "ABSOLUTELY_LOCKED",
+    "allowed_access": 0
+  },
+  "forbidden": [
+    "execution without a valid immutable Dev promotion marker",
+    "method swap on Hard",
+    "Hard-time tuning",
+    "Heldout",
+    "Official Test"
+  ]
+}

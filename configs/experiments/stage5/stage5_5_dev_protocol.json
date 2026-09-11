@@ -1,0 +1,174 @@
+{
+  "protocol_schema_version": "aic.stage5.5-experiment-protocol/v1",
+  "protocol_id": "stage5_5_dev_protocol",
+  "title": "Stage 5.5 Frame-Level Prediction Calibration Dev166 Protocol",
+  "status": "PREREGISTERED_BEFORE_DEV166",
+  "created": "2026-09-11",
+  "proxy_label": "weak-frame temporal proxy (Macro-F1); NOT an official score",
+  "scientific_question": "Which candidate frames that already own a frozen Stage 5.4 TS-5 Revised bbox should be emitted, judged only by frozen cross-chunk temporal evidence? Drop is an emit/drop mask only; frame identity, bbox, crop geometry, subject, segment and TS-5 trajectory are frozen.",
+  "frozen_temporal_baseline": "projected_state_canonical_center_ema_v1",
+  "control_policy": "FS-0",
+  "policies": {
+    "FS-0": {
+      "policy": "FS-0",
+      "arm": "all_frames_v1",
+      "description": "identity control: keep every candidate frame; bbox unchanged",
+      "drop_condition": null,
+      "edge_only": false,
+      "internal_holes": "KEEP",
+      "extra_hyperparameters": []
+    },
+    "FS-1": {
+      "policy": "FS-1",
+      "arm": "cross_chunk_singleton_edge_prune_v1",
+      "description": "drop left/right edge-connected runs where E_t >= 2 and S_t == 1, only when a higher-consensus core (S_t >= 2) exists",
+      "drop_condition": "E_t >= 2 and S_t == 1",
+      "core_requirement": "exists frame with S_t >= 2",
+      "edge_only": true,
+      "internal_holes": "KEEP",
+      "all_singleton_segment": "KEEP_ALL",
+      "extra_hyperparameters": []
+    },
+    "FS-2": {
+      "policy": "FS-2",
+      "arm": "cross_chunk_nonunanimous_edge_prune_v1",
+      "description": "drop left/right edge-connected runs where E_t >= 2 and S_t < E_t, only when a unanimity core (S_t == E_t) exists",
+      "drop_condition": "E_t >= 2 and S_t < E_t",
+      "core_requirement": "exists frame with S_t == E_t",
+      "edge_only": true,
+      "internal_holes": "KEEP",
+      "no_unanimity_core": "KEEP_ALL",
+      "extra_hyperparameters": []
+    }
+  },
+  "support_definition": {
+    "E_t": "number of original temporal inference chunks whose observable window covers frame t, using only the frozen Stage 5.1 mapping frames_in_segment(chunk_start_sec, chunk_end_sec)",
+    "S_t": "number of eligible chunks that produced at least one raw candidate covering frame t",
+    "provenance_source": "Stage 4.2 Frozen Candidate Cache record: source_chunks + raw_candidates",
+    "provenance_recoverable": true,
+    "no_reimplementation": "chunk/support membership reuses the Stage 5.1 canonical mapping"
+  },
+  "stage5_1_mapping": {
+    "helper": "aic_video_highlight.spatial_composition.frame_projection.frames_in_segment",
+    "rule": "CFR_FPS: ceil(start*fps) .. ceil(end*fps)-1, clamped to [0, frame_count); PTS_TABLE: bisect_left on exact fractional PTS; no local fps rounding, start floor or end ceil is reimplemented"
+  },
+  "metrics": {
+    "per_video": {
+      "TP_i": "|PredFrames_i ∩ RefFrames_i|",
+      "N_pred_i": "|PredFrames_i|",
+      "N_ref_i": "|RefFrames_i|",
+      "P_i": "TP_i / N_pred_i (0 if N_pred_i == 0)",
+      "R_i": "TP_i / N_ref_i (0 if N_ref_i == 0)",
+      "F1_i": "2*TP_i / (N_pred_i + N_ref_i) (0 if denominator == 0)"
+    },
+    "macro": [
+      "macro_precision",
+      "macro_recall",
+      "macro_f1"
+    ],
+    "macro_aggregation": "unweighted mean over videos",
+    "pooled": "DIAGNOSTIC_ONLY",
+    "proxy_label": "weak-frame temporal proxy (Macro-F1); NOT an official score"
+  },
+  "dev_recall_guardrails": {
+    "G1_macro_recall_delta": "macro_recall_candidate - macro_recall_FS0 >= -0.02",
+    "G2_low_recall_rate_delta": "low_recall_rate_candidate - low_recall_rate_FS0 <= +0.02",
+    "G3_missed_reference_frame_rate_delta": "missed_reference_frame_rate_candidate - missed_reference_frame_rate_FS0 <= +0.02",
+    "G4_empty_prediction_count": "empty_prediction_count_candidate == 0",
+    "low_recall_definition": "R_i < 0.80",
+    "missed_reference_frame_rate_definition": "sum_i(N_ref_i - TP_i) / sum_i(N_ref_i)"
+  },
+  "dev_promotion_objective": {
+    "preconditions": "all four Dev166 Recall Guardrails pass",
+    "precision": "macro_precision_candidate > macro_precision_FS0",
+    "macro_f1_gain": "macro_f1_candidate - macro_f1_FS0 >= +0.01",
+    "otherwise": "not worth added system complexity; keep FS-0"
+  },
+  "dev_tie_break": [
+    "higher macro_f1",
+    "higher macro_recall",
+    "lower low_recall_rate",
+    "lower missed_reference_frame_rate",
+    "fewer total predicted frames",
+    "more conservative (FS-0 > FS-1 > FS-2)"
+  ],
+  "dev_winner_rule": "at most one winner; all eligible arms compete under the preregistered ordered tie-break; FS-1 is preferred over FS-2 when scientifically equivalent",
+  "fixed_trimming_forbidden": [
+    "start += 0.5s",
+    "end -= 0.5s",
+    "percentage trimming",
+    "fixed frame-count trimming",
+    "margin/threshold/second sweeps"
+  ],
+  "hard_conditional_protocol": {
+    "path": "configs/experiments/stage5/stage5_5_hard_protocol.json",
+    "status": "PREREGISTERED_BEFORE_DEV166"
+  },
+  "dev_execution_config": {
+    "path": "configs/experiments/stage5/stage5_5_dev_formal.json"
+  },
+  "frozen_inputs": {
+    "frozen_candidate_cache": {
+      "base": "outputs",
+      "path": "stage5/stage5_5_inputs/frozen_candidate_cache",
+      "sha256": null,
+      "format": "candidate_cache_dir",
+      "expected_global_semantic_sha256": "4b515a6d6fb47073413c686214c3fa5f97293655a3824241eb3305b9e7753246"
+    },
+    "role_manifest": {
+      "base": "outputs",
+      "path": "stage5/stage5_5_inputs/dev_tune_166.json",
+      "sha256": null,
+      "format": "json",
+      "expected_semantic_sha256": "bceb82034bcc5eed42a5099d7f54dd0fa776fe240969dfada231d255a368ec71"
+    },
+    "stage5_1_predictions": {
+      "base": "outputs",
+      "path": "stage5/stage5_1_dev_baseline/predictions_runA.jsonl",
+      "sha256": "ca44cc2831e935e82fa7b05820b1269d7f2cc0d360c030b5847a192ede11b9a5",
+      "format": "jsonl"
+    },
+    "stage5_1_metadata_cache": {
+      "base": "outputs",
+      "path": "stage5/stage5_1_dev_baseline/metadata_cache.json",
+      "sha256": "52e46f16cfe5012aa68cfb8d7440f4d53e31b7cc133add7e29b78d648a9d5675",
+      "format": "json"
+    },
+    "stage5_4_ts5_revised_predictions": {
+      "base": "outputs",
+      "path": "stage5/stage5_4_amendment4_revised_formal/ts5_canonical_state/predictions.jsonl",
+      "sha256": null,
+      "format": "jsonl",
+      "expected_method": "projected_state_canonical_center_ema_v1"
+    }
+  },
+  "decision_tree": {
+    "no_dev_winner": "FS0_FINAL_FROZEN, STAGE5_5_CLOSED",
+    "dev_winner_then_hard_all_pass": "FS_CANDIDATE_FINAL_FROZEN, STAGE5_5_CLOSED",
+    "dev_winner_then_hard_any_fail": "FS0_FINAL_FROZEN, STAGE5_5_CLOSED",
+    "near_pass": "FORBIDDEN",
+    "amendment": "FORBIDDEN",
+    "override": "FORBIDDEN",
+    "heldout": "ABSOLUTELY_LOCKED",
+    "official_test": "ABSOLUTELY_LOCKED"
+  },
+  "heldout_lock": {
+    "heldout392": "ABSOLUTELY_LOCKED",
+    "allowed_access": 0
+  },
+  "official_test_lock": {
+    "official_test": "ABSOLUTELY_LOCKED",
+    "allowed_access": 0
+  },
+  "forbidden": [
+    "Stage 5.5 formal execution before this protocol is frozen and pushed",
+    "dropping before TS-5 Revised trajectory generation",
+    "internal-hole deletion",
+    "fixed temporal trimming",
+    "touching TS-5 alpha/beta/P_t/canonical lift/reset/fallback/crop geometry",
+    "Heldout392",
+    "Official Test",
+    "Amendment 1 / Amendment 2 / unlimited policy redesign"
+  ],
+  "protocol_semantic_sha256": "b96a1be4f9f2b1ef36e67c4d5284b54cef1315195a622fbe1c848424d84730c8"
+}

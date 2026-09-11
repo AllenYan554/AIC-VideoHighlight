@@ -56,6 +56,8 @@ RUNNERS = {
     "stage5_4_amendment4_formal": "scripts/experiments/stage5/run_stage5_4_temporal.py",
     "stage5_4_amendment4_revised_smoke": "scripts/experiments/stage5/run_stage5_4_temporal.py",
     "stage5_4_amendment4_revised_formal": "scripts/experiments/stage5/run_stage5_4_temporal.py",
+    "stage5_5_dev_formal": "scripts/experiments/stage5/run_stage5_5_frame_calibration.py",
+    "stage5_5_hard_confirmation": "scripts/experiments/stage5/run_stage5_5_frame_calibration.py",
 }
 
 CONFIGS = {
@@ -75,6 +77,8 @@ CONFIGS = {
     "stage5_4_amendment4_formal": "configs/experiments/stage5/stage5_4_amendment4_formal.json",
     "stage5_4_amendment4_revised_smoke": "configs/experiments/stage5/stage5_4_amendment4_revised_smoke.json",
     "stage5_4_amendment4_revised_formal": "configs/experiments/stage5/stage5_4_amendment4_revised_formal.json",
+    "stage5_5_dev_formal": "configs/experiments/stage5/stage5_5_dev_formal.json",
+    "stage5_5_hard_confirmation": "configs/experiments/stage5/stage5_5_hard_confirmation.json",
 }
 
 # Launch metadata consumed by scripts/experiments/registry.py (single source of
@@ -107,6 +111,14 @@ LAUNCH = {
         "forbid_active_processes": ["vllm", "qwen"],
     },
     "stage5_4_amendment4_revised_formal": {
+        "target": "AUTODL", "gpu": "NONE", "strict_git_preflight": True,
+        "forbid_active_processes": ["vllm", "qwen"],
+    },
+    "stage5_5_dev_formal": {
+        "target": "AUTODL", "gpu": "NONE", "strict_git_preflight": True,
+        "forbid_active_processes": ["vllm", "qwen"],
+    },
+    "stage5_5_hard_confirmation": {
         "target": "AUTODL", "gpu": "NONE", "strict_git_preflight": True,
         "forbid_active_processes": ["vllm", "qwen"],
     },

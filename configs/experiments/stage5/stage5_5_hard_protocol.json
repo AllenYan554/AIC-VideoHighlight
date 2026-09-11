@@ -1,0 +1,156 @@
+{
+  "protocol_schema_version": "aic.stage5.5-experiment-protocol/v1",
+  "protocol_id": "stage5_5_hard_protocol",
+  "title": "Stage 5.5 Frame-Level Prediction Calibration Hard229 Conditional Protocol",
+  "status": "PREREGISTERED_BEFORE_DEV166",
+  "created": "2026-09-11",
+  "proxy_label": "weak-frame temporal proxy (Macro-F1); NOT an official score",
+  "scientific_question": "Does the exact immutable Dev166 winner generalize to Hard229 without recall or precision regression versus FS-0?",
+  "frozen_temporal_baseline": "projected_state_canonical_center_ema_v1",
+  "control_policy": "FS-0",
+  "policies": {
+    "FS-0": {
+      "policy": "FS-0",
+      "arm": "all_frames_v1",
+      "description": "identity control: keep every candidate frame; bbox unchanged",
+      "drop_condition": null,
+      "edge_only": false,
+      "internal_holes": "KEEP",
+      "extra_hyperparameters": []
+    },
+    "FS-1": {
+      "policy": "FS-1",
+      "arm": "cross_chunk_singleton_edge_prune_v1",
+      "description": "drop left/right edge-connected runs where E_t >= 2 and S_t == 1, only when a higher-consensus core (S_t >= 2) exists",
+      "drop_condition": "E_t >= 2 and S_t == 1",
+      "core_requirement": "exists frame with S_t >= 2",
+      "edge_only": true,
+      "internal_holes": "KEEP",
+      "all_singleton_segment": "KEEP_ALL",
+      "extra_hyperparameters": []
+    },
+    "FS-2": {
+      "policy": "FS-2",
+      "arm": "cross_chunk_nonunanimous_edge_prune_v1",
+      "description": "drop left/right edge-connected runs where E_t >= 2 and S_t < E_t, only when a unanimity core (S_t == E_t) exists",
+      "drop_condition": "E_t >= 2 and S_t < E_t",
+      "core_requirement": "exists frame with S_t == E_t",
+      "edge_only": true,
+      "internal_holes": "KEEP",
+      "no_unanimity_core": "KEEP_ALL",
+      "extra_hyperparameters": []
+    }
+  },
+  "support_definition": {
+    "E_t": "number of original temporal inference chunks whose observable window covers frame t, using only the frozen Stage 5.1 mapping frames_in_segment(chunk_start_sec, chunk_end_sec)",
+    "S_t": "number of eligible chunks that produced at least one raw candidate covering frame t",
+    "provenance_source": "Stage 4.2 Frozen Candidate Cache record: source_chunks + raw_candidates",
+    "provenance_recoverable": true,
+    "no_reimplementation": "chunk/support membership reuses the Stage 5.1 canonical mapping"
+  },
+  "stage5_1_mapping": {
+    "helper": "aic_video_highlight.spatial_composition.frame_projection.frames_in_segment",
+    "rule": "CFR_FPS: ceil(start*fps) .. ceil(end*fps)-1, clamped to [0, frame_count); PTS_TABLE: bisect_left on exact fractional PTS; no local fps rounding, start floor or end ceil is reimplemented"
+  },
+  "metrics": {
+    "per_video": {
+      "TP_i": "|PredFrames_i ∩ RefFrames_i|",
+      "N_pred_i": "|PredFrames_i|",
+      "N_ref_i": "|RefFrames_i|",
+      "P_i": "TP_i / N_pred_i (0 if N_pred_i == 0)",
+      "R_i": "TP_i / N_ref_i (0 if N_ref_i == 0)",
+      "F1_i": "2*TP_i / (N_pred_i + N_ref_i) (0 if denominator == 0)"
+    },
+    "macro": [
+      "macro_precision",
+      "macro_recall",
+      "macro_f1"
+    ],
+    "macro_aggregation": "unweighted mean over videos",
+    "pooled": "DIAGNOSTIC_ONLY",
+    "proxy_label": "weak-frame temporal proxy (Macro-F1); NOT an official score"
+  },
+  "hard_gates": {
+    "H1_macro_recall_delta": "macro_recall_candidate - macro_recall_FS0 >= -0.02",
+    "H2_low_recall_rate_delta": "low_recall_rate_candidate - low_recall_rate_FS0 <= +0.02",
+    "H3_empty_prediction_count": "empty_prediction_count_candidate == 0",
+    "H4_precision": "macro_precision_candidate >= macro_precision_FS0",
+    "H5_f1": "macro_f1_candidate >= macro_f1_FS0",
+    "note": "no +1pp requirement; non-regression only"
+  },
+  "dev_winner_immutability": {
+    "rule": "Hard229 compares only FS-0 versus the exact candidate frozen by the immutable Dev promotion marker",
+    "forbidden": [
+      "swapping FS-1/FS-2 on Hard",
+      "Hard-time method tuning",
+      "manual override of the Dev winner"
+    ],
+    "override_allowed": false
+  },
+  "hard_conditional_protocol": {
+    "path": "configs/experiments/stage5/stage5_5_hard_protocol.json",
+    "status": "PREREGISTERED_BEFORE_DEV166"
+  },
+  "hard_execution_config": {
+    "path": "configs/experiments/stage5/stage5_5_hard_confirmation.json"
+  },
+  "frozen_inputs": {
+    "frozen_candidate_cache": {
+      "base": "outputs",
+      "path": "stage5/stage5_5_inputs/frozen_candidate_cache",
+      "sha256": null,
+      "format": "candidate_cache_dir",
+      "expected_global_semantic_sha256": "4b515a6d6fb47073413c686214c3fa5f97293655a3824241eb3305b9e7753246"
+    },
+    "role_manifest": {
+      "base": "outputs",
+      "path": "stage5/stage5_5_inputs/hard_stress_229.json",
+      "sha256": null,
+      "format": "json",
+      "expected_semantic_sha256": "81d734ee28ec38c096b908a573249c62713d358fb03ea135e5b55e1ae4405687"
+    },
+    "stage5_1_predictions": {
+      "base": "outputs",
+      "path": "stage5/stage5_1_dev_baseline/predictions_runA.jsonl",
+      "sha256": "ca44cc2831e935e82fa7b05820b1269d7f2cc0d360c030b5847a192ede11b9a5",
+      "format": "jsonl"
+    },
+    "stage5_1_metadata_cache": {
+      "base": "outputs",
+      "path": "stage5/stage5_1_dev_baseline/metadata_cache.json",
+      "sha256": "52e46f16cfe5012aa68cfb8d7440f4d53e31b7cc133add7e29b78d648a9d5675",
+      "format": "json"
+    },
+    "stage5_4_ts5_revised_predictions": {
+      "base": "outputs",
+      "path": "stage5/stage5_4_amendment4_revised_formal/ts5_canonical_state/predictions.jsonl",
+      "sha256": null,
+      "format": "jsonl",
+      "expected_method": "projected_state_canonical_center_ema_v1"
+    }
+  },
+  "decision_tree": {
+    "no_dev_winner": "FS0_FINAL_FROZEN, STAGE5_5_CLOSED",
+    "dev_winner_then_hard_all_pass": "FS_CANDIDATE_FINAL_FROZEN, STAGE5_5_CLOSED",
+    "dev_winner_then_hard_any_fail": "FS0_FINAL_FROZEN, STAGE5_5_CLOSED",
+    "near_pass": "FORBIDDEN",
+    "amendment": "FORBIDDEN",
+    "override": "FORBIDDEN",
+    "heldout": "ABSOLUTELY_LOCKED",
+    "official_test": "ABSOLUTELY_LOCKED"
+  },
+  "heldout_lock": {
+    "heldout392": "ABSOLUTELY_LOCKED",
+    "allowed_access": 0
+  },
+  "official_test_lock": {
+    "official_test": "ABSOLUTELY_LOCKED",
+    "allowed_access": 0
+  },
+  "forbidden": [
+    "Hard229 before a valid immutable Dev promotion marker",
+    "method swap on Hard",
+    "weak-frame proxy reported as an official score"
+  ],
+  "protocol_semantic_sha256": "c218f3d1e313a22f96a8b5c674da9a03adfdeccbf7da3303b60ef96a27d932ab"
+}
