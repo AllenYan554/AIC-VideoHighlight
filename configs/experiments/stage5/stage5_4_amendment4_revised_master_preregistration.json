@@ -62,16 +62,16 @@
   "artifacts": {
     "smoke": {
       "config": "configs/experiments/stage5/stage5_4_amendment4_revised_smoke.json",
-      "config_sha256": "bff6c29523ffe668f6bb87a09377d3522943ffc242cf20fa72f2cd65de9af5d1",
+      "config_sha256": "faf3a82c737c42c0c559225c1d2975b1980a7db803b4e2d9d5b290e6a0f1c3d0",
       "protocol": "configs/experiments/stage5/stage5_4_amendment4_revised_smoke_protocol.json",
-      "protocol_byte_sha256": "db6738b1a74c647f03d1fc84c6d4f2b0b5801513da66980bb7290c34161bfeae",
+      "protocol_byte_sha256": "e4c153a7935a2adbcb8c3ddedcc62b721715b1a339b352cba9befc22c722f705",
       "protocol_semantic_sha256": "b66d8cc5f4a7d2cf6cbd417b85994355eb7e590bc51d89c99e0a3d8ad6c5662e"
     },
     "formal": {
       "config": "configs/experiments/stage5/stage5_4_amendment4_revised_formal.json",
-      "config_sha256": "dbca19f690b286952ddd924cc942add0da5bb8527347008770a196145f565aa0",
+      "config_sha256": "676f38f6cec54626af59d0c93e764c80e2617cda41c3d82007ff266a4c735e21",
       "protocol": "configs/experiments/stage5/stage5_4_amendment4_revised_formal_protocol.json",
-      "protocol_byte_sha256": "c3aee402f808adafb756be658a5be4f751c490302fc1168c2f2ac2a55c4bcbc9",
+      "protocol_byte_sha256": "03987b8b8351d6202a0290418573cd191de4700b494e4f49c68d215a8c9ad8af",
       "protocol_semantic_sha256": "b31f78931a714d0e2021b49752951e1d492766717a2b1f2f372ec2e9224a7618"
     }
   },

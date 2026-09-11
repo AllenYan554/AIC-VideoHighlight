@@ -6,7 +6,7 @@
   "config_repo_path": "configs/experiments/stage5/stage5_4_amendment4_revised_smoke.json",
   "master_preregistration": "configs/experiments/stage5/stage5_4_amendment4_revised_master_preregistration.json",
   "protocol": "configs/experiments/stage5/stage5_4_amendment4_revised_smoke_protocol.json",
-  "protocol_sha256": "db6738b1a74c647f03d1fc84c6d4f2b0b5801513da66980bb7290c34161bfeae",
+  "protocol_sha256": "e4c153a7935a2adbcb8c3ddedcc62b721715b1a339b352cba9befc22c722f705",
   "protocol_semantic_sha256": "b66d8cc5f4a7d2cf6cbd417b85994355eb7e590bc51d89c99e0a3d8ad6c5662e",
   "output_run_id": "stage5_4_amendment4_revised_smoke",
   "output_directory": "outputs/stage5/stage5_4_amendment4_revised_smoke/",
