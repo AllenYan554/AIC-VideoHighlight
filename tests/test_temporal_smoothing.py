@@ -24,6 +24,7 @@ from aic_video_highlight.spatial_composition.temporal_smoothing import (
     PLACEMENT_TS2_ADAPTIVE_SMOOTHED,
     PLACEMENT_TS3_GUARDED_SMOOTHED,
     PLACEMENT_TS4_BBOX_GUARDED_SMOOTHED,
+    PLACEMENT_TS5_PROJECTED_STATE_SMOOTHED,
     PLACEMENT_TS1_SMOOTHED,
     RESET_FALLBACK,
     RESET_FRAME_GAP,
@@ -40,6 +41,7 @@ from aic_video_highlight.spatial_composition.temporal_smoothing import (
     smooth_video_sequence_adaptive,
     smooth_video_sequence_guarded,
     smooth_video_sequence_bbox_guarded,
+    smooth_video_sequence_projected_state_bbox_guarded,
     temporal_summary,
     transition_pairs,
     transition_triplets,
@@ -568,3 +570,115 @@ def test_bbox_maximum_overlap_closed_form_matches_exhaustive_discrete_geometry()
         assert (result.minimum, result.maximum) == (min(maximizers), max(maximizers))
         assert result.maximum_overlap == maximum
         assert result.fully_containable is (maximum == end - start)
+
+
+def test_projected_state_long_guard_run_keeps_every_state_feasible():
+    observations = [obs(0, 300.0)] + [obs(frame, 1300.0) for frame in range(1, 41)]
+    bboxes = {0: (200.0, 350.0, 400.0, 550.0)} | {
+        frame: (1100.0, 350.0, 1400.0, 550.0) for frame in range(1, 41)
+    }
+
+    projected = smooth_video_sequence_projected_state_bbox_guarded(
+        W, H, TW, TH, observations, bboxes
+    )
+
+    assert all(
+        item.safe_x_min <= item.x <= item.safe_x_max
+        and item.safe_y_min <= item.y <= item.safe_y_max
+        for item in projected
+    )
+    assert all(item.state_output_residual_l1 == 0.0 for item in projected)
+    assert all(
+        item.placement_status == PLACEMENT_TS5_PROJECTED_STATE_SMOOTHED
+        for item in projected
+    )
+    assert projected[1].guard_applied
+    assert projected[1].ema_center_x == (
+        projected[1].proposal_center_x + projected[1].guard_correction_x
+    )
+
+
+def test_projected_state_stationary_and_uniform_motion_are_stable_and_deterministic():
+    stationary = [obs(frame, 800.0) for frame in range(20)]
+    stationary_bboxes = {frame: (700.0, 350.0, 900.0, 550.0) for frame in range(20)}
+    stable = smooth_video_sequence_projected_state_bbox_guarded(
+        W, H, TW, TH, stationary, stationary_bboxes
+    )
+    assert len({(item.x, item.y, item.ema_center_x, item.ema_center_y) for item in stable}) == 1
+    assert not any(item.guard_applied for item in stable)
+
+    moving = [obs(frame, 400.0 + 20.0 * frame) for frame in range(20)]
+    moving_bboxes = {
+        frame: (330.0 + 20.0 * frame, 350.0, 470.0 + 20.0 * frame, 550.0)
+        for frame in range(20)
+    }
+    first = smooth_video_sequence_projected_state_bbox_guarded(
+        W, H, TW, TH, moving, moving_bboxes
+    )
+    replay = smooth_video_sequence_projected_state_bbox_guarded(
+        W, H, TW, TH, list(reversed(moving)), moving_bboxes
+    )
+    assert first == replay
+    assert all(a.x <= b.x for a, b in zip(first, first[1:]))
+
+
+def test_projected_state_sudden_jump_and_oversized_bbox_feed_back_exact_correction():
+    fw, fh = 1000, 600
+    observations = [obs(0, 200.0, 300.0), obs(1, 850.0, 300.0), obs(2, 850.0, 300.0)]
+    bboxes = {
+        0: (100.0, 50.0, 900.0, 550.0),
+        1: (100.0, 50.0, 900.0, 550.0),
+        2: (100.0, 50.0, 900.0, 550.0),
+    }
+    projected = smooth_video_sequence_projected_state_bbox_guarded(
+        fw, fh, TW, TH, observations, bboxes
+    )
+    assert all(item.bbox_larger_than_crop for item in projected)
+    assert all(item.guard_mode_x == "MAXIMUM_OVERLAP" for item in projected)
+    assert projected[1].ema_center_x == pytest.approx(
+        projected[1].proposal_center_x + projected[1].guard_correction_x
+    )
+    assert projected[2].proposal_center_x == pytest.approx(
+        0.5 * observations[2].ideal_center_x + 0.5 * projected[1].ema_center_x
+    )
+
+
+def test_projected_state_moving_feasible_boundary_remains_feasible_without_sign_flip():
+    observations = [obs(frame, 1200.0 + 5.0 * frame) for frame in range(30)]
+    bboxes = {
+        frame: (1050.0 + 5.0 * frame, 300.0, 1350.0 + 5.0 * frame, 600.0)
+        for frame in range(30)
+    }
+    projected = smooth_video_sequence_projected_state_bbox_guarded(
+        W, H, TW, TH, observations, bboxes
+    )
+    assert all(item.safe_x_min <= item.x <= item.safe_x_max for item in projected)
+    deltas = [current.x - previous.x for previous, current in zip(projected, projected[1:])]
+    assert all(delta >= 0 for delta in deltas)
+    assert_geometry_valid(projected)
+
+
+def test_projected_state_reuses_ts4_projection_and_reset_fallback_semantics():
+    observations = [
+        obs(0, 300.0), obs(1, 1300.0), obs(4, 1200.0),
+        obs(5, 800.0, fallback=True), obs(6, 400.0),
+    ]
+    bboxes = {
+        0: (200.0, 350.0, 400.0, 550.0),
+        1: (1100.0, 350.0, 1400.0, 550.0),
+        4: (1000.0, 350.0, 1300.0, 550.0),
+        6: (300.0, 350.0, 500.0, 550.0),
+    }
+    ts4 = smooth_video_sequence_bbox_guarded(W, H, TW, TH, observations, bboxes)
+    ts5 = smooth_video_sequence_projected_state_bbox_guarded(W, H, TW, TH, observations, bboxes)
+    assert (ts5[0].x, ts5[0].y) == (ts4[0].x, ts4[0].y)
+    assert ts5[2].reset_reason == ts4[2].reset_reason == RESET_FRAME_GAP
+    assert ts5[3].placement_status == ts4[3].placement_status == PLACEMENT_FALLBACK_CENTER_CROP
+    assert ts5[4].reset_reason == ts4[4].reset_reason == RESET_FALLBACK
+    for item in ts5:
+        if item.placement_status == PLACEMENT_FALLBACK_CENTER_CROP:
+            continue
+        state_placement = place_crop_from_center(
+            W, H, TW, TH, (item.ema_center_x, item.ema_center_y)
+        )[:2]
+        assert state_placement == (item.x, item.y)

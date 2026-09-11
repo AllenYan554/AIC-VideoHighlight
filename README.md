@@ -81,3 +81,20 @@ python scripts/experiments/stage1/run_highlight_retrieval.py \
 ## 当前下一步
 
 在 AutoDL RTX 4090D 环境依次完成：Qwen3.5-4B 与 vLLM 首次兼容性验证、文本 Smoke Test、视频 Smoke Test，然后对单个样例运行高光候选召回，并在确认 `train.jsonl` 的真实标注语义后才接入评估。
+### Stage 5.4 Amendment 4 / TS-5 (preregistered; not executed)
+
+TS-5 `projected_state_constrained_ema_v1` reuses the exact TS-4 maximum-overlap projection and feeds its exact integer correction back into the continuous EMA state. The method adds no hyperparameter. Smoke and Formal are intentionally separate commands; Formal fails closed unless the exact Smoke config, protocol, manifest, validation, Git HEAD, and promotion marker all match.
+
+Future user-triggered AutoDL Smoke:
+
+```powershell
+.\scripts\experiments\launch_experiment.ps1 -Experiment stage5_4_amendment4_smoke
+```
+
+Only after the Smoke output says `SMOKE_PASS_TO_FORMAL`, future user-triggered AutoDL Formal:
+
+```powershell
+.\scripts\experiments\launch_experiment.ps1 -Experiment stage5_4_amendment4_formal
+```
+
+Both launch entries are CPU-only (`gpu=NONE`) and enforce master branch, Windows/AutoDL/origin Git identity, clean worktrees, and no active vLLM/Qwen process before experiment creation. Heldout and Official Test access remain zero.

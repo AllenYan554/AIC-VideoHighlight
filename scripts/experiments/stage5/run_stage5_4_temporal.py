@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stage 5.4 Temporal Composition Stabilization runner (TS-0 through TS-4).
+"""Stage 5.4 Temporal Composition Stabilization runner (TS-0 through TS-5).
 
 Config-driven runner for Stage 5.4 Smoke/Formal/Amendment configs: consumes the frozen Stage 5.3 CMP-1
 composition as TS-0 (temporal control baseline), applies the deterministic TS-1
@@ -15,7 +15,10 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import json
+import math
+import os
 import shutil
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -25,7 +28,11 @@ from aic_video_highlight.experiment_runtime.hashing import canonical_sha256, fil
 from aic_video_highlight.experiment_runtime.io import atomic_write_json
 from aic_video_highlight.experiment_runtime.paths import EnvironmentPaths
 from aic_video_highlight.experiment_runtime.progress import ProgressReporter
-from aic_video_highlight.experiment_runtime.promotion import evaluate_smoke_promotion
+from aic_video_highlight.experiment_runtime.promotion import (
+    adjudicate_ts5_formal,
+    build_promotion_marker,
+    evaluate_smoke_promotion,
+)
 from aic_video_highlight.experiment_runtime.raw_report import render_raw_report, write_ai_report_inputs
 from aic_video_highlight.experiment_runtime.run_context import RunContext, RunIdentityMismatch
 from aic_video_highlight.experiment_runtime.shards import ShardStore
@@ -63,6 +70,7 @@ from aic_video_highlight.spatial_composition.temporal_smoothing import (
     smooth_video_sequence_adaptive,
     smooth_video_sequence_guarded,
     smooth_video_sequence_bbox_guarded,
+    smooth_video_sequence_projected_state_bbox_guarded,
     temporal_summary,
 )
 from aic_video_highlight.spatial_localization.subject_localization import SubjectPolicyConfig
@@ -80,9 +88,10 @@ MULTI_SUBJECT_COMPARISON_CANDIDATES = {
     "ts0_vs_ts2": "ts2",
     "ts0_vs_ts3": "ts3",
     "ts0_vs_ts4": "ts4",
+    "ts0_vs_ts5": "ts5",
 }
 
-TREATMENT_SIDES = ("ts1", "ts2", "ts3", "ts4")
+TREATMENT_SIDES = ("ts1", "ts2", "ts3", "ts4", "ts5")
 
 # Experiment ids that consume the Stage 5.3 frozen Full-Dev manifest and apply
 # the preregistered Formal contract (Full Dev166 + Confirmatory Dev142).
@@ -90,11 +99,13 @@ FORMAL_EXPERIMENT_IDS = (
     "stage5_4_formal",
     "stage5_4_amendment2_formal",
     "stage5_4_amendment3_formal",
+    "stage5_4_amendment4_formal",
 )
 AMENDMENT_SMOKE_EXPERIMENT_IDS = (
     "stage5_4_amendment_smoke",
     "stage5_4_amendment2_smoke",
     "stage5_4_amendment3_smoke",
+    "stage5_4_amendment4_smoke",
 )
 
 AMENDMENT3_FORMAL_REPORT_SECTIONS = (
@@ -102,6 +113,14 @@ AMENDMENT3_FORMAL_REPORT_SECTIONS = (
     "Temporal", "Spatial", "Strata", "BBox diagnostics", "Guard diagnostics",
     "Multi-subject", "Fallback", "Engineering gates", "Scientific gates",
     "Mechanism checks", "Limitations", "Conclusion", "Artifact paths",
+    "Git/Protocol/Config identities",
+)
+
+AMENDMENT4_REPORT_SECTIONS = (
+    "Identity", "Method", "TS-0~TS-5", "Smoke promotion", "Full Dev166",
+    "Dev142", "Temporal gates", "Spatial gates", "Mechanism checks",
+    "Diagnostic-only attribution", "TS-4 comparison", "Determinism",
+    "Engineering validation", "Final adjudication", "Artifact paths",
     "Git/Protocol/Config identities",
 )
 
@@ -245,8 +264,9 @@ def build_video_records(
     include_ts2: bool = False,
     include_ts3: bool = False,
     include_ts4: bool = False,
+    include_ts5: bool = False,
 ) -> tuple[list[dict], list[str]]:
-    """TS-0 composition plus TS-1 and optional TS-2/TS-3/TS-4 for one video."""
+    """TS-0 plus optional TS-1/2/3/4/5 treatments for one frozen video."""
     manifest_by_frame = {int(entry["frame"]): entry for entry in video["frames"]}
     frozen_boxes = {
         int(pred["frame"]): list(pred["bboxes"])
@@ -307,6 +327,11 @@ def build_video_records(
         if include_ts3
         else {}
     )
+    primary_bboxes = {
+        int(composed["frame"]): tuple(float(value) for value in composed["sanitized"]["xyxy"])
+        for composed in composed_records
+        if not composed["cmp1"]["fallback"]
+    }
     bbox_guarded_by_frame = (
         {
             item.frame: item
@@ -316,15 +341,21 @@ def build_video_records(
                 tw,
                 th,
                 observations,
-                {
-                    int(composed["frame"]): tuple(float(value) for value in composed["sanitized"]["xyxy"])
-                    for composed in composed_records
-                    if not composed["cmp1"]["fallback"]
-                },
+                primary_bboxes,
                 alpha=alpha,
             )
         }
         if include_ts4
+        else {}
+    )
+    projected_state_by_frame = (
+        {
+            item.frame: item
+            for item in smooth_video_sequence_projected_state_bbox_guarded(
+                width, height, tw, th, observations, primary_bboxes, alpha=alpha
+            )
+        }
+        if include_ts5
         else {}
     )
 
@@ -469,6 +500,58 @@ def build_video_records(
                     subject_visible_fraction(sanitized, ts4_rect), 6
                 )
                 ts4["subject_center_inside"] = subject_center_inside_crop(sanitized, ts4_rect)
+        ts5 = None
+        if include_ts5:
+            projected_state = projected_state_by_frame[frame]
+            ts5 = {
+                "x": projected_state.x,
+                "y": projected_state.y,
+                "w": projected_state.w,
+                "h": float(projected_state.h),
+                "crop_w": projected_state.crop_w,
+                "crop_h": projected_state.crop_h,
+                "placement_status": projected_state.placement_status,
+                "reset_reason": projected_state.reset_reason,
+                "ema_center_x": projected_state.ema_center_x,
+                "ema_center_y": projected_state.ema_center_y,
+                "proposal_center_x": projected_state.proposal_center_x,
+                "proposal_center_y": projected_state.proposal_center_y,
+                "projected_state_center_x": projected_state.projected_state_center_x,
+                "projected_state_center_y": projected_state.projected_state_center_y,
+                "state_output_residual_l1": projected_state.state_output_residual_l1,
+                "clamped_x": projected_state.clamped_x,
+                "clamped_y": projected_state.clamped_y,
+                "matches_ts0_placement": projected_state.matches_ts0_placement,
+                "guard_applied": projected_state.guard_applied,
+                "guard_correction_x": projected_state.guard_correction_x,
+                "guard_correction_y": projected_state.guard_correction_y,
+                "safe_x_min": projected_state.safe_x_min,
+                "safe_x_max": projected_state.safe_x_max,
+                "safe_y_min": projected_state.safe_y_min,
+                "safe_y_max": projected_state.safe_y_max,
+                "guard_mode_x": projected_state.guard_mode_x,
+                "guard_mode_y": projected_state.guard_mode_y,
+                "bbox_fully_containable": projected_state.bbox_fully_containable,
+                "bbox_larger_than_crop": projected_state.bbox_larger_than_crop,
+                "per_axis_infeasible_x": projected_state.per_axis_infeasible_x,
+                "per_axis_infeasible_y": projected_state.per_axis_infeasible_y,
+                "visible_fraction_before_guard": projected_state.visible_fraction_before_guard,
+                "visible_fraction_after_guard": projected_state.visible_fraction_after_guard,
+                "visible_gain": projected_state.visible_gain,
+                "subject_visible_fraction": None,
+                "subject_center_inside": False,
+            }
+            if composed["sanitized"]["status"] == SANITIZE_OK:
+                ts5_rect = crop_rect_from_xywh(
+                    projected_state.x,
+                    projected_state.y,
+                    projected_state.w,
+                    float(projected_state.h),
+                )
+                ts5["subject_visible_fraction"] = round(
+                    subject_visible_fraction(sanitized, ts5_rect), 6
+                )
+                ts5["subject_center_inside"] = subject_center_inside_crop(sanitized, ts5_rect)
         geometry = {
             **{
                 f"ts0_{key}": value
@@ -527,6 +610,19 @@ def build_video_records(
                     height,
                 ).items()
             })
+        if include_ts5:
+            projected_state = projected_state_by_frame[frame]
+            geometry.update({
+                f"ts5_{key}": value
+                for key, value in crop_geometry_valid(
+                    projected_state.x,
+                    projected_state.w,
+                    projected_state.y,
+                    derived_height(projected_state.w, tw, th),
+                    width,
+                    height,
+                ).items()
+            })
         record = {
                 "video_id": composed["video_id"],
                 "frame": frame,
@@ -561,6 +657,8 @@ def build_video_records(
             record["ts3"] = ts3
         if ts4 is not None:
             record["ts4"] = ts4
+        if ts5 is not None:
+            record["ts5"] = ts5
         records.append(record)
     return records, mismatches
 
@@ -648,6 +746,9 @@ def evaluate_gates(
     if "ts4" in gate.get("treatment_sides", []):
         result["ts4_crop_size_unchanged"] = bool(gate["crop_size_unchanged"])
         result["ts4_fallback_placement_unchanged"] = bool(gate["fallback_placement_unchanged"])
+    if "ts5" in gate.get("treatment_sides", []):
+        result["ts5_crop_size_unchanged"] = bool(gate["crop_size_unchanged"])
+        result["ts5_fallback_placement_unchanged"] = bool(gate["fallback_placement_unchanged"])
     return result
 
 
@@ -780,7 +881,7 @@ def guard_projection_diagnostics(records: list[dict], side: str = "ts3") -> dict
     length, correction-magnitude distributions and per-stratum breakdowns. None of
     these values feeds a promotion gate in any Stage 5.4 protocol.
     """
-    if side not in ("ts3", "ts4"):
+    if side not in ("ts3", "ts4", "ts5"):
         raise ValueError(f"unsupported guard side: {side}")
     eligible = [record for record in records if side in record and not record["ts0"]["fallback"]]
     if not eligible:
@@ -870,38 +971,40 @@ def guard_projection_diagnostics(records: list[dict], side: str = "ts3") -> dict
     }
 
 
-def bbox_guard_diagnostics(records: list[dict]) -> dict | None:
-    """TS-4 bbox-feasibility and visibility-gain diagnostics (never a gate)."""
-    eligible = [record for record in records if "ts4" in record and not record["ts0"]["fallback"]]
+def bbox_guard_diagnostics(records: list[dict], side: str = "ts4") -> dict | None:
+    """BBox feasibility/visibility diagnostics for TS-4 or TS-5; never a gate."""
+    if side not in ("ts4", "ts5"):
+        raise ValueError(f"unsupported bbox guard side: {side}")
+    eligible = [record for record in records if side in record and not record["ts0"]["fallback"]]
     if not eligible:
         return None
 
     def summarize(bucket: list[dict]) -> dict:
-        gains = [float(record["ts4"]["visible_gain"]) for record in bucket]
-        before = [float(record["ts4"]["visible_fraction_before_guard"]) for record in bucket]
-        after = [float(record["ts4"]["visible_fraction_after_guard"]) for record in bucket]
+        gains = [float(record[side]["visible_gain"]) for record in bucket]
+        before = [float(record[side]["visible_fraction_before_guard"]) for record in bucket]
+        after = [float(record[side]["visible_fraction_after_guard"]) for record in bucket]
         return {
             "eligible": len(bucket),
             "subject_bbox_fully_containable_count": sum(
-                bool(record["ts4"]["bbox_fully_containable"]) for record in bucket
+                bool(record[side]["bbox_fully_containable"]) for record in bucket
             ),
             "bbox_larger_than_crop_count": sum(
-                bool(record["ts4"]["bbox_larger_than_crop"]) for record in bucket
+                bool(record[side]["bbox_larger_than_crop"]) for record in bucket
             ),
             "full_containment_projection_count": sum(
-                bool(record["ts4"]["guard_applied"])
-                and bool(record["ts4"]["bbox_fully_containable"])
+                bool(record[side]["guard_applied"])
+                and bool(record[side]["bbox_fully_containable"])
                 for record in bucket
             ),
             "maximum_overlap_projection_count": sum(
-                bool(record["ts4"]["guard_applied"])
-                and not bool(record["ts4"]["bbox_fully_containable"])
+                bool(record[side]["guard_applied"])
+                and not bool(record[side]["bbox_fully_containable"])
                 for record in bucket
             ),
-            "no_correction_count": sum(not bool(record["ts4"]["guard_applied"]) for record in bucket),
+            "no_correction_count": sum(not bool(record[side]["guard_applied"]) for record in bucket),
             "per_axis_infeasible_count": {
-                "horizontal": sum(bool(record["ts4"]["per_axis_infeasible_x"]) for record in bucket),
-                "vertical": sum(bool(record["ts4"]["per_axis_infeasible_y"]) for record in bucket),
+                "horizontal": sum(bool(record[side]["per_axis_infeasible_x"]) for record in bucket),
+                "vertical": sum(bool(record[side]["per_axis_infeasible_y"]) for record in bucket),
             },
             "visible_fraction_before_guard": temporal_summary(before),
             "visible_fraction_after_guard": temporal_summary(after),
@@ -912,8 +1015,8 @@ def bbox_guard_diagnostics(records: list[dict]) -> dict | None:
     ts3_eligible = [record for record in eligible if "ts3" in record]
     if ts3_eligible:
         ts4_l1 = [
-            abs(float(record["ts4"]["guard_correction_x"]))
-            + abs(float(record["ts4"]["guard_correction_y"]))
+            abs(float(record[side]["guard_correction_x"]))
+            + abs(float(record[side]["guard_correction_y"]))
             for record in ts3_eligible
         ]
         ts3_l1 = [
@@ -922,30 +1025,110 @@ def bbox_guard_diagnostics(records: list[dict]) -> dict | None:
             for record in ts3_eligible
         ]
         payload["relative_to_ts3"] = {
-            "ts4_minus_ts3_activation_count": sum(
-                bool(record["ts4"]["guard_applied"]) for record in ts3_eligible
+            f"{side}_minus_ts3_activation_count": sum(
+                bool(record[side]["guard_applied"]) for record in ts3_eligible
             ) - sum(bool(record["ts3"]["guard_applied"]) for record in ts3_eligible),
-            "ts4_minus_ts3_activation_rate": round(
+            f"{side}_minus_ts3_activation_rate": round(
                 (
-                    sum(bool(record["ts4"]["guard_applied"]) for record in ts3_eligible)
+                    sum(bool(record[side]["guard_applied"]) for record in ts3_eligible)
                     - sum(bool(record["ts3"]["guard_applied"]) for record in ts3_eligible)
                 ) / len(ts3_eligible),
                 6,
             ),
             "ts3_absolute_correction_l1": temporal_summary(ts3_l1),
-            "ts4_absolute_correction_l1": temporal_summary(ts4_l1),
-            "ts4_minus_ts3_correction_l1": temporal_summary([
+            f"{side}_absolute_correction_l1": temporal_summary(ts4_l1),
+            f"{side}_minus_ts3_correction_l1": temporal_summary([
                 ts4 - ts3 for ts4, ts3 in zip(ts4_l1, ts3_l1)
             ]),
         }
     payload.update({
         "role": "DIAGNOSTIC_ONLY",
+        "treatment_side": side,
         "strata": {
             stratum: summarize([record for record in eligible if record["stratum"] == stratum])
             for stratum in ("near_center", "moderately_off_center", "strongly_off_center")
         },
     })
     return payload
+
+
+def projected_state_attribution_diagnostics(records: list[dict]) -> dict | None:
+    """TS-5 guard/acceleration attribution, strictly DIAGNOSTIC_ONLY."""
+    from aic_video_highlight.spatial_composition.temporal_diagnostics import (
+        acceleration_norm,
+        crop_center_x,
+    )
+
+    eligible = [
+        record for record in records if "ts5" in record and not record["ts0"]["fallback"]
+    ]
+    if not eligible:
+        return None
+    acceleration_buckets = {
+        "guard_active": [],
+        "guard_inactive": [],
+        "inactive_to_active": [],
+        "active_to_inactive": [],
+    }
+    boundary_movements: list[float] = []
+    by_video: dict[str, list[dict]] = {}
+    for record in records:
+        if "ts5" in record:
+            by_video.setdefault(record["video_id"], []).append(record)
+    for video_records in by_video.values():
+        ordered = sorted(video_records, key=lambda record: int(record["frame"]))
+        for previous, current in zip(ordered, ordered[1:]):
+            if previous["ts0"]["fallback"] or current["ts0"]["fallback"]:
+                continue
+            if int(current["frame"]) - int(previous["frame"]) != 1:
+                continue
+            boundary_movements.append(sum(
+                abs(float(current["ts5"][key]) - float(previous["ts5"][key]))
+                for key in ("safe_x_min", "safe_x_max", "safe_y_min", "safe_y_max")
+            ))
+        for first, second, third in zip(ordered, ordered[1:], ordered[2:]):
+            if any(record["ts0"]["fallback"] for record in (first, second, third)):
+                continue
+            if (
+                int(second["frame"]) - int(first["frame"]) != 1
+                or int(third["frame"]) - int(second["frame"]) != 1
+            ):
+                continue
+            width = int(third["image_width"])
+            first_delta = crop_center_x(second["ts5"]["x"], second["ts5"]["w"]) - crop_center_x(
+                first["ts5"]["x"], first["ts5"]["w"]
+            )
+            second_delta = crop_center_x(third["ts5"]["x"], third["ts5"]["w"]) - crop_center_x(
+                second["ts5"]["x"], second["ts5"]["w"]
+            )
+            value = acceleration_norm(first_delta, second_delta, width)
+            second_active = bool(second["ts5"]["guard_applied"])
+            third_active = bool(third["ts5"]["guard_applied"])
+            acceleration_buckets["guard_active" if third_active else "guard_inactive"].append(value)
+            if not second_active and third_active:
+                acceleration_buckets["inactive_to_active"].append(value)
+            elif second_active and not third_active:
+                acceleration_buckets["active_to_inactive"].append(value)
+
+    corrections = [
+        abs(float(record["ts5"]["guard_correction_x"]))
+        + abs(float(record["ts5"]["guard_correction_y"]))
+        for record in eligible
+    ]
+    return {
+        "role": "DIAGNOSTIC_ONLY",
+        "decision_inputs": False,
+        "pre_projection_correction_l1_px": temporal_summary(corrections),
+        "proposal_projected_state_displacement_l1_px": temporal_summary(corrections),
+        "guard": guard_projection_diagnostics(records, "ts5"),
+        "acceleration_by_guard_state": {
+            name: temporal_summary(values) for name, values in acceleration_buckets.items()
+        },
+        "feasible_boundary_movement_l1_px": temporal_summary(boundary_movements),
+        "state_output_residual_l1_px": temporal_summary([
+            float(record["ts5"]["state_output_residual_l1"]) for record in eligible
+        ]),
+    }
 
 
 def validate_amendment_contract(config: dict, protocol: dict, manifest: dict) -> dict:
@@ -1070,6 +1253,103 @@ def _expected_ts4_definition() -> dict:
     }
 
 
+def _expected_ts5_definition() -> dict:
+    return {
+        "method": "projected_state_constrained_ema_v1",
+        "proposal": "ema_crop_center_v1 fixed alpha=0.5",
+        "projection": "reuse_ts4_nearest_point_on_discrete_maximum_overlap_rectangle",
+        "state_update": "continuous_ema_state_plus_exact_integer_projection_correction",
+        "output": "placement_of_projected_recursive_state",
+        "correction_feedback_to_ema_state": True,
+        "extra_hyperparameters": [],
+    }
+
+
+def _protocol_semantic_sha(protocol: dict) -> str:
+    return canonical_sha256({
+        key: value for key, value in protocol.items() if key != "protocol_semantic_sha256"
+    })
+
+
+def _validate_master_preregistration(config: dict, protocol: dict) -> dict:
+    master_path = Path(config["master_preregistration"])
+    if not master_path.is_file():
+        raise FrozenInputError("Amendment 4 master preregistration is missing")
+    master = json.loads(master_path.read_text(encoding="utf-8"))
+    role = "formal" if config["experiment_id"].endswith("_formal") else "smoke"
+    binding = master.get("artifacts", {}).get(role, {})
+    checks = {
+        "master_status": master.get("status")
+        == "PREREGISTERED_BEFORE_ANY_AMENDMENT4_EXPERIMENT",
+        "method": master.get("method") == _expected_ts5_definition(),
+        "config_path": binding.get("config") == str(config.get("config_repo_path")),
+        "config_sha": binding.get("config_sha256") == file_sha256(Path(config["config_repo_path"])),
+        "protocol_path": binding.get("protocol") == config.get("protocol"),
+        "protocol_byte_sha": binding.get("protocol_byte_sha256")
+        == file_sha256(Path(config["protocol"])),
+        "protocol_semantic_sha": binding.get("protocol_semantic_sha256")
+        == _protocol_semantic_sha(protocol),
+    }
+    if not all(checks.values()):
+        raise FrozenInputError(f"Amendment 4 master preregistration drift: {checks}")
+    return checks
+
+
+def validate_amendment4_smoke_contract(config: dict, protocol: dict, manifest: dict) -> dict:
+    """Validate frozen TS-5 Smoke science and identities without executing it."""
+    expected_status = "PREREGISTERED_BEFORE_ANY_AMENDMENT4_EXPERIMENT"
+    if config.get("experiment_id") != "stage5_4_amendment4_smoke":
+        raise FrozenInputError("unexpected Amendment 4 Smoke experiment id")
+    if protocol.get("status") != expected_status:
+        raise FrozenInputError("Amendment 4 Smoke protocol is not preregistered")
+    smoothing = config.get("temporal_smoothing", {})
+    if (
+        smoothing.get("alpha") != 0.5
+        or smoothing.get("ts4") != _expected_ts4_definition()
+        or smoothing.get("ts5") != _expected_ts5_definition()
+        or smoothing.get("reset_rules") != ["NEW_VIDEO", "FRAME_GAP_GT_1", "FALLBACK"]
+    ):
+        raise FrozenInputError("Amendment 4 method, projection, alpha or reset semantics drifted")
+    if manifest.get("video_count") != 24 or manifest.get("frame_count") != 1080:
+        raise FrozenInputError("Amendment 4 must reuse frozen Smoke24")
+    spec = config.get("manifest", {})
+    if (
+        manifest.get("manifest_id") != spec.get("manifest_id")
+        or manifest.get("manifest_sha256") != spec.get("expected_manifest_sha256")
+    ):
+        raise FrozenInputError("Amendment 4 Smoke24 identity mismatch")
+    actual_byte_sha = file_sha256(Path(config["protocol"]))
+    actual_semantic_sha = _protocol_semantic_sha(protocol)
+    if (
+        config.get("protocol_sha256") != actual_byte_sha
+        or config.get("protocol_semantic_sha256") != actual_semantic_sha
+        or protocol.get("protocol_semantic_sha256") != actual_semantic_sha
+    ):
+        raise FrozenInputError("Amendment 4 Smoke protocol byte/semantic binding mismatch")
+    if config.get("decision_gates") != protocol.get("decision_gates"):
+        raise FrozenInputError("Amendment 4 Smoke gates drifted")
+    if int(config.get("heldout_lock", {}).get("allowed_access", -1)) != 0:
+        raise FrozenInputError("Heldout access must remain zero")
+    if int(config.get("official_test_lock", {}).get("allowed_access", -1)) != 0:
+        raise FrozenInputError("Official Test access must remain zero")
+    master_checks = _validate_master_preregistration(config, protocol)
+    return {
+        "validation": "PASS",
+        "protocol_status": expected_status,
+        "protocol_sha256": actual_byte_sha,
+        "protocol_semantic_sha256": actual_semantic_sha,
+        "algorithm": _expected_ts5_definition(),
+        "manifest_id": manifest["manifest_id"],
+        "manifest_sha256": manifest["manifest_sha256"],
+        "videos": manifest["video_count"],
+        "frames": manifest["frame_count"],
+        "master_preregistration": master_checks,
+        "gpu_requirement": "NONE",
+        "heldout_access": 0,
+        "official_test_access": 0,
+    }
+
+
 def validate_amendment3_smoke_contract(config: dict, protocol: dict, manifest: dict) -> dict:
     """Validate jointly preregistered, parameter-free TS-4 Smoke identity."""
     if config.get("experiment_id") != "stage5_4_amendment3_smoke":
@@ -1131,6 +1411,73 @@ def load_amendment3_promotion_evidence(config: dict, environment: EnvironmentPat
     return {"decision": decision, "validation": validation, "output": str(output)}
 
 
+def write_amendment4_promotion_marker(
+    output: Path, config: dict, protocol: dict, validation: dict, execution_head: str
+) -> dict:
+    """Persist the exact fail-closed TS-5 Smoke decision after validation."""
+    validation_path = output / "machine/validation.json"
+    marker = build_promotion_marker(
+        validation,
+        identity_ok=True,
+        method=_expected_ts5_definition()["method"],
+        smoke_manifest_identity=config["manifest"]["expected_manifest_sha256"],
+        execution_head=execution_head,
+        protocol_byte_sha256=file_sha256(Path(config["protocol"])),
+        protocol_semantic_sha256=_protocol_semantic_sha(protocol),
+        config_sha256=file_sha256(Path(config["config_repo_path"])),
+        validation_sha256=file_sha256(validation_path),
+    )
+    atomic_write_json(output / "machine/promotion_decision.json", marker)
+    return marker
+
+
+def load_amendment4_promotion_evidence(config: dict, environment: EnvironmentPaths) -> dict:
+    """Authorize TS-5 Formal only from an exact immutable Smoke marker."""
+    spec = config.get("promotion_authorization", {})
+    output = environment.outputs / Path(spec.get("smoke_output_directory", ""))
+    paths = {
+        "marker": output / "machine/promotion_decision.json",
+        "validation": output / "machine/validation.json",
+        "config": output / "snapshots/config.json",
+        "protocol": output / "snapshots/protocol.json",
+    }
+    if not all(path.is_file() for path in paths.values()):
+        raise FrozenInputError("BLOCKED_BEFORE_EXECUTION: TS-5 Smoke promotion evidence incomplete")
+    marker = json.loads(paths["marker"].read_text(encoding="utf-8"))
+    validation = json.loads(paths["validation"].read_text(encoding="utf-8"))
+    current_head = RunContext(
+        config["experiment_id"], config["stage"], config["run_type"], environment.repo,
+        resolve_experiment_paths(environment, config), Path(config["config_repo_path"]),
+        Path(config["protocol"]),
+    ).identity()["git_head"]
+    identity_ok = all((
+        file_sha256(paths["config"]) == spec.get("expected_smoke_config_sha256"),
+        file_sha256(paths["protocol"]) == spec.get("expected_smoke_protocol_sha256"),
+        marker.get("schema_version") == "aic.smoke-promotion/v1",
+        marker.get("method") == _expected_ts5_definition()["method"],
+        marker.get("smoke_manifest_identity") == spec.get("expected_smoke_manifest_sha256"),
+        marker.get("execution_head") == current_head,
+        marker.get("protocol_byte_sha256") == spec.get("expected_smoke_protocol_sha256"),
+        marker.get("protocol_semantic_sha256") == spec.get("expected_smoke_protocol_semantic_sha256"),
+        marker.get("config_sha256") == spec.get("expected_smoke_config_sha256"),
+        marker.get("validation_sha256") == file_sha256(paths["validation"]),
+        marker.get("override_allowed") is False,
+    ))
+    decision = evaluate_smoke_promotion(validation, identity_ok=identity_ok)
+    if not (
+        decision["formal_authorized"]
+        and marker.get("all_pass") is True
+        and marker.get("decision") == "AUTHORIZE_FORMAL"
+    ):
+        raise FrozenInputError("BLOCKED_BEFORE_EXECUTION: SMOKE_PASS_TO_FORMAL denied")
+    return {
+        "decision": decision,
+        "marker": marker,
+        "validation": validation,
+        "output": str(output),
+    }
+
+
 def build_analysis_set_identity(
     manifest: dict, dataset_name: str, definition: str, include_video_ids: set[str]
 ) -> dict:
@@ -1171,6 +1518,7 @@ def validate_formal_contract(config: dict, protocol: dict, manifest: dict, smoke
         "DRAFT",
         "PREREGISTERED_BEFORE_FORMAL",
         "PREREGISTERED_BEFORE_ANY_AMENDMENT3_EXPERIMENT",
+        "PREREGISTERED_BEFORE_ANY_AMENDMENT4_EXPERIMENT",
     }:
         raise ValueError("formal protocol status is invalid")
     if config["experiment_id"] == "stage5_4_amendment2_formal":
@@ -1190,6 +1538,12 @@ def validate_formal_contract(config: dict, protocol: dict, manifest: dict, smoke
             raise ValueError("Amendment 3 Formal output run identity drifted")
         if protocol.get("execution_authorization") != "SMOKE_PASS_TO_FORMAL_ONLY":
             raise ValueError("Amendment 3 Formal promotion rule drifted")
+    if config["experiment_id"] == "stage5_4_amendment4_formal":
+        expected_output_run_id = protocol.get("runtime_contract", {}).get("output_run_id")
+        if not expected_output_run_id or config.get("output_run_id") != expected_output_run_id:
+            raise ValueError("Amendment 4 Formal output run identity drifted")
+        if protocol.get("execution_authorization") != "SMOKE_PASS_TO_FORMAL_ONLY":
+            raise ValueError("Amendment 4 Formal promotion rule drifted")
     if float(config["temporal_smoothing"]["alpha"]) != 0.5:
         raise ValueError("Formal alpha must remain exactly 0.5")
     if config["temporal_smoothing"].get("reset_rules") != [
@@ -1197,7 +1551,8 @@ def validate_formal_contract(config: dict, protocol: dict, manifest: dict, smoke
     ]:
         raise ValueError("Formal reset rules drifted")
     if config["experiment_id"] in {
-        "stage5_4_amendment2_formal", "stage5_4_amendment3_formal"
+        "stage5_4_amendment2_formal", "stage5_4_amendment3_formal",
+        "stage5_4_amendment4_formal",
     }:
         expected_ts2 = {
             "method": "motion_adaptive_ema_v1",
@@ -1220,9 +1575,24 @@ def validate_formal_contract(config: dict, protocol: dict, manifest: dict, smoke
             raise ValueError("Formal TS-3 guard definition drifted from the frozen Smoke algorithm")
         if ts3.get("extra_hyperparameters"):
             raise ValueError("Formal TS-3 must remain parameter-free")
-    if config["experiment_id"] == "stage5_4_amendment3_formal":
+    if config["experiment_id"] in {
+        "stage5_4_amendment3_formal", "stage5_4_amendment4_formal"
+    }:
         if config["temporal_smoothing"].get("ts4") != _expected_ts4_definition():
             raise ValueError("Formal TS-4 bbox guard definition drifted")
+    if config["experiment_id"] == "stage5_4_amendment4_formal":
+        if config["temporal_smoothing"].get("ts5") != _expected_ts5_definition():
+            raise ValueError("Formal TS-5 projected-state definition drifted")
+        actual_byte_sha = file_sha256(Path(config["protocol"]))
+        actual_semantic_sha = _protocol_semantic_sha(protocol)
+        if (
+            config.get("protocol_sha256") != actual_byte_sha
+            or config.get("protocol_semantic_sha256") != actual_semantic_sha
+            or protocol.get("protocol_semantic_sha256") != actual_semantic_sha
+            or config.get("decision_gates") != protocol.get("decision_gates")
+        ):
+            raise ValueError("Amendment 4 Formal protocol/gate identity drifted")
+        _validate_master_preregistration(config, protocol)
     if manifest.get("manifest_sha256") != config["manifest"]["expected_manifest_sha256"]:
         raise ValueError("Stage 5.3 Formal manifest identity mismatch")
     if int(manifest.get("video_count", -1)) != int(config["manifest"]["expected_video_count"]):
@@ -1261,6 +1631,11 @@ def validate_formal_contract(config: dict, protocol: dict, manifest: dict, smoke
         raise ValueError("Confirmatory Dev142 overlaps Smoke24")
     if int(config["heldout_lock"].get("allowed_access", -1)) != 0:
         raise ValueError("Heldout access must be zero")
+    if (
+        config["experiment_id"] == "stage5_4_amendment4_formal"
+        and int(config.get("official_test_lock", {}).get("allowed_access", -1)) != 0
+    ):
+        raise ValueError("Official Test access must be zero")
     forbidden_input_tokens = ("heldout", "hard", "official_test", "official-test")
     for name, entry in config["inputs"].items():
         candidate = f"{name} {entry.get('path', '')}".lower()
@@ -1578,6 +1953,108 @@ def evaluate_amendment3_formal_scientific_gates(
     }
 
 
+def evaluate_amendment4_scientific_gates(
+    records: list[dict],
+    pooled: dict,
+    guardrails: dict,
+    gate_config: dict,
+    *,
+    role: str = "AMENDMENT4_SMOKE_PREREGISTERED_GATES / TS-5",
+) -> dict:
+    """Frozen 9 gates plus preregistered TS-5 mechanism invariants."""
+    ts5_gate_result = _evaluate_one_analysis_set(
+        build_analysis_metrics(_project_treatment(records, "ts5")), gate_config
+    )
+    eligible = [record for record in records if not record["ts0"]["fallback"]]
+    def canonical_projection_matches(record: dict) -> bool:
+        item = record["ts5"]
+        proposal_x = min(max(
+            math.floor(float(item["proposal_center_x"]) - int(item["w"]) / 2.0), 0
+        ), int(record["image_width"]) - int(item["w"]))
+        proposal_y = min(max(
+            math.floor(float(item["proposal_center_y"]) - int(item["crop_h"]) / 2.0), 0
+        ), math.floor(float(record["image_height"]) - float(item["h"])))
+        projected_x = min(max(proposal_x, int(item["safe_x_min"])), int(item["safe_x_max"]))
+        projected_y = min(max(proposal_y, int(item["safe_y_min"])), int(item["safe_y_max"]))
+        return (projected_x, projected_y) == (int(item["x"]), int(item["y"]))
+
+    checks = {
+        "projected_state_placement_inside_ts4_feasible_set_every_frame": {
+            "eligible": len(eligible),
+            "violations": sum(not (
+                int(record["ts5"]["safe_x_min"]) <= int(record["ts5"]["x"]) <= int(record["ts5"]["safe_x_max"])
+                and int(record["ts5"]["safe_y_min"]) <= int(record["ts5"]["y"]) <= int(record["ts5"]["safe_y_max"])
+            ) for record in eligible),
+        },
+        "output_placement_equals_projected_state_placement": {
+            "eligible": len(eligible),
+            "violations": sum(float(record["ts5"]["state_output_residual_l1"]) != 0.0 for record in eligible),
+        },
+        "bbox_maximum_overlap_objective_realized_every_frame": {
+            "eligible": len(eligible),
+            "violations": sum(abs(
+                float(record["ts5"]["visible_fraction_after_guard"])
+                - float(record["ts5"]["subject_visible_fraction"])
+            ) > 1e-6 for record in eligible),
+        },
+        "ts4_projection_operator_reused_exactly": {
+            "eligible": len(eligible),
+            "violations": sum(not canonical_projection_matches(record) for record in eligible),
+        },
+        "reset_and_fallback_semantics_equal_ts4": {
+            "frames": len(records),
+            "violations": sum(
+                record["ts5"]["reset_reason"] != record["ts4"]["reset_reason"]
+                or (
+                    record["ts0"]["fallback"]
+                    and (record["ts5"]["x"], record["ts5"]["y"])
+                    != (record["ts4"]["x"], record["ts4"]["y"])
+                )
+                for record in records
+            ),
+        },
+        "bbox_visibility_pointwise_equal_ts4": {
+            "eligible": len(eligible),
+            "violations": sum(abs(
+                float(record["ts5"]["subject_visible_fraction"])
+                - float(record["ts4"]["subject_visible_fraction"])
+            ) > 1e-6 for record in eligible),
+        },
+    }
+    for check in checks.values():
+        if "pass" not in check:
+            check["pass"] = bool(check.get("eligible", check.get("frames", 0))) and check["violations"] == 0
+    all_pass = ts5_gate_result["pass"] and all(check["pass"] for check in checks.values())
+    return {
+        "status": "PASS" if all_pass else "FAIL",
+        "role": role,
+        "ts5_vs_ts0": ts5_gate_result,
+        "amendment4_mechanism_checks": checks,
+        "all_pass": all_pass,
+    }
+
+
+def evaluate_amendment4_formal_scientific_gates(
+    analysis_set_records: dict[str, list[dict]], gate_config: dict
+) -> dict:
+    results = {
+        name: evaluate_amendment4_scientific_gates(
+            records,
+            pooled_distributions(records),
+            spatial_metrics_for_all_treatments(records),
+            gate_config,
+            role="AMENDMENT4_FORMAL_PREREGISTERED_GATES / TS-5",
+        )
+        for name, records in analysis_set_records.items()
+    }
+    all_pass = bool(results) and all(result["all_pass"] for result in results.values())
+    return {
+        "status": "PASS" if all_pass else "FAIL",
+        "analysis_sets": results,
+        "all_pass": all_pass,
+    }
+
+
 def validate_formal_frozen_dependencies(
     config: dict, bindings: list[InputBinding], inputs, manifest: dict
 ) -> dict:
@@ -1697,6 +2174,16 @@ def build_analysis_metrics_all_treatments(records: list[dict]) -> dict:
             records, "ts4"
         )
         metrics["bbox_guard_diagnostics"] = bbox_guard_diagnostics(records)
+    if records and "ts5" in records[0]:
+        metrics["ts5_guard_projection_diagnostics"] = guard_projection_diagnostics(
+            records, "ts5"
+        )
+        metrics["ts5_bbox_guard_diagnostics"] = bbox_guard_diagnostics(
+            records, side="ts5"
+        )
+        metrics["projected_state_attribution_diagnostics"] = (
+            projected_state_attribution_diagnostics(records)
+        )
     return metrics
 
 
@@ -1752,6 +2239,177 @@ def resolve_experiment_paths(environment: EnvironmentPaths, config: dict):
     """Resolve an evidence-preserving run directory while retaining registry identity."""
     output_run_id = config.get("output_run_id", config["experiment_id"])
     return environment.for_experiment(config["stage"], output_run_id)
+
+
+def amendment4_execution_preflight(
+    config: dict,
+    environment: EnvironmentPaths,
+    bindings: list[InputBinding],
+    paths,
+    *,
+    resume: bool,
+) -> dict:
+    """Fail before run creation unless every future TS-5 execution identity closes."""
+    def git(*args: str) -> str:
+        return subprocess.check_output(
+            ["git", "-C", str(environment.repo), *args], text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+
+    expected_head = os.environ.get("AIC_EXPECTED_GIT_HEAD")
+    windows_origin_head = os.environ.get("AIC_WINDOWS_ORIGIN_MASTER_HEAD")
+    windows_clean = os.environ.get("AIC_WINDOWS_GIT_CLEAN") == "1"
+    try:
+        head = git("rev-parse", "HEAD")
+        origin_head = git("rev-parse", "origin/master")
+        branch = git("branch", "--show-current")
+        dirty = git("status", "--porcelain")
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise FrozenInputError("BLOCKED_BEFORE_EXECUTION: Git identity unavailable") from exc
+    git_checks = {
+        "A_windows_repo_head_supplied": bool(expected_head),
+        "B_origin_master_head_matches_windows": origin_head == windows_origin_head == expected_head,
+        "C_autodl_execution_head_matches_windows": head == expected_head,
+        "E_windows_worktree_clean_attested": windows_clean,
+        "F_autodl_worktree_clean": not dirty,
+        "branch_master": branch == "master",
+    }
+    if not all(git_checks.values()):
+        raise FrozenInputError(f"BLOCKED_BEFORE_EXECUTION: Git preflight failed: {git_checks}")
+
+    manifest_path = paths.output / "run_manifest.json"
+    if resume and not manifest_path.is_file():
+        raise FrozenInputError("BLOCKED_BEFORE_EXECUTION: resume requested without run_manifest")
+    if paths.output.exists() and not manifest_path.is_file():
+        raise FrozenInputError("BLOCKED_BEFORE_EXECUTION: output directory conflicts with no run identity")
+    if manifest_path.is_file() and not resume:
+        raise FrozenInputError("BLOCKED_BEFORE_EXECUTION: existing run requires explicit --resume")
+
+    resume_checks = {
+        "D_run_manifest_execution_head": True,
+        "W_output_directory_no_conflict": not paths.output.exists() or resume,
+        "X_resume_identity_legal": not resume,
+    }
+    if resume:
+        prior = json.loads(manifest_path.read_text(encoding="utf-8"))
+        expected_resume = {
+            "experiment_id": config["experiment_id"],
+            "stage": config["stage"],
+            "run_type": config["run_type"],
+            "git_head": head,
+            "config_sha256": file_sha256(Path(config["config_repo_path"])),
+            "protocol_sha256": file_sha256(Path(config["protocol"])),
+        }
+        identity_ok = all(prior.get(key) == value for key, value in expected_resume.items())
+        resume_checks.update({
+            "D_run_manifest_execution_head": prior.get("git_head") == head,
+            "X_resume_identity_legal": identity_ok,
+        })
+        if not all(resume_checks.values()):
+            raise FrozenInputError(
+                f"BLOCKED_BEFORE_EXECUTION: run identity failed: {resume_checks}"
+            )
+
+    unrelated_processes_absent = True
+    if os.name != "nt":
+        try:
+            subprocess.check_output(
+                ["pgrep", "-af", "[v]llm|[q]wen"], text=True,
+                stderr=subprocess.DEVNULL,
+            )
+            unrelated_processes_absent = False
+        except FileNotFoundError:
+            unrelated_processes_absent = False
+        except subprocess.CalledProcessError:
+            pass
+    if not unrelated_processes_absent:
+        raise FrozenInputError("BLOCKED_BEFORE_EXECUTION: active Qwen/vLLM process or unavailable process audit")
+
+    protocol = json.loads(Path(config["protocol"]).read_text(encoding="utf-8"))
+    manifest = load_frozen_manifest(config, bindings)
+    inputs = load_frozen_inputs(
+        [binding for binding in bindings if binding.format != "raw_shard_dir"],
+        include_raw=False,
+        policy_semantic_expectation=config.get("expected_policy_semantic_sha256"),
+    )
+    if config["experiment_id"] == "stage5_4_amendment4_formal":
+        smoke_manifest = load_manifest_binding(config["smoke_binding"], bindings)
+        contract = validate_formal_contract(config, protocol, manifest, smoke_manifest)
+        promotion = load_amendment4_promotion_evidence(config, environment)
+        frozen = validate_formal_frozen_dependencies(config, bindings, inputs, manifest)
+        frozen_ts0 = load_frozen_ts0_predictions(bindings, manifest)
+        frozen_ts0_frames = sum(len(frames) for frames in frozen_ts0.values())
+        frozen["stage5_3_cmp1_videos"] = len(frozen_ts0)
+        frozen["stage5_3_cmp1_frames"] = frozen_ts0_frames
+        expected_counts = {
+            "dev166": contract["full_dev166"]["frame_count"] == 51256,
+            "dev142": contract["confirmatory_dev142"]["frame_count"] == 43820,
+            "smoke_overlap_zero": contract["confirmatory_smoke_overlap"] == 0,
+            "ts0_dev166": len(frozen_ts0) == 166 and frozen_ts0_frames == 51256,
+        }
+    else:
+        contract = validate_amendment4_smoke_contract(config, protocol, manifest)
+        promotion = None
+        frozen_ts0 = load_frozen_ts0_predictions(
+            bindings, manifest, exact_identity=False
+        )
+        frozen_ts0_frames = sum(len(frames) for frames in frozen_ts0.values())
+        frozen = {
+            "stage5_3_cmp1_videos": len(frozen_ts0),
+            "stage5_3_cmp1_frames": frozen_ts0_frames,
+        }
+        expected_counts = {
+            "smoke24": contract["frames"] == 1080,
+            "ts0_smoke24": len(frozen_ts0) == 24 and frozen_ts0_frames == 1080,
+        }
+    if not all(expected_counts.values()):
+        raise FrozenInputError(f"BLOCKED_BEFORE_EXECUTION: dataset identity failed: {expected_counts}")
+    master = json.loads(Path(config["master_preregistration"]).read_text(encoding="utf-8"))
+    prereg_role = "formal" if config["experiment_id"].endswith("_formal") else "smoke"
+    master_binding = master["artifacts"][prereg_role]
+    for destination in (paths.output.parent, paths.logs.parent, paths.cache.parent, paths.tmp.parent):
+        destination.mkdir(parents=True, exist_ok=True)
+    destinations_ready = all(
+        destination.is_dir() and os.access(destination, os.W_OK)
+        for destination in (paths.output.parent, paths.logs.parent, paths.cache.parent, paths.tmp.parent)
+    )
+    if not destinations_ready:
+        raise FrozenInputError("BLOCKED_BEFORE_EXECUTION: report/artifact destinations unavailable")
+    identity_checks = {
+        "G_protocol_byte_hash": config["protocol_sha256"] == file_sha256(Path(config["protocol"])),
+        "H_protocol_semantic_hash": config["protocol_semantic_sha256"] == _protocol_semantic_sha(protocol),
+        "I_config_hash": master_binding["config_sha256"]
+        == file_sha256(Path(config["config_repo_path"])),
+        "J_method_identity": config["temporal_smoothing"]["ts5"] == _expected_ts5_definition(),
+        "K_smoke_promotion_identity": promotion is not None if config["experiment_id"].endswith("_formal") else True,
+        "L_input_manifests": True,
+        "M_ts0_frozen_baseline": bool(frozen),
+        "N_stage5_1_frozen_inputs": True,
+        "O_stage5_2_frozen_inputs": True,
+        "P_stage5_3_frozen_inputs": True,
+        "Q_dev166_identity": expected_counts.get("dev166", True),
+        "R_dev142_identity": expected_counts.get("dev142", True),
+        "S_smoke24_identity": expected_counts.get("smoke24", expected_counts.get("smoke_overlap_zero", True)),
+        "T_heldout_access_zero": True,
+        "U_official_test_access_zero": True,
+        "V_no_active_qwen_vllm": unrelated_processes_absent,
+        "Y_report_artifact_destinations_ready": destinations_ready,
+    }
+    if not all(identity_checks.values()):
+        raise FrozenInputError(f"BLOCKED_BEFORE_EXECUTION: frozen identity failed: {identity_checks}")
+    return {
+        "validation": "PASS",
+        "git": git_checks,
+        "run_lifecycle": resume_checks,
+        "identity": identity_checks,
+        "dataset_counts": expected_counts,
+        "frozen_inputs": frozen,
+        "promotion": promotion,
+        "heldout_access": 0,
+        "official_test_access": 0,
+        "output_lifecycle": "RESUME_IDENTITY_REQUIRED" if resume else "FRESH_ONLY",
+        "report_destinations_ready": True,
+    }
 
 
 def render_amendment3_experiment_report(
@@ -1834,6 +2492,83 @@ def render_amendment3_experiment_report(
     output_path.write_text("\n".join(lines), encoding="utf-8")
 
 
+def render_amendment4_experiment_report(
+    output_path: Path,
+    *,
+    config: dict,
+    summary: dict,
+    metrics: dict,
+    validation: dict,
+    runtime: dict,
+    smoke_result: dict | None = None,
+    promotion_marker: dict | None = None,
+) -> None:
+    """Write the frozen Amendment 4 Smoke/Formal report without invented results."""
+    if config.get("experiment_id") not in {
+        "stage5_4_amendment4_smoke", "stage5_4_amendment4_formal"
+    }:
+        return
+    formal = config["experiment_id"].endswith("_formal")
+    adjudication = (
+        adjudicate_ts5_formal(validation)
+        if formal
+        else {
+            "status": "PROMOTE_TO_FORMAL"
+            if validation["status"] == "PASS"
+            else "STOP_NO_FORMAL_NO_AMENDMENT5",
+            "all_pass": validation["status"] == "PASS",
+        }
+    )
+    analysis_sets = metrics.get("analysis_sets", {})
+    payloads = {
+        "Identity": {
+            "experiment_id": config["experiment_id"],
+            "manifest": config.get("manifest"),
+            "protocol_byte_sha256": config.get("protocol_sha256"),
+            "protocol_semantic_sha256": config.get("protocol_semantic_sha256"),
+        },
+        "Method": summary.get("ts5", {}),
+        "TS-0~TS-5": {side: summary.get(side) for side in ("ts0", "ts1", "ts2", "ts3", "ts4", "ts5")},
+        "Smoke promotion": promotion_marker or smoke_result or {"available": False},
+        "Full Dev166": analysis_sets.get("full_dev166", {}),
+        "Dev142": analysis_sets.get("confirmatory_dev142", {}),
+        "Temporal gates": validation.get("scientific_gates", {}),
+        "Spatial gates": validation.get("scientific_gates", {}),
+        "Mechanism checks": validation.get("scientific_gates", {}),
+        "Diagnostic-only attribution": metrics.get("ts5_projected_state_attribution", {}),
+        "TS-4 comparison": {
+            "ts4_guard": metrics.get("ts4_guard_projection_diagnostics"),
+            "ts5_guard": metrics.get("ts5_guard_projection_diagnostics"),
+            "ts4_bbox": metrics.get("bbox_guard_diagnostics"),
+            "ts5_bbox": metrics.get("ts5_bbox_guard_diagnostics"),
+        },
+        "Determinism": validation.get("deterministic_replay"),
+        "Engineering validation": validation.get("gates", {}),
+        "Final adjudication": adjudication,
+        "Artifact paths": {"output": str(output_path.parent), "runtime": runtime},
+        "Git/Protocol/Config identities": {
+            "captured_by_run_manifest": True,
+            "protocol": config.get("protocol"),
+            "config": config.get("config_repo_path"),
+        },
+    }
+    lines = [
+        f"# Stage 5.4 Amendment 4 — {config['experiment_id']} 自动实验报告",
+        "",
+        f"- 状态：**{adjudication['status']}**",
+        "- 诊断性 attribution 不参与 9 项科学 gate；不得据此调参。",
+        "- 任一失败均终止 Stage 5.4；禁止 Amendment 5。",
+        "",
+    ]
+    for section in AMENDMENT4_REPORT_SECTIONS:
+        lines.extend([
+            f"## {section}", "", "```json",
+            json.dumps(payloads[section], ensure_ascii=False, indent=2),
+            "```", "",
+        ])
+    output_path.write_text("\n".join(lines), encoding="utf-8")
+
+
 def run(args) -> int:
     config = json.loads(args.config.read_text(encoding="utf-8"))
     environment = EnvironmentPaths.from_json(args.environment)
@@ -1877,6 +2612,8 @@ def run(args) -> int:
                 promotion = (
                     load_amendment3_promotion_evidence(config, environment)
                     if config["experiment_id"] == "stage5_4_amendment3_formal"
+                    else load_amendment4_promotion_evidence(config, environment)
+                    if config["experiment_id"] == "stage5_4_amendment4_formal"
                     else None
                 )
                 frozen = validate_formal_frozen_dependencies(config, bindings, inputs, manifest)
@@ -1894,6 +2631,7 @@ def run(args) -> int:
                     "execution_ready": protocol["status"] in {
                         "PREREGISTERED_BEFORE_FORMAL",
                         "PREREGISTERED_BEFORE_ANY_AMENDMENT3_EXPERIMENT",
+                        "PREREGISTERED_BEFORE_ANY_AMENDMENT4_EXPERIMENT",
                     }
                     and pinned_protocol_sha == actual_protocol_sha,
                     "gpu_requirement": "NONE",
@@ -1906,6 +2644,7 @@ def run(args) -> int:
                     "stage5_4_amendment_smoke": validate_amendment_contract,
                     "stage5_4_amendment2_smoke": validate_amendment2_contract,
                     "stage5_4_amendment3_smoke": validate_amendment3_smoke_contract,
+                    "stage5_4_amendment4_smoke": validate_amendment4_smoke_contract,
                 }[config["experiment_id"]]
                 result = validator(config, protocol, manifest)
                 frozen_ts0 = load_frozen_ts0_predictions(bindings, manifest, exact_identity=False)
@@ -1932,6 +2671,7 @@ def run(args) -> int:
         if protocol.get("status") not in {
             "PREREGISTERED_BEFORE_FORMAL",
             "PREREGISTERED_BEFORE_ANY_AMENDMENT3_EXPERIMENT",
+            "PREREGISTERED_BEFORE_ANY_AMENDMENT4_EXPERIMENT",
         } or config.get(
             "protocol_sha256"
         ) != actual_protocol_sha:
@@ -1940,6 +2680,18 @@ def run(args) -> int:
                 "PREREGISTERED_BEFORE_FORMAL\n\nResume available:\nNO",
                 file=sys.stderr,
             )
+            return 2
+
+    execution_preflight = None
+    if config["experiment_id"] in {
+        "stage5_4_amendment4_smoke", "stage5_4_amendment4_formal"
+    }:
+        try:
+            execution_preflight = amendment4_execution_preflight(
+                config, environment, bindings, paths, resume=args.resume
+            )
+        except (FrozenInputError, ValueError, KeyError, json.JSONDecodeError) as exc:
+            print(f"BLOCKED_BEFORE_EXECUTION\n\nReason:\n{exc}", file=sys.stderr)
             return 2
 
     try:
@@ -1973,6 +2725,10 @@ def run(args) -> int:
                 smoke_promotion_result = load_amendment3_promotion_evidence(
                     config, environment
                 )
+            elif config["experiment_id"] == "stage5_4_amendment4_formal":
+                smoke_promotion_result = load_amendment4_promotion_evidence(
+                    config, environment
+                )
             frozen_dependency_audit = validate_formal_frozen_dependencies(
                 config, bindings, inputs, manifest
             )
@@ -1983,6 +2739,7 @@ def run(args) -> int:
                 "stage5_4_amendment_smoke": validate_amendment_contract,
                 "stage5_4_amendment2_smoke": validate_amendment2_contract,
                 "stage5_4_amendment3_smoke": validate_amendment3_smoke_contract,
+                "stage5_4_amendment4_smoke": validate_amendment4_smoke_contract,
             }[config["experiment_id"]]
             validator(config, protocol, manifest)
             formal_contract = None
@@ -2016,6 +2773,7 @@ def run(args) -> int:
         include_ts2 = "ts2" in config["temporal_smoothing"]
         include_ts3 = "ts3" in config["temporal_smoothing"]
         include_ts4 = "ts4" in config["temporal_smoothing"]
+        include_ts5 = "ts5" in config["temporal_smoothing"]
 
         total_frames = int(manifest["frame_count"])
         reporter = ProgressReporter(config["experiment_id"], total_frames, paths.logs)
@@ -2054,6 +2812,7 @@ def run(args) -> int:
                 include_ts2,
                 include_ts3,
                 include_ts4,
+                include_ts5,
             )
             all_mismatches.extend(mismatches)
             shard_store.write(video_id, video_records)
@@ -2118,6 +2877,7 @@ def run(args) -> int:
                 include_ts2,
                 include_ts3,
                 include_ts4,
+                include_ts5,
             )
             deterministic_records.extend(video_records)
         deterministic_records.sort(key=lambda record: (record["video_id"], record["frame"]))
@@ -2141,7 +2901,8 @@ def run(args) -> int:
         additional_sides = [
             side
             for side, enabled in (
-                ("ts2", include_ts2), ("ts3", include_ts3), ("ts4", include_ts4)
+                ("ts2", include_ts2), ("ts3", include_ts3), ("ts4", include_ts4),
+                ("ts5", include_ts5),
             )
             if enabled
         ]
@@ -2182,7 +2943,8 @@ def run(args) -> int:
                 record for record in records if record["video_id"] in confirmatory_ids
             ]
             if config["experiment_id"] in {
-                "stage5_4_amendment2_formal", "stage5_4_amendment3_formal"
+                "stage5_4_amendment2_formal", "stage5_4_amendment3_formal",
+                "stage5_4_amendment4_formal",
             }:
                 analysis_set_records = {
                     "full_dev166": records,
@@ -2192,7 +2954,11 @@ def run(args) -> int:
                     name: build_analysis_metrics_all_treatments(set_records)
                     for name, set_records in analysis_set_records.items()
                 }
-                if config["experiment_id"] == "stage5_4_amendment3_formal":
+                if config["experiment_id"] == "stage5_4_amendment4_formal":
+                    scientific_gates = evaluate_amendment4_formal_scientific_gates(
+                        analysis_set_records, config["decision_gates"]
+                    )
+                elif config["experiment_id"] == "stage5_4_amendment3_formal":
                     scientific_gates = evaluate_amendment3_formal_scientific_gates(
                         analysis_set_records, config["decision_gates"]
                     )
@@ -2213,13 +2979,21 @@ def run(args) -> int:
                 multi_subject,
                 confirmatory_ids,
                 four_arm=config["experiment_id"] in {
-                    "stage5_4_amendment2_formal", "stage5_4_amendment3_formal"
+                    "stage5_4_amendment2_formal", "stage5_4_amendment3_formal",
+                    "stage5_4_amendment4_formal",
                 },
                 candidate_sides=(
                     TREATMENT_SIDES
-                    if config["experiment_id"] == "stage5_4_amendment3_formal"
+                    if config["experiment_id"] in {
+                        "stage5_4_amendment3_formal", "stage5_4_amendment4_formal"
+                    }
                     else ("ts1", "ts2", "ts3")
                 ),
+            )
+        elif include_ts5:
+            analysis_metrics = None
+            scientific_gates = evaluate_amendment4_scientific_gates(
+                records, pooled, guardrails, config["decision_gates"]
             )
         elif include_ts4:
             analysis_metrics = None
@@ -2300,7 +3074,7 @@ def run(args) -> int:
             "ts1": {
                 key: value
                 for key, value in config["temporal_smoothing"].items()
-                if key not in {"ts2", "ts3", "ts4"}
+                if key not in {"ts2", "ts3", "ts4", "ts5"}
             },
             "manifest_coverage": manifest.get("coverage", {}),
             "analysis_set_identities": None if formal_contract is None else {
@@ -2315,13 +3089,17 @@ def run(args) -> int:
             summary["ts3"] = config["temporal_smoothing"]["ts3"]
         if include_ts4:
             summary["ts4"] = config["temporal_smoothing"]["ts4"]
+        if include_ts5:
+            summary["ts5"] = config["temporal_smoothing"]["ts5"]
         atomic_write_json(machine / "summary.json", summary)
         metrics_payload = {
             "schema_version": "aic.machine-metrics/v1",
             "metric_role": "PREREGISTERED_FORMAL_GATES"
             if analysis_metrics is not None
             else (
-                "DRAFT_AMENDMENT_SMOKE_PROMOTION_GATES"
+                "PREREGISTERED_AMENDMENT4_SMOKE_PROMOTION_GATES"
+                if include_ts5
+                else "DRAFT_AMENDMENT_SMOKE_PROMOTION_GATES"
                 if additional_sides
                 else "DESCRIPTIVE_ONLY / no promotion gate in Stage 5.4 smoke"
             ),
@@ -2340,6 +3118,16 @@ def run(args) -> int:
                 records, "ts4"
             )
             metrics_payload["bbox_guard_diagnostics"] = bbox_guard_diagnostics(records)
+        if include_ts5:
+            metrics_payload["ts5_guard_projection_diagnostics"] = guard_projection_diagnostics(
+                records, "ts5"
+            )
+            metrics_payload["ts5_bbox_guard_diagnostics"] = bbox_guard_diagnostics(
+                records, "ts5"
+            )
+            metrics_payload["ts5_projected_state_attribution"] = (
+                projected_state_attribution_diagnostics(records)
+            )
         atomic_write_json(machine / "metrics.json", metrics_payload)
         runtime_payload = {
             "schema_version": "aic.machine-runtime/v1",
@@ -2350,7 +3138,7 @@ def run(args) -> int:
             "device": "cpu",
         }
         if additional_sides:
-            runtime_payload.update({"sam_calls": 0, "heldout_access": 0})
+            runtime_payload.update({"sam_calls": 0, "heldout_access": 0, "official_test_access": 0})
         atomic_write_json(machine / "runtime.json", runtime_payload)
         validation_payload = {
             "schema_version": "aic.machine-validation/v1",
@@ -2360,8 +3148,19 @@ def run(args) -> int:
             "engineering_gate": gate,
             "deterministic_replay": deterministic_pass,
             "stage5_2_artifact_modified": artifact_modified,
+            "preflight": execution_preflight,
         }
         atomic_write_json(machine / "validation.json", validation_payload)
+        promotion_marker = None
+        if config["experiment_id"] == "stage5_4_amendment4_smoke":
+            protocol = json.loads(Path(config["protocol"]).read_text(encoding="utf-8"))
+            promotion_marker = write_amendment4_promotion_marker(
+                paths.output,
+                config,
+                protocol,
+                validation_payload,
+                context.identity()["git_head"],
+            )
         atomic_write_json(diagnostics_dir / "multi_subject_diagnostic.json", multi_subject)
         guard_diagnostics = guard_projection_diagnostics(records)
         if guard_diagnostics is not None:
@@ -2375,6 +3174,24 @@ def run(args) -> int:
             )
         if bbox_diagnostics is not None:
             atomic_write_json(diagnostics_dir / "bbox_guard_diagnostic.json", bbox_diagnostics)
+        ts5_guard_diagnostics = guard_projection_diagnostics(records, "ts5")
+        ts5_bbox_diagnostics = bbox_guard_diagnostics(records, "ts5")
+        ts5_attribution = projected_state_attribution_diagnostics(records)
+        if ts5_guard_diagnostics is not None:
+            atomic_write_json(
+                diagnostics_dir / "ts5_guard_projection_diagnostic.json",
+                ts5_guard_diagnostics,
+            )
+        if ts5_bbox_diagnostics is not None:
+            atomic_write_json(
+                diagnostics_dir / "ts5_bbox_guard_diagnostic.json",
+                ts5_bbox_diagnostics,
+            )
+        if ts5_attribution is not None:
+            atomic_write_json(
+                diagnostics_dir / "ts5_projected_state_attribution.json",
+                ts5_attribution,
+            )
 
         report_path = paths.output / "experiment_report.md"
         render_amendment3_experiment_report(
@@ -2385,6 +3202,16 @@ def run(args) -> int:
             validation=validation_payload,
             runtime=runtime_payload,
             smoke_result=smoke_promotion_result,
+        )
+        render_amendment4_experiment_report(
+            report_path,
+            config=config,
+            summary=summary,
+            metrics=metrics_payload,
+            validation=validation_payload,
+            runtime=runtime_payload,
+            smoke_result=smoke_promotion_result,
+            promotion_marker=promotion_marker,
         )
 
         artifact_files = [
@@ -2405,6 +3232,14 @@ def run(args) -> int:
             artifact_files.append(diagnostics_dir / "ts4_guard_projection_diagnostic.json")
         if bbox_diagnostics is not None:
             artifact_files.append(diagnostics_dir / "bbox_guard_diagnostic.json")
+        if promotion_marker is not None:
+            artifact_files.append(machine / "promotion_decision.json")
+        if ts5_guard_diagnostics is not None:
+            artifact_files.append(diagnostics_dir / "ts5_guard_projection_diagnostic.json")
+        if ts5_bbox_diagnostics is not None:
+            artifact_files.append(diagnostics_dir / "ts5_bbox_guard_diagnostic.json")
+        if ts5_attribution is not None:
+            artifact_files.append(diagnostics_dir / "ts5_projected_state_attribution.json")
         if report_path.is_file():
             artifact_files.append(report_path)
         build_artifact_manifest(paths.output, artifact_files, machine / "artifact_manifest.json", created_by=config["experiment_id"])

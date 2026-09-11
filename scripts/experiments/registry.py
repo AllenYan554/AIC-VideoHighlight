@@ -114,6 +114,9 @@ def describe(experiment: str) -> dict:
             "canonical_args": ["--experiment", experiment],
             "supports": {"resume": True, "dry_run": True, "validate_only": True},
         }
+        if meta.get("strict_git_preflight"):
+            spec["strict_git_preflight"] = True
+            spec["forbid_active_processes"] = list(meta.get("forbid_active_processes", []))
         return spec
     known = ", ".join(entry["experiment"] for entry in list_experiments())
     raise KeyError(f"unknown experiment: {experiment} (known experiments: {known})")

@@ -104,7 +104,7 @@ try {
 }
 
 $listData = (Get-RegistryList -Context $context).Data
-Check "U11 registry list has nine experiments" ($listData.experiments.Count -eq 9)
+Check "U11 registry list has fourteen experiments" ($listData.experiments.Count -eq 14)
 $gpuByExperiment = @{}
 foreach ($entry in $listData.experiments) { $gpuByExperiment[$entry.experiment] = $entry }
 Check "U11b stage5_3_formal targets AUTODL" ($gpuByExperiment["stage5_3_formal"].target -eq "AUTODL")
@@ -114,6 +114,25 @@ Check "U11e stage5_4_formal targets AUTODL with no GPU" ($gpuByExperiment["stage
 Check "U11f stage5_4_amendment_smoke targets AUTODL with no GPU" ($gpuByExperiment["stage5_4_amendment_smoke"].target -eq "AUTODL" -and $gpuByExperiment["stage5_4_amendment_smoke"].gpu -eq "NONE")
 Check "U11g stage5_4_amendment2_smoke targets AUTODL with no GPU" ($gpuByExperiment["stage5_4_amendment2_smoke"].target -eq "AUTODL" -and $gpuByExperiment["stage5_4_amendment2_smoke"].gpu -eq "NONE")
 Check "U11h stage5_4_amendment2_formal targets AUTODL with no GPU" ($gpuByExperiment["stage5_4_amendment2_formal"].target -eq "AUTODL" -and $gpuByExperiment["stage5_4_amendment2_formal"].gpu -eq "NONE")
+$ts5SmokeSpec = (Get-LaunchSpec -Context $context -Name "stage5_4_amendment4_smoke").Data
+$ts5FormalSpec = (Get-LaunchSpec -Context $context -Name "stage5_4_amendment4_formal").Data
+Check "U11i TS-5 Smoke/Formal are AUTODL CPU-only" (
+    $ts5SmokeSpec.target -eq "AUTODL" -and $ts5SmokeSpec.gpu -eq "NONE" -and
+    $ts5FormalSpec.target -eq "AUTODL" -and $ts5FormalSpec.gpu -eq "NONE"
+)
+Check "U11j TS-5 Smoke/Formal require strict Git preflight" (
+    $ts5SmokeSpec.strict_git_preflight -and $ts5FormalSpec.strict_git_preflight
+)
+$strictCommand = Build-RemoteCommand -Spec $ts5SmokeSpec `
+    -RunnerArgs @("--experiment", "stage5_4_amendment4_smoke") -RemotePython "python" `
+    -LaunchProvenance (Get-LaunchProvenance -Target "AUTODL" -WindowMode:$false) `
+    -ExpectedGitHead "d1c731ce596304d0a2f358c11c50d51f497d34ff"
+Check "U11k TS-5 remote command binds HEAD, clean tree and process audit" (
+    $strictCommand -match "AIC_EXPECTED_GIT_HEAD=d1c731" -and
+    $strictCommand -match "AIC_WINDOWS_GIT_CLEAN=1" -and
+    $strictCommand -match "git status --porcelain" -and
+    $strictCommand -match "pgrep -af"
+)
 
 # ---------------------------------------------------------------------------
 # Behavioral tests (real child processes).

@@ -1,5 +1,5 @@
 """Stage 5.4 TS-1 fixed, TS-2 adaptive, TS-3 center-constrained, and
-TS-4 bbox-aware constrained EMA methods.
+TS-4 bbox-aware and TS-5 projected-state constrained EMA methods.
 
 Consumes the Stage 5.3 FINAL FROZEN CMP-1 geometry as TS-0 (temporal control
 baseline) and changes ONLY the temporal continuity of the crop center / placement:
@@ -14,6 +14,8 @@ center. All are placed with the exact Stage 5.3 frozen floor/clamp convention.
 TS-4 replaces only TS-3's point constraint with the parameter-free set of
 integer placements maximizing current frozen primary-bbox visible area, then
 projects the unchanged TS-1 proposal to the nearest member of that set.
+TS-5 reuses that exact projection and feeds only its integer correction back
+into the continuous fixed-EMA state before the next frame.
 Reset rules (no cross-sequence smoothing):
 new video (one video per call), frozen temporal discontinuity (frame gap > 1 in
 the frozen frame identity), and any fallback frame (FALLBACK_CENTER_CROP on the
@@ -46,6 +48,7 @@ PLACEMENT_TS1_SMOOTHED = "TS1_SMOOTHED"
 PLACEMENT_TS2_ADAPTIVE_SMOOTHED = "TS2_ADAPTIVE_SMOOTHED"
 PLACEMENT_TS3_GUARDED_SMOOTHED = "TS3_GUARDED_SMOOTHED"
 PLACEMENT_TS4_BBOX_GUARDED_SMOOTHED = "TS4_BBOX_GUARDED_SMOOTHED"
+PLACEMENT_TS5_PROJECTED_STATE_SMOOTHED = "TS5_PROJECTED_STATE_SMOOTHED"
 
 RESET_NEW_VIDEO = "NEW_VIDEO"
 RESET_FRAME_GAP = "FRAME_GAP"
@@ -102,6 +105,11 @@ class SmoothedFrame:
     visible_fraction_before_guard: float | None = None
     visible_fraction_after_guard: float | None = None
     visible_gain: float | None = None
+    proposal_center_x: float | None = None
+    proposal_center_y: float | None = None
+    projected_state_center_x: float | None = None
+    projected_state_center_y: float | None = None
+    state_output_residual_l1: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -429,68 +437,130 @@ def smooth_video_sequence_bbox_guarded(
     maximizing bbox visible fraction; clipping to each integer argmax interval
     then gives the nearest placement to the integer TS-1 proposal.
     """
-    fixed = smooth_video_sequence(width, height, target_w, target_h, observations, alpha=alpha)
-    observations_by_frame = {item.frame: item for item in observations}
-    guarded: list[SmoothedFrame] = []
-
-    def visible_fraction(
-        bbox: tuple[float, float, float, float], x: int, y: int, crop_w: Fraction, crop_h: Fraction
-    ) -> float:
-        x1, y1, x2, y2 = (Fraction(str(float(value))) for value in bbox)
-        overlap_x = max(Fraction(0), min(Fraction(x) + crop_w, x2) - max(Fraction(x), x1))
-        overlap_y = max(Fraction(0), min(Fraction(y) + crop_h, y2) - max(Fraction(y), y1))
-        return float((overlap_x * overlap_y) / ((x2 - x1) * (y2 - y1)))
-
-    for proposal in fixed:
-        observation = observations_by_frame[proposal.frame]
-        if observation.fallback:
-            guarded.append(proposal)
-            continue
-        if proposal.frame not in primary_bboxes_by_frame:
-            raise ValueError(f"missing frozen primary bbox for non-fallback frame {proposal.frame}")
-        bbox = tuple(float(value) for value in primary_bboxes_by_frame[proposal.frame])
-        if len(bbox) != 4:
-            raise ValueError("primary bbox must be an xyxy 4-tuple")
-        x1, y1, x2, y2 = bbox
-        safe_x = maximum_overlap_safe_top_left_interval(width, proposal.w, x1, x2)
-        safe_y = maximum_overlap_safe_top_left_interval(height, proposal.h, y1, y2)
-        x = min(max(proposal.x, safe_x.minimum), safe_x.maximum)
-        y = min(max(proposal.y, safe_y.minimum), safe_y.maximum)
-        before = visible_fraction(bbox, proposal.x, proposal.y, Fraction(proposal.w), proposal.h)
-        after = visible_fraction(bbox, x, y, Fraction(proposal.w), proposal.h)
-        ts0_x, ts0_y, _, _, _, _ = place_crop_from_center(
+    ema_alpha = _require_alpha(alpha)
+    return _smooth_video_sequence(
+        width,
+        height,
+        target_w,
+        target_h,
+        observations,
+        alpha_for_motion=lambda _motion: ema_alpha,
+        placement_status=PLACEMENT_TS1_SMOOTHED,
+        record_transition_parameters=False,
+        frame_projector=lambda proposal, observation: project_bbox_maximum_visibility(
             width,
             height,
             target_w,
             target_h,
-            (observation.ideal_center_x, observation.ideal_center_y),
-        )
-        guarded.append(
-            replace(
-                proposal,
-                x=x,
-                y=y,
-                placement_status=PLACEMENT_TS4_BBOX_GUARDED_SMOOTHED,
-                matches_ts0_placement=(x, y) == (ts0_x, ts0_y),
-                guard_applied=(x, y) != (proposal.x, proposal.y),
-                guard_correction_x=x - proposal.x,
-                guard_correction_y=y - proposal.y,
-                safe_x_min=safe_x.minimum,
-                safe_x_max=safe_x.maximum,
-                safe_y_min=safe_y.minimum,
-                safe_y_max=safe_y.maximum,
-                guard_mode_x=safe_x.mode,
-                guard_mode_y=safe_y.mode,
-                bbox_fully_containable=safe_x.fully_containable and safe_y.fully_containable,
-                bbox_larger_than_crop=(x2 - x1) > proposal.w or (y2 - y1) > float(proposal.h),
-                per_axis_infeasible_x=not safe_x.fully_containable,
-                per_axis_infeasible_y=not safe_y.fully_containable,
-                visible_fraction_before_guard=round(before, 6),
-                visible_fraction_after_guard=round(after, 6),
-                visible_gain=round(after - before, 6),
-            )
-        )
-    return guarded
+            proposal,
+            observation,
+            primary_bboxes_by_frame,
+            placement_status=PLACEMENT_TS4_BBOX_GUARDED_SMOOTHED,
+        ),
+    )
+
+
+def smooth_video_sequence_projected_state_bbox_guarded(
+    width: int,
+    height: int,
+    target_w: int | float,
+    target_h: int | float,
+    observations: Sequence[TemporalObservation],
+    primary_bboxes_by_frame: dict[int, tuple[float, float, float, float]],
+    alpha: float = DEFAULT_EMA_ALPHA,
+) -> list[SmoothedFrame]:
+    """TS-5: TS-4 projection with its correction fed into recursive state.
+
+    The state remains in the continuous crop-center coordinate system.  The
+    exact integer TS-4 correction ``(projected - proposal)`` is added to that
+    state, so a zero correction leaves TS-1/TS-4 state semantics byte-for-byte
+    unchanged and the projected placement is reproduced exactly next frame.
+    """
+    ema_alpha = _require_alpha(alpha)
+    return _smooth_video_sequence(
+        width,
+        height,
+        target_w,
+        target_h,
+        observations,
+        alpha_for_motion=lambda _motion: ema_alpha,
+        placement_status=PLACEMENT_TS1_SMOOTHED,
+        record_transition_parameters=False,
+        frame_projector=lambda proposal, observation: project_bbox_maximum_visibility(
+            width,
+            height,
+            target_w,
+            target_h,
+            proposal,
+            observation,
+            primary_bboxes_by_frame,
+            placement_status=PLACEMENT_TS5_PROJECTED_STATE_SMOOTHED,
+        ),
+        feedback_projected_state=True,
+    )
+
+
+def project_bbox_maximum_visibility(
+    width: int,
+    height: int,
+    target_w: int | float,
+    target_h: int | float,
+    proposal: SmoothedFrame,
+    observation: TemporalObservation,
+    primary_bboxes_by_frame: dict[int, tuple[float, float, float, float]],
+    *,
+    placement_status: str,
+) -> SmoothedFrame:
+    """Canonical TS-4 ``P_t`` shared without alteration by TS-4 and TS-5."""
+    if proposal.frame not in primary_bboxes_by_frame:
+        raise ValueError(f"missing frozen primary bbox for non-fallback frame {proposal.frame}")
+    bbox = tuple(float(value) for value in primary_bboxes_by_frame[proposal.frame])
+    if len(bbox) != 4:
+        raise ValueError("primary bbox must be an xyxy 4-tuple")
+    x1, y1, x2, y2 = bbox
+    safe_x = maximum_overlap_safe_top_left_interval(width, proposal.w, x1, x2)
+    safe_y = maximum_overlap_safe_top_left_interval(height, proposal.h, y1, y2)
+    x = min(max(proposal.x, safe_x.minimum), safe_x.maximum)
+    y = min(max(proposal.y, safe_y.minimum), safe_y.maximum)
+
+    def visible_fraction(px: int, py: int) -> float:
+        bx1, by1, bx2, by2 = (Fraction(str(value)) for value in bbox)
+        overlap_x = max(Fraction(0), min(Fraction(px) + proposal.w, bx2) - max(Fraction(px), bx1))
+        overlap_y = max(Fraction(0), min(Fraction(py) + proposal.h, by2) - max(Fraction(py), by1))
+        return float((overlap_x * overlap_y) / ((bx2 - bx1) * (by2 - by1)))
+
+    before = visible_fraction(proposal.x, proposal.y)
+    after = visible_fraction(x, y)
+    ts0_x, ts0_y, _, _, _, _ = place_crop_from_center(
+        width,
+        height,
+        target_w,
+        target_h,
+        (observation.ideal_center_x, observation.ideal_center_y),
+    )
+    return replace(
+        proposal,
+        x=x,
+        y=y,
+        placement_status=placement_status,
+        matches_ts0_placement=(x, y) == (ts0_x, ts0_y),
+        guard_applied=(x, y) != (proposal.x, proposal.y),
+        guard_correction_x=x - proposal.x,
+        guard_correction_y=y - proposal.y,
+        safe_x_min=safe_x.minimum,
+        safe_x_max=safe_x.maximum,
+        safe_y_min=safe_y.minimum,
+        safe_y_max=safe_y.maximum,
+        guard_mode_x=safe_x.mode,
+        guard_mode_y=safe_y.mode,
+        bbox_fully_containable=safe_x.fully_containable and safe_y.fully_containable,
+        bbox_larger_than_crop=(x2 - x1) > proposal.w or (y2 - y1) > float(proposal.h),
+        per_axis_infeasible_x=not safe_x.fully_containable,
+        per_axis_infeasible_y=not safe_y.fully_containable,
+        visible_fraction_before_guard=round(before, 6),
+        visible_fraction_after_guard=round(after, 6),
+        visible_gain=round(after - before, 6),
+    )
 
 
 def _smooth_video_sequence(
@@ -503,6 +573,8 @@ def _smooth_video_sequence(
     alpha_for_motion: Callable[[float], float],
     placement_status: str,
     record_transition_parameters: bool,
+    frame_projector: Callable[[SmoothedFrame, TemporalObservation], SmoothedFrame] | None = None,
+    feedback_projected_state: bool = False,
 ) -> list[SmoothedFrame]:
     """Shared TS-1/TS-2 EMA state machine; only transition alpha varies."""
     _require_frame(width, height)
@@ -580,8 +652,7 @@ def _smooth_video_sequence(
         ts0_x, ts0_y, _, _, _, _ = place_crop_from_center(
             width, height, tw, th, (observation.ideal_center_x, observation.ideal_center_y)
         )
-        smoothed.append(
-            SmoothedFrame(
+        proposal = SmoothedFrame(
                 frame=observation.frame,
                 reset_reason=reset_reason,
                 ema_center_x=state_x,
@@ -599,7 +670,30 @@ def _smooth_video_sequence(
                 motion_norm=motion_norm if record_transition_parameters else None,
                 alpha_t=alpha_t if record_transition_parameters else None,
             )
-        )
+        emitted = frame_projector(proposal, observation) if frame_projector else proposal
+        if feedback_projected_state:
+            if emitted.guard_correction_x is None or emitted.guard_correction_y is None:
+                raise RuntimeError("projected-state feedback requires an integer projection correction")
+            proposal_center_x, proposal_center_y = state_x, state_y
+            state_x += emitted.guard_correction_x
+            state_y += emitted.guard_correction_y
+            state_x_placement, state_y_placement, _, _, _, _ = place_crop_from_center(
+                width, height, tw, th, (state_x, state_y)
+            )
+            residual = abs(state_x_placement - emitted.x) + abs(state_y_placement - emitted.y)
+            if residual != 0:
+                raise RuntimeError("projected EMA state does not reproduce projected output")
+            emitted = replace(
+                emitted,
+                ema_center_x=state_x,
+                ema_center_y=state_y,
+                proposal_center_x=proposal_center_x,
+                proposal_center_y=proposal_center_y,
+                projected_state_center_x=state_x,
+                projected_state_center_y=state_y,
+                state_output_residual_l1=float(residual),
+            )
+        smoothed.append(emitted)
         previous_frame = observation.frame
         previous_fallback = False
         previous_raw_center_x = observation.ideal_center_x

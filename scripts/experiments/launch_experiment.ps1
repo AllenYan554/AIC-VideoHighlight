@@ -123,6 +123,19 @@ function Assert-SafeToken {
     }
 }
 
+function Assert-LocalGitPreflight {
+    param([string] $RepoRoot)
+    $branch = (& git -C $RepoRoot branch --show-current 2>$null | Out-String).Trim()
+    $head = (& git -C $RepoRoot rev-parse HEAD 2>$null | Out-String).Trim()
+    $originHead = (& git -C $RepoRoot rev-parse origin/master 2>$null | Out-String).Trim()
+    $dirty = (& git -C $RepoRoot status --porcelain 2>$null | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0 -or -not $head) { throw "strict preflight could not read local Git identity" }
+    if ($branch -ne "master") { throw "strict preflight requires local branch master (got '$branch')" }
+    if ($head -ne $originHead) { throw "strict preflight requires local HEAD = origin/master" }
+    if ($dirty) { throw "strict preflight requires a clean local worktree" }
+    return $head
+}
+
 function Build-RunnerArgs {
     param([string] $Experiment, [switch] $Resume, [switch] $DryRun, [switch] $ValidateOnly)
     Assert-SafeToken -Token $Experiment -Kind "experiment name"
@@ -148,7 +161,8 @@ function Build-RemoteCommand {
         [psobject] $Spec,
         [string[]] $RunnerArgs,
         [string] $RemotePython,
-        [hashtable] $LaunchProvenance
+        [hashtable] $LaunchProvenance,
+        [string] $ExpectedGitHead = ""
     )
     if (-not $Spec.remote_repo) {
         throw "launch spec has no remote_repo (configs/environments/autodl.json missing 'repo')."
@@ -158,12 +172,24 @@ function Build-RemoteCommand {
     Assert-SafeToken -Token $RemotePython -Kind "remote python"
     foreach ($arg in $RunnerArgs) { Assert-SafeToken -Token $arg -Kind "runner argument" }
     foreach ($value in $LaunchProvenance.Values) { Assert-SafeToken -Token $value -Kind "launch provenance" }
-    $inner = ("cd {0} && export PYTHONPATH=src PYTHONUTF8=1 LANG=C.UTF-8 LC_ALL=C.UTF-8 " +
+    $strictPrefix = ""
+    $strictExport = ""
+    if ($Spec.strict_git_preflight) {
+        if (-not $ExpectedGitHead) { throw "strict preflight requires the local expected Git HEAD" }
+        Assert-SafeToken -Token $ExpectedGitHead -Kind "expected Git HEAD"
+        $strictPrefix = ("test `$(git branch --show-current) = master && " +
+            "test `$(git rev-parse HEAD) = {0} && test `$(git rev-parse origin/master) = {0} && " +
+            "test -z `"`$(git status --porcelain)`" && " +
+            "! pgrep -af '[v]llm' >/dev/null && ! pgrep -af '[q]wen' >/dev/null && ") -f $ExpectedGitHead
+        $strictExport = ("AIC_EXPECTED_GIT_HEAD={0} AIC_WINDOWS_ORIGIN_MASTER_HEAD={0} " +
+            "AIC_WINDOWS_GIT_CLEAN=1 ") -f $ExpectedGitHead
+    }
+    $inner = ("cd {0} && {8}export {9}PYTHONPATH=src PYTHONUTF8=1 LANG=C.UTF-8 LC_ALL=C.UTF-8 " +
         "AIC_EXPERIMENT_LAUNCHER={1} AIC_EXPERIMENT_LAUNCH_MODE={2} " +
         "AIC_EXPERIMENT_INTERACTIVE_CHILD={3} AIC_EXPERIMENT_LAUNCH_TARGET={4} && {5} {6} {7}") -f `
         $Spec.remote_repo, $LaunchProvenance.Launcher, $LaunchProvenance.Mode, `
         $LaunchProvenance.InteractiveChild, $LaunchProvenance.Target, `
-        $RemotePython, $Spec.stage_launcher, ($RunnerArgs -join " ")
+        $RemotePython, $Spec.stage_launcher, ($RunnerArgs -join " "), $strictPrefix, $strictExport
     return "bash -lc '$inner'"
 }
 
@@ -332,6 +358,16 @@ function Invoke-ExperimentRun {
     $target = $Spec.target
     if ($TargetOverride) { $target = $TargetOverride.ToUpper() }
     $launchProvenance = Get-LaunchProvenance -Target $target -WindowMode $WindowMode
+    $expectedGitHead = ""
+    if ($Spec.strict_git_preflight) {
+        try {
+            $expectedGitHead = Assert-LocalGitPreflight -RepoRoot $Context.RepoRoot
+        } catch {
+            Write-FailureBanner -ExperimentName $ExperimentName -ExitCode 2 `
+                -Detail "Strict local Git preflight failed.`n$($_.Exception.Message)" -WindowMode $WindowMode
+            return 2
+        }
+    }
 
     # Resolve the concrete command without executing it.
     $remotePython = if ($env:AIC_AUTODL_PYTHON) { $env:AIC_AUTODL_PYTHON } else { "python" }
@@ -339,7 +375,7 @@ function Invoke-ExperimentRun {
         $runnerArgs = Build-RunnerArgs -Experiment $Spec.experiment -Resume:$Resume -DryRun:$DryRun -ValidateOnly:$ValidateOnly
         if ($target -eq "AUTODL") {
             $resolvedCommand = "ssh <host> " + (Build-RemoteCommand -Spec $Spec -RunnerArgs $runnerArgs `
-                -RemotePython $remotePython -LaunchProvenance $launchProvenance)
+                -RemotePython $remotePython -LaunchProvenance $launchProvenance -ExpectedGitHead $expectedGitHead)
         } else {
             $resolvedCommand = "& {0} {1} {2}" -f $Context.PythonPath, $Spec.stage_launcher, ($runnerArgs -join " ")
         }
@@ -389,7 +425,7 @@ function Invoke-ExperimentRun {
     $exitCode = 0
     if ($target -eq "AUTODL") {
         $remoteCommand = Build-RemoteCommand -Spec $Spec -RunnerArgs $runnerArgs `
-            -RemotePython $remotePython -LaunchProvenance $launchProvenance
+            -RemotePython $remotePython -LaunchProvenance $launchProvenance -ExpectedGitHead $expectedGitHead
         Write-Host "[launcher] streaming remote output (Ctrl+C interrupts; resume with -Resume) ..."
         $exitCode = Start-StreamingProcess -FilePath "ssh" `
             -ArgumentList @("-o", "ConnectTimeout=15", $sshHost, $remoteCommand) `
