@@ -6,8 +6,8 @@
   "status_note": "PREREGISTERED_BEFORE_DEV166; AutoDL CPU only",
   "master_preregistration": "configs/experiments/stage5/stage5_5_master_preregistration.json",
   "dev_protocol": "configs/experiments/stage5/stage5_5_dev_protocol.json",
-  "protocol_sha256": "ec0cf737a096dcf0ce9aa93a275f37cb81a861a734ad7e1546c253d202fe1f20",
-  "protocol_semantic_sha256": "b96a1be4f9f2b1ef36e67c4d5284b54cef1315195a622fbe1c848424d84730c8",
+  "protocol_sha256": "88807d2ba289fdc927df38f0c5aeb34a3ca3ebfa867129511d3105c65150ea18",
+  "protocol_semantic_sha256": "8b6ba12aaaf82a20849d6f6e61bf0659685d8bad9ae05224990fae4212997ae2",
   "policies": [
     "FS-0",
     "FS-1",
@@ -28,22 +28,22 @@
   "inputs": {
     "frozen_candidate_cache": {
       "base": "outputs",
-      "path": "stage5/stage5_5_inputs/frozen_candidate_cache",
+      "path": "stage4_2_formal_431/FORMAL_431/cache_build_a",
       "sha256": null,
       "format": "candidate_cache_dir",
       "expected_global_semantic_sha256": "4b515a6d6fb47073413c686214c3fa5f97293655a3824241eb3305b9e7753246"
     },
     "role_manifest": {
       "base": "outputs",
-      "path": "stage5/stage5_5_inputs/dev_tune_166.json",
+      "path": "stage4_3_formal_431/FORMAL_431/protocol/dev_tune_166.json",
       "sha256": null,
       "format": "json",
       "expected_semantic_sha256": "bceb82034bcc5eed42a5099d7f54dd0fa776fe240969dfada231d255a368ec71"
     },
-    "stage5_1_predictions": {
+    "stage3_frozen_predictions": {
       "base": "outputs",
-      "path": "stage5/stage5_1_dev_baseline/predictions_runA.jsonl",
-      "sha256": "ca44cc2831e935e82fa7b05820b1269d7f2cc0d360c030b5847a192ede11b9a5",
+      "path": "stage3/stage3_dev_full_baseline_v1/predictions.jsonl",
+      "sha256": null,
       "format": "jsonl"
     },
     "stage5_1_metadata_cache": {
@@ -52,11 +52,11 @@
       "sha256": "52e46f16cfe5012aa68cfb8d7440f4d53e31b7cc133add7e29b78d648a9d5675",
       "format": "json"
     },
-    "stage5_4_ts5_revised_predictions": {
+    "stage5_4_ts5_revised_output": {
       "base": "outputs",
-      "path": "stage5/stage5_4_amendment4_revised_formal/ts5_canonical_state/predictions.jsonl",
+      "path": "stage5/stage5_4_amendment4_revised_formal",
       "sha256": null,
-      "format": "jsonl",
+      "format": "ts5_revised_shard_dir",
       "expected_method": "projected_state_canonical_center_ema_v1"
     }
   },

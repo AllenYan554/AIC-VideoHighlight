@@ -491,3 +491,60 @@ def test_real_frozen_cache_preserves_cross_chunk_provenance_if_available():
     assert set(profile) == set(range(0, 60))
     # Every candidate frame has a defined eligible/supporting count.
     assert all(item.eligible_chunks >= 0 for item in profile.values())
+
+
+def test_frame_only_evaluation_for_analysis_sets_without_ts5():
+    timing = _timing(fps=1.0, frame_count=50)
+    video = runner.FrozenVideoInputs(
+        video_id="v",
+        timing=timing,
+        segments=(FinalSegment("s0", 0.0, 5.0),),
+        chunk_windows=(ChunkWindow(0, 0.0, 5.0), ChunkWindow(1, 0.0, 5.0)),
+        raw_spans=(RawCandidateSpan(0, 0.0, 2.0), RawCandidateSpan(1, 3.0, 5.0)),
+        reference_frames=(0, 1),
+        ts5_frames=(),
+        ts5_bboxes=(),
+    )
+    evaluation = runner.evaluate_arm_on_video_set((video,), FS0)
+    assert evaluation["macro"]["total_predicted_frames"] == 5
+    assert evaluation["macro"]["empty_prediction_count"] == 0
+
+    selection = runner.run_frame_selection(video, FS1)
+    assert set(selection.emitted_frames) <= {0, 1, 2, 3, 4}
+
+
+def test_load_ts5_frames_reads_stage5_4_shard(tmp_path):
+    shards = tmp_path / "shards"
+    shards.mkdir()
+    (shards / "v.json").write_text(
+        json.dumps(
+            [
+                {"frame": 3, "ts5": {"x": 10, "y": 20, "w": 30, "h": 40}},
+                {"frame": 4, "ts5": {"x": 11, "y": 21, "w": 31, "h": 41}},
+            ]
+        ),
+        encoding="utf-8",
+    )
+    frames, bboxes = runner._load_ts5_frames(tmp_path, "v")
+    assert frames == (3, 4)
+    assert bboxes == ((3, 10, 20, 30, 40), (4, 11, 21, 31, 41))
+
+
+def test_execution_configs_bind_real_canonical_input_paths():
+    dev = json.loads(runner.DEV_CONFIG_PATH.read_text(encoding="utf-8"))
+    hard = json.loads(runner.HARD_CONFIG_PATH.read_text(encoding="utf-8"))
+    assert dev["inputs"]["frozen_candidate_cache"]["path"] == (
+        "stage4_2_formal_431/FORMAL_431/cache_build_a"
+    )
+    assert dev["inputs"]["role_manifest"]["path"].endswith("dev_tune_166.json")
+    assert dev["inputs"]["stage3_frozen_predictions"]["path"] == (
+        "stage3/stage3_dev_full_baseline_v1/predictions.jsonl"
+    )
+    assert "stage5_4_ts5_revised_output" in dev["inputs"]
+    assert hard["inputs"]["role_manifest"]["path"].endswith("hard_stress_229.json")
+    assert hard["inputs"]["stage3_frozen_predictions"]["path"] == (
+        "stage3/stage3_hard_full_baseline_v1/predictions.jsonl"
+    )
+    # Hard229 has no Stage 5.4 spatial output or Stage 5.1 metadata cache.
+    assert "stage5_4_ts5_revised_output" not in hard["inputs"]
+    assert "stage5_1_metadata_cache" not in hard["inputs"]

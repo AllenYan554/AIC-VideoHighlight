@@ -82,33 +82,33 @@
   "artifacts": {
     "dev_protocol": {
       "path": "configs/experiments/stage5/stage5_5_dev_protocol.json",
-      "byte_sha256": "ec0cf737a096dcf0ce9aa93a275f37cb81a861a734ad7e1546c253d202fe1f20",
-      "semantic_sha256": "b96a1be4f9f2b1ef36e67c4d5284b54cef1315195a622fbe1c848424d84730c8"
+      "byte_sha256": "88807d2ba289fdc927df38f0c5aeb34a3ca3ebfa867129511d3105c65150ea18",
+      "semantic_sha256": "8b6ba12aaaf82a20849d6f6e61bf0659685d8bad9ae05224990fae4212997ae2"
     },
     "hard_protocol": {
       "path": "configs/experiments/stage5/stage5_5_hard_protocol.json",
-      "byte_sha256": "8bcad554f81c115a110830a5bea0955e78d1111026f6fb40d3816a26ddad9638",
-      "semantic_sha256": "c218f3d1e313a22f96a8b5c674da9a03adfdeccbf7da3303b60ef96a27d932ab"
+      "byte_sha256": "cbd1abfabcae967b34ed576f036f25dcd024e585de7105ab13e23e4a87166941",
+      "semantic_sha256": "c64b78a3820988f9acf587a5d42c52ef46f1142f7acfec4ded786b9ddf3bfc84"
     },
     "fs0": {
       "path": "configs/experiments/stage5/stage5_5_fs0_all_frames.json",
-      "byte_sha256": "493b91309636917108839f66aeb0877a9d11985de1970d82d69fdc7d4135e3f0"
+      "byte_sha256": "788444f3f7aa1ce376c22df7af4400ec5c7dc637751f53f3d037812b8035e401"
     },
     "fs1": {
       "path": "configs/experiments/stage5/stage5_5_fs1_singleton_edge_prune.json",
-      "byte_sha256": "8363d3c713613022a4b5789b2cabebce6886d750f2e386bfcb5cd65673fc495e"
+      "byte_sha256": "ecd465b7175631a67e88b294d42448266bc04865751b17d101a6341555ce219b"
     },
     "fs2": {
       "path": "configs/experiments/stage5/stage5_5_fs2_nonunanimous_edge_prune.json",
-      "byte_sha256": "0469fc6d7b7b45cb07e754d3dec76f65822b4c2c2e7dc659e469c1d2b10abbd5"
+      "byte_sha256": "8579a9324c9c13a8b20b019546f76c5b7dc8bd8217f4a6e26e3a8b1ba0bc3661"
     },
     "dev_formal": {
       "path": "configs/experiments/stage5/stage5_5_dev_formal.json",
-      "byte_sha256": "88be71014731caa916b545442dcb576bdfa5645a08782487dc2aa03e93d48654"
+      "byte_sha256": "db3fda33e1ae3fc954f264b15cee0c7756e1e0293c0eca47c33155634ea38174"
     },
     "hard_confirmation": {
       "path": "configs/experiments/stage5/stage5_5_hard_confirmation.json",
-      "byte_sha256": "bb94eeffb13e4c249990eb061879245c83d797ed6214bae33c3ec1f18b5c88ed"
+      "byte_sha256": "1fc3ed081630de2ea3b512f334318daf46c764df37c200bdbbf84f7a5d0b2166"
     }
   },
   "dev_promotion_marker_schema": {
@@ -137,7 +137,24 @@
   "archive_convention": {
     "stage_root": "Stage5_逐帧高光预测与空间构图/06_Frame_Level_Prediction_Calibration",
     "canonical_report": "06_Frame_Level_Prediction_Calibration/experiment_report.md",
-    "subdirectories": [
+    "style": "flat artifact-type directories matching the existing experiment-record convention; not per-development-step numbered directories",
+    "artifact_directories": [
+      "config",
+      "manifests",
+      "results",
+      "diagnostics",
+      "validation",
+      "figures",
+      "supplementary",
+      "working"
+    ],
+    "results_layout": [
+      "results/dev166_formal",
+      "results/hard229_confirmation (only when Hard229 actually runs)",
+      "results/final_freeze"
+    ],
+    "policy": "directories are created only when they contain content; no empty scaffold; no per-arm top-level directories",
+    "forbidden_top_level": [
       "00_PROTOCOL",
       "01_FS0_All_Frames",
       "02_FS1_Singleton_Edge_Prune",
@@ -145,8 +162,7 @@
       "04_Dev166_Formal",
       "05_Hard229_Confirmation",
       "06_Final_Freeze"
-    ],
-    "policy": "no result directory is created before the corresponding real run"
+    ]
   },
   "execution_locks": {
     "gpu": "NONE",

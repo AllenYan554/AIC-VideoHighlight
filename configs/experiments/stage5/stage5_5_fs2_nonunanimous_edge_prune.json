@@ -4,8 +4,8 @@
   "policy": "FS-2",
   "arm": "cross_chunk_nonunanimous_edge_prune_v1",
   "dev_protocol": "configs/experiments/stage5/stage5_5_dev_protocol.json",
-  "protocol_sha256": "ec0cf737a096dcf0ce9aa93a275f37cb81a861a734ad7e1546c253d202fe1f20",
-  "protocol_semantic_sha256": "b96a1be4f9f2b1ef36e67c4d5284b54cef1315195a622fbe1c848424d84730c8",
+  "protocol_sha256": "88807d2ba289fdc927df38f0c5aeb34a3ca3ebfa867129511d3105c65150ea18",
+  "protocol_semantic_sha256": "8b6ba12aaaf82a20849d6f6e61bf0659685d8bad9ae05224990fae4212997ae2",
   "definition": {
     "policy": "FS-2",
     "arm": "cross_chunk_nonunanimous_edge_prune_v1",

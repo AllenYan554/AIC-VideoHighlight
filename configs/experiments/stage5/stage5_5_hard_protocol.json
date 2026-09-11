@@ -78,6 +78,12 @@
     "H5_f1": "macro_f1_candidate >= macro_f1_FS0",
     "note": "no +1pp requirement; non-regression only"
   },
+  "hard_timing_derivation": {
+    "metadata_cache": null,
+    "reason": "Stage 5.1 metadata cache and Stage 5.4 TS-5 output are Dev166-only",
+    "method": "deterministic ffprobe of the frozen dataset window at stage3_frozen_predictions[video_id].source_video_path using the project frozen probe_video; verified byte-for-byte against the Dev166 metadata cache",
+    "spatial_output": "Hard229 has no Stage 5.4 TS-5 bbox output because Stage 5.4 was Dev-only; the FS-* policy only changes the emit mask, so Hard229 is evaluated frame-only"
+  },
   "dev_winner_immutability": {
     "rule": "Hard229 compares only FS-0 versus the exact candidate frozen by the immutable Dev promotion marker",
     "forbidden": [
@@ -97,36 +103,23 @@
   "frozen_inputs": {
     "frozen_candidate_cache": {
       "base": "outputs",
-      "path": "stage5/stage5_5_inputs/frozen_candidate_cache",
+      "path": "stage4_2_formal_431/FORMAL_431/cache_build_a",
       "sha256": null,
       "format": "candidate_cache_dir",
       "expected_global_semantic_sha256": "4b515a6d6fb47073413c686214c3fa5f97293655a3824241eb3305b9e7753246"
     },
     "role_manifest": {
       "base": "outputs",
-      "path": "stage5/stage5_5_inputs/hard_stress_229.json",
+      "path": "stage4_3_formal_431/FORMAL_431/protocol/hard_stress_229.json",
       "sha256": null,
       "format": "json",
       "expected_semantic_sha256": "81d734ee28ec38c096b908a573249c62713d358fb03ea135e5b55e1ae4405687"
     },
-    "stage5_1_predictions": {
+    "stage3_frozen_predictions": {
       "base": "outputs",
-      "path": "stage5/stage5_1_dev_baseline/predictions_runA.jsonl",
-      "sha256": "ca44cc2831e935e82fa7b05820b1269d7f2cc0d360c030b5847a192ede11b9a5",
-      "format": "jsonl"
-    },
-    "stage5_1_metadata_cache": {
-      "base": "outputs",
-      "path": "stage5/stage5_1_dev_baseline/metadata_cache.json",
-      "sha256": "52e46f16cfe5012aa68cfb8d7440f4d53e31b7cc133add7e29b78d648a9d5675",
-      "format": "json"
-    },
-    "stage5_4_ts5_revised_predictions": {
-      "base": "outputs",
-      "path": "stage5/stage5_4_amendment4_revised_formal/ts5_canonical_state/predictions.jsonl",
+      "path": "stage3/stage3_hard_full_baseline_v1/predictions.jsonl",
       "sha256": null,
-      "format": "jsonl",
-      "expected_method": "projected_state_canonical_center_ema_v1"
+      "format": "jsonl"
     }
   },
   "decision_tree": {
@@ -152,5 +145,5 @@
     "method swap on Hard",
     "weak-frame proxy reported as an official score"
   ],
-  "protocol_semantic_sha256": "c218f3d1e313a22f96a8b5c674da9a03adfdeccbf7da3303b60ef96a27d932ab"
+  "protocol_semantic_sha256": "c64b78a3820988f9acf587a5d42c52ef46f1142f7acfec4ded786b9ddf3bfc84"
 }

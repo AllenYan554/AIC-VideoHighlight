@@ -250,23 +250,50 @@ def _resolve(base: str, path: str, environment: EnvironmentPaths) -> Path:
 
 
 def preflight(config: Mapping[str, Any], environment: EnvironmentPaths) -> dict[str, Any]:
-    """Verify declared frozen inputs resolve; never fabricate or recompute science."""
+    """Verify declared frozen inputs resolve and carry the expected identity."""
     resolved: list[dict[str, Any]] = []
     missing: list[str] = []
+    failures: list[str] = []
     for name, spec in config.get("inputs", {}).items():
         path = _resolve(str(spec["base"]), str(spec["path"]), environment)
-        entry = {"name": name, "path": str(path), "exists": path.exists()}
+        entry: dict[str, Any] = {"name": name, "path": str(path), "exists": path.exists()}
+        if not path.exists():
+            missing.append(name)
         if spec.get("sha256"):
             entry["expected_sha256"] = spec["sha256"]
             if path.is_file():
                 entry["actual_sha256"] = file_sha256(path)
                 entry["sha256_match"] = entry["actual_sha256"] == spec["sha256"]
-        if not path.exists():
-            missing.append(name)
+                if not entry["sha256_match"]:
+                    failures.append(f"{name}:sha256")
+        if name == "frozen_candidate_cache" and path.is_dir():
+            manifest = _read_json(path / "cache_manifest.json")
+            entry["global_semantic_sha256"] = manifest.get("global_semantic_sha256")
+            entry["expected_global_semantic_sha256"] = spec.get(
+                "expected_global_semantic_sha256"
+            )
+            entry["global_semantic_match"] = (
+                manifest.get("global_semantic_sha256")
+                == spec.get("expected_global_semantic_sha256")
+            )
+            if not entry["global_semantic_match"]:
+                failures.append(f"{name}:global_semantic_sha256")
+        if name == "role_manifest" and path.is_file():
+            role = _read_json(path)
+            entry["record_count"] = role.get("record_count")
+            entry["semantic_sha256"] = role.get("semantic_sha256")
+            entry["expected_semantic_sha256"] = spec.get("expected_semantic_sha256")
+            entry["semantic_match"] = (
+                role.get("semantic_sha256") == spec.get("expected_semantic_sha256")
+            )
+            if not entry["semantic_match"]:
+                failures.append(f"{name}:semantic_sha256")
         resolved.append(entry)
+    status = "PASS" if not missing and not failures else "FAIL"
     return {
-        "status": "PASS" if not missing else "FAIL",
+        "status": status,
         "missing_inputs": missing,
+        "failed_checks": failures,
         "resolved_inputs": resolved,
     }
 
@@ -421,12 +448,17 @@ def evaluate_arm_on_video_set(
     references: dict[str, list[int]] = {}
     for video in videos:
         selection = run_frame_selection(video, policy)
-        frozen = set(video.ts5_frames)
-        emitted = tuple(frame for frame in selection.emitted_frames if frame in frozen)
-        if len(emitted) != len(selection.emitted_frames):
-            raise FrozenInputError(
-                f"policy {policy} emitted a frame without a frozen TS-5 bbox: {video.video_id}"
-            )
+        if video.ts5_frames:
+            frozen = set(video.ts5_frames)
+            emitted = tuple(frame for frame in selection.emitted_frames if frame in frozen)
+            if len(emitted) != len(selection.emitted_frames):
+                raise FrozenInputError(
+                    f"policy {policy} emitted a frame without a frozen TS-5 bbox: {video.video_id}"
+                )
+        else:
+            # Hard229 has no Stage 5.4 spatial output; the FS-* policy only
+            # changes the emit mask, so a frame-only evaluation is exact.
+            emitted = selection.emitted_frames
         predictions[video.video_id] = list(emitted)
         references[video.video_id] = list(video.reference_frames)
     return evaluate_video_set(predictions, references)
@@ -593,17 +625,66 @@ def _frames_from_segments(
     return tuple(sorted(frames))
 
 
+def _timing_from_source_video(video_id: str, source_video_path: str) -> VideoTiming:
+    """Derive clip timing deterministically from a frozen dataset video window.
+
+    Uses the project's own frozen ``probe_video`` (the exact function that built
+    the Stage 5.1 metadata cache); validated byte-for-byte against that cache on
+    Dev166.  No model inference, no scientific artifact is regenerated.
+    """
+    from aic_video_highlight.highlight_retrieval.video_metadata import probe_video
+
+    meta = probe_video(source_video_path)
+    return VideoTiming(
+        video_id=video_id,
+        fps=float(meta.fps),
+        frame_count=int(meta.frame_count),
+        timestamp_mode="CFR_FPS",
+    )
+
+
+def _load_ts5_frames(
+    ts5_output_dir: Path, video_id: str
+) -> tuple[tuple[int, ...], tuple[tuple[int, int, int, int, int], ...]]:
+    shard_path = ts5_output_dir / "shards" / f"{video_id}.json"
+    if not shard_path.is_file():
+        raise FrozenInputError(f"missing Stage 5.4 TS-5 Revised shard: {shard_path}")
+    shard = json.loads(shard_path.read_text(encoding="utf-8"))
+    frames: list[int] = []
+    bboxes: list[tuple[int, int, int, int, int]] = []
+    for item in shard:
+        frame = int(item["frame"])
+        ts5 = item["ts5"]
+        frames.append(frame)
+        bboxes.append(
+            (frame, int(ts5["x"]), int(ts5["y"]), int(ts5["w"]), int(ts5["h"]))
+        )
+    return tuple(frames), tuple(bboxes)
+
+
+
 def load_stage5_5_inputs(
     config: Mapping[str, Any], environment: EnvironmentPaths
 ) -> tuple[FrozenVideoInputs, ...]:
-    """Load the frozen Stage 4 / 5.1 / 5.4 provenance chain for one analysis set."""
+    """Load the frozen Stage 4 / 5.1 / 5.4 provenance chain for one analysis set.
+
+    Dev166 uses the frozen Stage 5.1 metadata cache and the Stage 5.4 TS-5
+    Revised shard output (every candidate frame owns a TS-5 bbox).  Hard229 has
+    no Stage 5.4 spatial output (Stage 5.4 was Dev-only): timing is derived
+    deterministically from the frozen dataset video window and the emit/drop
+    policy is evaluated frame-only (the FS-* policy is bbox-independent).
+    """
     specs = config["inputs"]
 
-    def resolved(name: str) -> Path:
-        spec = specs[name]
+    def resolved(name: str) -> Path | None:
+        spec = specs.get(name)
+        if spec is None:
+            return None
         return _resolve(str(spec["base"]), str(spec["path"]), environment)
 
     cache_dir = resolved("frozen_candidate_cache")
+    if cache_dir is None:
+        raise FrozenInputError("frozen_candidate_cache input is not declared")
     manifest = _read_json(cache_dir / "cache_manifest.json")
     if manifest.get("global_semantic_sha256") != FROZEN_CANDIDATE_CACHE_GLOBAL_SHA256:
         raise FrozenInputError("frozen candidate cache global hash mismatch")
@@ -612,14 +693,15 @@ def load_stage5_5_inputs(
         for entry in manifest["records"]
     }
     role_manifest = _read_json(resolved("role_manifest"))
-    metadata = _read_json(resolved("stage5_1_metadata_cache"))
-    predictions = {
-        row["video_id"]: row for row in _load_jsonl(resolved("stage5_1_predictions"))
-    }
-    ts5_rows = {
+    stage3_rows = {
         row["video_id"]: row
-        for row in _load_jsonl(resolved("stage5_4_ts5_revised_predictions"))
+        for row in _load_jsonl(resolved("stage3_frozen_predictions"))
     }
+    metadata_path = resolved("stage5_1_metadata_cache")
+    metadata = (
+        _read_json(metadata_path)["records"] if metadata_path is not None else None
+    )
+    ts5_dir = resolved("stage5_4_ts5_revised_output")
 
     videos: list[FrozenVideoInputs] = []
     for identity in role_manifest["records"]:
@@ -628,33 +710,33 @@ def load_stage5_5_inputs(
             raise FrozenInputError(f"role video missing from frozen cache: {video_id}")
         record = records[video_id]
         windows, spans = parse_chunk_evidence(record)
-        timing = _timing_from_metadata(video_id, metadata[video_id])
-        prediction = predictions[video_id]
-        segments = tuple(
-            FinalSegment(
-                segment_id=f"{video_id}#seg{index}",
-                start_sec=float(segment["start_sec"]),
-                end_sec=float(segment["end_sec"]),
-            )
-            for index, segment in enumerate(prediction.get("merged_prediction_segments", []))
-        )
-        reference = _frames_from_segments(
-            prediction.get("weak_reference_segments", []), timing
-        )
-        ts5 = ts5_rows[video_id]
-        frames: list[int] = []
-        bboxes: list[tuple[int, int, int, int, int]] = []
-        for item in ts5.get("frames", []):
-            frames.append(int(item["frame"]))
-            bboxes.append(
-                (
-                    int(item["frame"]),
-                    int(item["x"]),
-                    int(item["y"]),
-                    int(item["w"]),
-                    int(item["h"]),
+        segments = final_segments_from_record(record)
+
+        if metadata is not None and video_id in metadata:
+            timing = _timing_from_metadata(video_id, metadata[video_id])
+        else:
+            stage3 = stage3_rows.get(video_id)
+            if stage3 is None or not stage3.get("source_video_path"):
+                raise FrozenInputError(
+                    f"no timing source (metadata cache or frozen video window) for {video_id}"
                 )
-            )
+            timing = _timing_from_source_video(video_id, str(stage3["source_video_path"]))
+
+        projected = set(_frames_from_segments(record["merged_candidates"], timing))
+        reference = _frames_from_segments(
+            stage3_rows.get(video_id, {}).get("weak_reference_segments", []), timing
+        )
+
+        if ts5_dir is not None:
+            frames, bboxes = _load_ts5_frames(ts5_dir, video_id)
+            if set(frames) != projected:
+                raise FrozenInputError(
+                    f"Stage 5.4 TS-5 frame identity differs from frozen segment "
+                    f"projection for {video_id}"
+                )
+        else:
+            frames, bboxes = (), ()
+
         videos.append(
             FrozenVideoInputs(
                 video_id=video_id,
@@ -676,6 +758,70 @@ def _stage5_5_paths(config: Mapping[str, Any], environment: EnvironmentPaths) ->
     return output, output / "machine"
 
 
+def _compact_runs(frames: Sequence[int]) -> list[list[int]]:
+    runs: list[list[int]] = []
+    for frame in sorted(int(value) for value in frames):
+        if runs and frame == runs[-1][1] + 1:
+            runs[-1][1] = frame
+        else:
+            runs.append([frame, frame])
+    return runs
+
+
+def build_frame_selection_records(
+    videos: Sequence[FrozenVideoInputs], policy: str
+) -> list[dict[str, Any]]:
+    """Compact per-video emit/drop provenance for the selection manifest."""
+    records: list[dict[str, Any]] = []
+    for video in videos:
+        selection = run_frame_selection(video, policy)
+        records.append(
+            {
+                "video_id": video.video_id,
+                "policy": policy,
+                "arm": ARM_NAMES[policy],
+                "input_frame_count": len(selection.candidate_frames),
+                "output_frame_count": len(selection.emitted_frames),
+                "dropped_frame_count": len(selection.dropped_frames),
+                "dropped_frame_runs": _compact_runs(selection.dropped_frames),
+                "source_segment_ids": [segment.segment_id for segment in selection.segments],
+                "reference_frame_count": len(video.reference_frames),
+            }
+        )
+    return records
+
+
+def build_diagnostics(
+    videos: Sequence[FrozenVideoInputs], policy: str
+) -> dict[str, Any]:
+    """DIAGNOSTIC_ONLY frame-reduction / edge-run statistics."""
+    records = build_frame_selection_records(videos, policy)
+    total_input = sum(item["input_frame_count"] for item in records)
+    total_output = sum(item["output_frame_count"] for item in records)
+    total_dropped = sum(item["dropped_frame_count"] for item in records)
+    return {
+        "role": "DIAGNOSTIC_ONLY",
+        "policy": policy,
+        "video_count": len(records),
+        "input_frames": total_input,
+        "output_frames": total_output,
+        "dropped_frames": total_dropped,
+        "frame_reduction_fraction": (total_dropped / total_input) if total_input else 0.0,
+        "videos_with_any_drop": sum(
+            1 for item in records if item["dropped_frame_count"] > 0
+        ),
+        "dropped_edge_runs": sum(len(item["dropped_frame_runs"]) for item in records),
+    }
+
+
+def _write_jsonl(path: Path, rows: Sequence[Mapping[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = [json.dumps(row, ensure_ascii=False, sort_keys=True) for row in rows]
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
+    temporary.replace(path)
+
+
 def _write_stage5_5_artifacts(
     output_dir: Path,
     machine_dir: Path,
@@ -684,11 +830,21 @@ def _write_stage5_5_artifacts(
     summary: Mapping[str, Any],
     metrics: Mapping[str, Any],
     validation: Mapping[str, Any],
+    frame_manifest: Sequence[Mapping[str, Any]] | None = None,
+    diagnostics: Mapping[str, Any] | None = None,
 ) -> None:
     _write_json(machine_dir / "summary.json", summary)
     _write_json(machine_dir / "metrics.json", metrics)
     _write_json(machine_dir / "validation.json", validation)
     _write_json(machine_dir / "decision.json", validation["decision"])
+    _write_json(
+        machine_dir / "runtime.json",
+        {"heldout_access": 0, "official_test_access": 0, "gpu": "NONE", "model_inference": 0},
+    )
+    if frame_manifest is not None:
+        _write_jsonl(machine_dir / "frame_selection_manifest.jsonl", frame_manifest)
+    if diagnostics is not None:
+        _write_json(machine_dir / "diagnostics.json", diagnostics)
     render_stage5_5_report(
         output_dir / "experiment_report.md",
         config=config,
@@ -701,7 +857,9 @@ def _write_stage5_5_artifacts(
 def _run_dev(config: Mapping[str, Any], environment: EnvironmentPaths, *, execution_head: str) -> int:
     preflight_result = preflight(config, environment)
     if preflight_result["status"] != "PASS":
-        raise FrozenInputError(f"preflight failed: {preflight_result['missing_inputs']}")
+        raise FrozenInputError(
+            f"preflight failed: {preflight_result['missing_inputs']} {preflight_result['failed_checks']}"
+        )
     videos = load_stage5_5_inputs(config, environment)
     evaluations = {
         policy: evaluate_arm_on_video_set(videos, policy) for policy in POLICIES
@@ -714,6 +872,12 @@ def _run_dev(config: Mapping[str, Any], environment: EnvironmentPaths, *, execut
     selection = select_dev_winner(baseline, candidates)
     winner = selection["winner_policy"]
     decision = adjudicate_stage5_5(winner, None)
+    diagnostics = {policy: build_diagnostics(videos, policy) for policy in POLICIES}
+    frame_manifest: list[Mapping[str, Any]] = []
+    for policy in POLICIES:
+        frame_manifest.extend(build_frame_selection_records(videos, policy))
+
+    output_dir, machine_dir = _stage5_5_paths(config, environment)
     if winner is not None:
         guard = candidates[winner]["objective"]["guardrails"]  # type: ignore[index]
         marker = build_dev_promotion_marker(
@@ -727,19 +891,31 @@ def _run_dev(config: Mapping[str, Any], environment: EnvironmentPaths, *, execut
                 "checks": guard["checks"],
             },
         )
-        output_dir, machine_dir = _stage5_5_paths(config, environment)
         _write_json(machine_dir / "dev_promotion_marker.json", marker)
-    output_dir, machine_dir = _stage5_5_paths(config, environment)
+
     validation = {
         "status": "PASS",
         "proxy_label": PROXY_LABEL,
         "decision": decision,
         "preflight": preflight_result,
     }
-    summary = {"policies": list(POLICIES), "selection": selection}
+    summary = {
+        "policies": list(POLICIES),
+        "selection": selection,
+        "frame_reduction_fraction": {
+            policy: diagnostics[policy]["frame_reduction_fraction"] for policy in POLICIES
+        },
+    }
     metrics = {policy: evaluations[policy] for policy in POLICIES}
     _write_stage5_5_artifacts(
-        output_dir, machine_dir, config=config, summary=summary, metrics=metrics, validation=validation
+        output_dir,
+        machine_dir,
+        config=config,
+        summary=summary,
+        metrics=metrics,
+        validation=validation,
+        frame_manifest=frame_manifest,
+        diagnostics=diagnostics,
     )
     return 0
 
@@ -748,13 +924,21 @@ def _run_hard(config: Mapping[str, Any], environment: EnvironmentPaths, *, execu
     marker = load_dev_promotion_marker(config, environment)
     preflight_result = preflight(config, environment)
     if preflight_result["status"] != "PASS":
-        raise FrozenInputError(f"preflight failed: {preflight_result['missing_inputs']}")
+        raise FrozenInputError(
+            f"preflight failed: {preflight_result['missing_inputs']} {preflight_result['failed_checks']}"
+        )
     winner = str(marker["selected_candidate"])
     videos = load_stage5_5_inputs(config, environment)
+    policies = [FS0, winner]
     baseline = evaluate_arm_on_video_set(videos, FS0)
     candidate = evaluate_arm_on_video_set(videos, winner)
     result = hard_gates(baseline, candidate)
     decision = adjudicate_stage5_5(winner, result)
+    diagnostics = {policy: build_diagnostics(videos, policy) for policy in policies}
+    frame_manifest: list[Mapping[str, Any]] = []
+    for policy in policies:
+        frame_manifest.extend(build_frame_selection_records(videos, policy))
+
     output_dir, machine_dir = _stage5_5_paths(config, environment)
     validation = {
         "status": "PASS",
@@ -763,10 +947,23 @@ def _run_hard(config: Mapping[str, Any], environment: EnvironmentPaths, *, execu
         "dev_promotion_marker": marker,
         "preflight": preflight_result,
     }
-    summary = {"dev_winner": winner, "hard_gates": result}
+    summary = {
+        "dev_winner": winner,
+        "hard_gates": result,
+        "frame_reduction_fraction": {
+            policy: diagnostics[policy]["frame_reduction_fraction"] for policy in policies
+        },
+    }
     metrics = {FS0: baseline, winner: candidate}
     _write_stage5_5_artifacts(
-        output_dir, machine_dir, config=config, summary=summary, metrics=metrics, validation=validation
+        output_dir,
+        machine_dir,
+        config=config,
+        summary=summary,
+        metrics=metrics,
+        validation=validation,
+        frame_manifest=frame_manifest,
+        diagnostics=diagnostics,
     )
     return 0
 
