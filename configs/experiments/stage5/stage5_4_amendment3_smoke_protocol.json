@@ -1,0 +1,52 @@
+{
+  "protocol_id": "stage5_4_amendment3_smoke",
+  "title": "Stage 5.4 Amendment 3 — TS-4 BBox-Aware Constrained EMA Smoke",
+  "status": "PREREGISTERED_BEFORE_ANY_AMENDMENT3_EXPERIMENT",
+  "created": "2026-09-11",
+  "research_question": "Can fixed alpha=0.5 EMA retain its temporal benefit when spatial safety is changed, as the only scientific variable, from primary-center containment to parameter-free maximum visible coverage of the current frozen Stage 5.2 primary bbox?",
+  "prior_evidence": {
+    "ts1_formal": {"mean_displacement_reduction": 0.3962, "mean_acceleration_reduction": 0.5868, "full_strong_visible_delta": -0.071204, "dev142_strong_visible_delta": -0.080256, "decision": "REJECTED_FOR_FREEZE"},
+    "ts2_smoke": {"spatial_recovery": "near-complete", "temporal_benefit": "substantially surrendered", "decision": "NOT_READY_FOR_FORMAL"},
+    "ts3_formal": {"engineering": "18/18 PASS", "temporal": "5/5 PASS", "mechanism": "5/5 PASS", "spatial": "3/4 PASS", "full_strong_visible_delta": -0.051237, "dev142_strong_visible_delta": -0.057918, "containment": 1.0, "visible_ge_0_90_equals_ts1": true, "full_guard_activation_rate": 0.0229, "strong_guard_activation_rate": 0.0686, "max_correction_px": 170, "decision": "NOT_READY_FOR_FREEZE"}
+  },
+  "scientific_rationale": "TS-3 proves center containment but still clips primary-subject edges: containment=1.0 coexists with visible>=0.90 equal to TS-1 and strong visibility failure on both Full Dev166 and Dev142. Center-only safety is therefore scientifically insufficient. TS-4 directly optimizes the already-frozen bbox visibility diagnostic without a learned threshold, margin, sweep, or result-fitted constant.",
+  "guard_design_review": {
+    "A_center_containment": {"meaning": "contain bbox center only", "new_hyperparameters": 0, "always_solved": true, "bbox_larger_than_crop": "center only", "frame_edge": "legal point interval", "temporal_risk": "lowest", "expected_strong_effect": "partial", "ambiguity": "low", "tuning_risk": "none", "decision": "rejected as scientifically insufficient by TS-3 Formal"},
+    "B_full_bbox_when_feasible": {"meaning": "full containment only when a discrete solution exists", "new_hyperparameters": 0, "always_solved": false, "bbox_larger_than_crop": "undefined without another rule", "frame_edge": "requires explicit infeasible behavior", "temporal_risk": "moderate", "expected_strong_effect": "better only on feasible bboxes", "ambiguity": "high", "tuning_risk": "low", "decision": "rejected as incomplete"},
+    "C_parameter_free_maximum_visible_bbox": {"meaning": "maximize bbox intersection area, then minimize distance from TS-1", "new_hyperparameters": 0, "always_solved": true, "bbox_larger_than_crop": "place crop in the discrete maximum-overlap set", "frame_edge": "intersect with legal frame placements", "temporal_risk": "diagnosed and gated", "expected_strong_effect": "directly addresses clipped bbox edges", "ambiguity": "closed-form discrete definition", "tuning_risk": "none", "decision": "selected"}
+  },
+  "ts4_algorithm": {
+    "name": "bbox_aware_constrained_ema_v1",
+    "ema": "TS-1 ema_crop_center_v1; alpha=0.5",
+    "state_feedback": false,
+    "objective": ["maximize current frozen primary-bbox visible fraction", "among all maximizers minimize Euclidean distance to the final integer TS-1 proposal"],
+    "symbols": "Frame [0,W)x[0,H), crop top-left integer (x,y), exact crop extents Cw and Ch, sanitized float bbox B=[x1,x2)x[y1,y2), integer TS-1 proposal (xe,ye).",
+    "one_axis_continuous_plateau": "For bbox [b1,b2), crop extent C: if b2-b1<=C, P=[b2-C,b1]; otherwise P=[b1,b2-C]. Intersect P with legal real placements [0,floor(F-C)].",
+    "one_axis_discrete_argmax": "Intersect the plateau with [0,floor(F-C)]. If the real plateau lies outside this stricter integer-placement domain, its nearest legal boundary is optimal. If the clipped plateau contains integers, [ceil(Plo),floor(Phi)] is the complete integer argmax. Otherwise evaluate exactly its two adjacent legal integers and retain every equal maximum-overlap integer. If maximum overlap is zero, the complete legal integer domain is the tie set.",
+    "projection": "q4=clip(qe,L,U) independently on x/y. The 2-D intersection area factorizes into positive x/y overlaps, so the Cartesian product of the one-axis argmax sets is exactly the 2-D maximum-visible set; coordinatewise clipping is its nearest point under L2 and L1.",
+    "bbox_le_crop": "Full containment is used if and only if the discrete argmax overlap equals bbox extent. Fractional coordinates may make continuous full containment integer-infeasible; such frames deterministically use the discrete maximum-overlap rule.",
+    "bbox_gt_crop": "Full containment is impossible on that axis; maximize overlap (=crop extent when an integer crop-inside-bbox placement exists), then choose the nearest maximizing integer placement.",
+    "frame_edge": "Sanitized bbox is frozen-clamped to [0,W]x[0,H]; all maximizers are intersected with legal crop placements, hence output is never OOB.",
+    "half_open_integer_policy": "All rectangles are half-open; bbox coordinates remain frozen floats; crop x/y are integers; Fraction(str(value)) and exact Fraction crop height define ceil/floor and ties; equal discrete maxima form the argmax interval; integer proposal projection makes tie handling unique.",
+    "fallback": "No bbox guard is evaluated. Emit frozen TS-0 center crop and clear EMA state.",
+    "reset": ["NEW_VIDEO", "FRAME_GAP_GT_1", "FALLBACK"],
+    "extra_hyperparameters": []
+  },
+  "single_variable_attribution": {"changed": "post-EMA spatial safety set only", "unchanged": ["alpha=0.5", "EMA state", "state feedback", "reset", "crop size", "target ratio", "frame identity", "Stage 5.2 primary bbox and sanitize/clamp", "Stage 5.3 TS-0", "fallback"]},
+  "data": {"manifest_id": "stage5_4_smoke_manifest_v1", "manifest_sha256": "2909f7a831a1f90fb149f0b07033586ab2678ead398180d3715c2ee077e2d766", "manifest_file_sha256": "046ebf18d4df2c05d9c51ba627001ce8fccd222d4940ffa1a593d5d8fdf1adfc", "videos": 24, "frames": 1080, "reselection": false, "treatments": ["TS-0", "TS-1", "TS-2", "TS-3", "TS-4"]},
+  "metrics": {"temporal": ["displacement mean/median/P90/P95/max", "large jumps >0.10/>0.20/>0.30", "acceleration mean/median/P90/P95/max"], "spatial": ["mean visible fraction", "visible>=0.90", "center containment", "near/moderate/strong"], "comparisons": ["TS-4 vs TS-0", "TS-4 vs TS-1", "TS-4 vs TS-2", "TS-4 vs TS-3"], "multi_subject": "OBSERVATION_ONLY"},
+  "mandatory_gates": {
+    "engineering": "all engineering gates must pass",
+    "ts4_vs_ts0_temporal": {"minimum_mean_displacement_relative_reduction": 0.2, "minimum_mean_acceleration_relative_reduction": 0.3, "maximum_p95_displacement_relative_regression": 0.0, "large_jump_nonincrease_thresholds": [0.1, 0.2, 0.3], "minimum_gt_0_20_relative_reduction": 0.25},
+    "ts4_vs_ts0_spatial": {"minimum_mean_visible_fraction_delta": -0.03, "minimum_visible_ge_0_90_delta": -0.05, "minimum_subject_center_containment_delta": -0.02, "minimum_strong_off_center_mean_visible_delta": -0.05},
+    "mechanism": ["TS-4 bbox visible fraction is pointwise no worse than TS-3", "TS-4 strong mean visible delta is strictly better than TS-3", "TS-4 visible>=0.90 rate is no worse than TS-3", "TS-4 reported after-guard visibility equals its actual crop visibility and gain is nonnegative on every eligible frame", "TS-4 mean displacement, mean acceleration, and >0.20 jump ratio are each no worse than TS-2"]
+  },
+  "promotion_rule": {"name": "SMOKE_PASS_TO_FORMAL", "rule": "Formal is authorized only when every preregistered engineering, TS-4-vs-TS-0 temporal/spatial, and Amendment 3 mechanism gate passes and protocol/config identities match. Any failure, engineering exit, scientific exit 2, missing evidence, or identity drift stops before Formal.", "override_allowed": false, "after_failure": ["STOP", "do not modify algorithm", "do not modify gates", "do not rerun a repaired Smoke", "do not run Formal"]},
+  "bbox_diagnostics": {"role": "DIAGNOSTIC_ONLY", "fields": ["fully containable count", "bbox larger than crop count", "full-containment projection count", "maximum-overlap projection count", "no-correction count", "per-axis infeasible count", "visible fraction before/after", "visible gain"], "strata": ["near", "moderate", "strong"]},
+  "guard_diagnostics": {"role": "DIAGNOSTIC_ONLY", "fields": ["activation count/rate", "horizontal/vertical/both", "run count/max run length", "correction magnitude mean/median/P90/P95/max", "TS-4 minus TS-3 correction"]},
+  "statistical_plan": "Matched deterministic frame-level comparisons on the complete frozen Smoke24 development set. Gates are prespecified effect-size/guardrail rules, not null-hypothesis significance tests. No p-value shopping, optional exclusions, or post-result threshold changes.",
+  "engineering_gates": ["video/frame identity; missing/extra/duplicate/unknown=0", "TS-0/1/2/3 regressions=0", "five-arm invalid/OOB/ratio/crop-size drift=0", "fallback equality", "TS-4 deterministic", "Stage5.1/5.2/5.3 unchanged", "manifest/protocol/config identity", "Heldout/GPU/Qwen/RT-DETR/SAM=0", "snapshots and reports complete"],
+  "runtime": {"reuse": ["RunContext", "ShardStore", "ProgressReporter"], "resume": "same immutable identity only", "output_directory": "outputs/stage5/stage5_4_amendment3_smoke/", "report": "experiment_report.md at output root"},
+  "forbidden": ["real execution in this preparation round", "parameter sweep", "visible threshold guard", "bbox margin", "alpha change", "new reset", "new detector", "tracking", "optical flow", "SAM", "Heldout", "official test", "Stage 5.5", "automatic FINAL_FROZEN"],
+  "references": ["Kassis, T., Agarwal, V., He, Y., Patel, D., & Brueckner, A. M. (2026). Scientific Agent Skills: A Library of Procedural Knowledge for Research Agents. arXiv:2609.00065. https://doi.org/10.48550/arXiv.2609.00065"]
+}

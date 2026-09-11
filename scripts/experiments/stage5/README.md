@@ -14,6 +14,10 @@
   frozen Full-Dev manifest: `stage5_4_formal` (TS-0/TS-1) and
   `stage5_4_amendment2_formal` (TS-0/TS-1/TS-2/TS-3 constrained EMA with Confirmatory
   Dev142), both AutoDL no-card, CPU, DEFAULT NOT RUN.
+- `stage5_4_amendment3_pipeline`: the single fail-closed PowerShell entry for the
+  jointly preregistered TS-4 Smoke and Formal sequence. It validates and runs
+  Smoke24, authorizes Formal only on exact `SMOKE_PASS_TO_FORMAL`, then validates
+  and runs Full Dev166/Dev142. It never edits Git or scientific artifacts.
 
 Standalone frozen-stage CLIs (experiments already executed and frozen; not registry
 members):

@@ -347,7 +347,7 @@ def summarize_multi_subject_rows(
     rows: Sequence[Mapping[str, Any]], *, candidate_side: str
 ) -> dict[str, Any]:
     """Summarize TS-0 versus one explicitly named temporal treatment side."""
-    if candidate_side not in {"ts1", "ts2", "ts3"}:
+    if candidate_side not in {"ts1", "ts2", "ts3", "ts4"}:
         raise ValueError(f"unknown multi-subject candidate side: {candidate_side}")
     candidate_label = f"TS-{candidate_side[2:]}"
     rows = list(rows)

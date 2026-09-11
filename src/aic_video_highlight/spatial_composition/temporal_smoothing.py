@@ -1,4 +1,5 @@
-"""Stage 5.4 TS-1 fixed, TS-2 adaptive, and TS-3 constrained EMA methods.
+"""Stage 5.4 TS-1 fixed, TS-2 adaptive, TS-3 center-constrained, and
+TS-4 bbox-aware constrained EMA methods.
 
 Consumes the Stage 5.3 FINAL FROZEN CMP-1 geometry as TS-0 (temporal control
 baseline) and changes ONLY the temporal continuity of the crop center / placement:
@@ -10,6 +11,9 @@ TS-2 changes only that coefficient to a frozen function of normalized raw horizo
 primary-subject motion. TS-3 retains the fixed TS-1 state and projects only an
 unsafe output placement to the nearest crop containing the current frozen subject
 center. All are placed with the exact Stage 5.3 frozen floor/clamp convention.
+TS-4 replaces only TS-3's point constraint with the parameter-free set of
+integer placements maximizing current frozen primary-bbox visible area, then
+projects the unchanged TS-1 proposal to the nearest member of that set.
 Reset rules (no cross-sequence smoothing):
 new video (one video per call), frozen temporal discontinuity (frame gap > 1 in
 the frozen frame identity), and any fallback frame (FALLBACK_CENTER_CROP on the
@@ -41,6 +45,7 @@ MOTION_ADAPTIVE_FULL_RESPONSE = 0.20
 PLACEMENT_TS1_SMOOTHED = "TS1_SMOOTHED"
 PLACEMENT_TS2_ADAPTIVE_SMOOTHED = "TS2_ADAPTIVE_SMOOTHED"
 PLACEMENT_TS3_GUARDED_SMOOTHED = "TS3_GUARDED_SMOOTHED"
+PLACEMENT_TS4_BBOX_GUARDED_SMOOTHED = "TS4_BBOX_GUARDED_SMOOTHED"
 
 RESET_NEW_VIDEO = "NEW_VIDEO"
 RESET_FRAME_GAP = "FRAME_GAP"
@@ -88,6 +93,29 @@ class SmoothedFrame:
     safe_x_max: int | None = None
     safe_y_min: int | None = None
     safe_y_max: int | None = None
+    guard_mode_x: str | None = None
+    guard_mode_y: str | None = None
+    bbox_fully_containable: bool | None = None
+    bbox_larger_than_crop: bool | None = None
+    per_axis_infeasible_x: bool | None = None
+    per_axis_infeasible_y: bool | None = None
+    visible_fraction_before_guard: float | None = None
+    visible_fraction_after_guard: float | None = None
+    visible_gain: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class MaximumOverlapInterval:
+    """Contiguous integer argmax set for one-axis bbox/crop overlap."""
+
+    minimum: int
+    maximum: int
+    fully_containable: bool
+    maximum_overlap: Fraction
+
+    @property
+    def mode(self) -> str:
+        return "FULL_CONTAINMENT" if self.fully_containable else "MAXIMUM_OVERLAP"
 
 
 def _require_frame(width: int, height: int) -> None:
@@ -159,6 +187,85 @@ def containment_safe_top_left_interval(
     if lower > upper:
         raise ValueError("no legal crop placement contains the subject coordinate")
     return int(lower), int(upper)
+
+
+def maximum_overlap_safe_top_left_interval(
+    frame_extent: int,
+    crop_extent: int | float | Fraction,
+    bbox_start: float,
+    bbox_end: float,
+) -> MaximumOverlapInterval:
+    """Integer placements maximizing half-open 1-D bbox/crop overlap.
+
+    The continuous maximizer plateau is ``[b2-C,b1]`` when the bbox is no
+    larger than the crop, and ``[b1,b2-C]`` when the bbox is larger.  We
+    intersect that plateau with legal frame placements. If the plateau lies
+    beyond the stricter integer legal bound ``floor(F-C)``, the nearest legal
+    boundary maximizes overlap. If a nonempty clipped plateau contains no
+    integer (possible for fractional bboxes), only its two adjacent legal
+    integers can maximize the concave overlap function; those are evaluated
+    exactly. When every legal placement has zero overlap, the complete legal
+    integer domain is the tie set. The returned argmax is deterministic and
+    parameter-free.
+    """
+    if isinstance(frame_extent, bool) or not isinstance(frame_extent, int) or frame_extent <= 0:
+        raise ValueError("frame_extent must be a positive integer")
+    crop = Fraction(crop_extent)
+    start_value, end_value = float(bbox_start), float(bbox_end)
+    if crop <= 0 or crop > frame_extent:
+        raise ValueError("crop_extent must be positive and fit inside frame_extent")
+    if not all(math.isfinite(value) for value in (start_value, end_value)):
+        raise ValueError("bbox coordinates must be finite")
+    if not 0.0 <= start_value < end_value <= float(frame_extent):
+        raise ValueError("bbox must have positive extent inside the closed frame boundary")
+
+    start = Fraction(str(start_value))
+    end = Fraction(str(end_value))
+    bbox_extent = end - start
+    legal_max = math.floor(Fraction(frame_extent) - crop)
+
+    def overlap(q: int) -> Fraction:
+        return max(Fraction(0), min(Fraction(q) + crop, end) - max(Fraction(q), start))
+
+    raw_plateau_start, raw_plateau_end = (
+        (end - crop, start) if bbox_extent <= crop else (start, end - crop)
+    )
+    if raw_plateau_end < 0:
+        plateau_start = plateau_end = Fraction(0)
+    elif raw_plateau_start > legal_max:
+        if overlap(legal_max) == 0:
+            return MaximumOverlapInterval(0, legal_max, False, Fraction(0))
+        plateau_start = plateau_end = Fraction(legal_max)
+    else:
+        plateau_start = max(Fraction(0), raw_plateau_start)
+        plateau_end = min(Fraction(legal_max), raw_plateau_end)
+
+    integer_min = math.ceil(plateau_start)
+    integer_max = math.floor(plateau_end)
+
+    if integer_min <= integer_max:
+        maximum_overlap = overlap(integer_min)
+        return MaximumOverlapInterval(
+            int(integer_min),
+            int(integer_max),
+            maximum_overlap == bbox_extent,
+            maximum_overlap,
+        )
+
+    candidates = {
+        min(max(math.floor(plateau_start), 0), legal_max),
+        min(max(math.ceil(plateau_end), 0), legal_max),
+    }
+    maximum_overlap = max(overlap(candidate) for candidate in candidates)
+    if maximum_overlap == 0:
+        return MaximumOverlapInterval(0, legal_max, False, Fraction(0))
+    maximizers = sorted(candidate for candidate in candidates if overlap(candidate) == maximum_overlap)
+    return MaximumOverlapInterval(
+        maximizers[0],
+        maximizers[-1],
+        maximum_overlap == bbox_extent,
+        maximum_overlap,
+    )
 
 
 def place_crop_from_center(
@@ -299,6 +406,88 @@ def smooth_video_sequence_guarded(
                 safe_x_max=safe_x_max,
                 safe_y_min=safe_y_min,
                 safe_y_max=safe_y_max,
+            )
+        )
+    return guarded
+
+
+def smooth_video_sequence_bbox_guarded(
+    width: int,
+    height: int,
+    target_w: int | float,
+    target_h: int | float,
+    observations: Sequence[TemporalObservation],
+    primary_bboxes_by_frame: dict[int, tuple[float, float, float, float]],
+    alpha: float = DEFAULT_EMA_ALPHA,
+) -> list[SmoothedFrame]:
+    """TS-4: maximize current bbox visibility, then minimize TS-1 correction.
+
+    The fixed-alpha EMA state, reset rules, crop size, and frame clamp are
+    exactly TS-1.  The bbox guard is output-only and is skipped on fallback
+    frames.  Since 2-D intersection area is the product of independent positive
+    one-axis overlaps, coordinatewise maximization is exactly equivalent to
+    maximizing bbox visible fraction; clipping to each integer argmax interval
+    then gives the nearest placement to the integer TS-1 proposal.
+    """
+    fixed = smooth_video_sequence(width, height, target_w, target_h, observations, alpha=alpha)
+    observations_by_frame = {item.frame: item for item in observations}
+    guarded: list[SmoothedFrame] = []
+
+    def visible_fraction(
+        bbox: tuple[float, float, float, float], x: int, y: int, crop_w: Fraction, crop_h: Fraction
+    ) -> float:
+        x1, y1, x2, y2 = (Fraction(str(float(value))) for value in bbox)
+        overlap_x = max(Fraction(0), min(Fraction(x) + crop_w, x2) - max(Fraction(x), x1))
+        overlap_y = max(Fraction(0), min(Fraction(y) + crop_h, y2) - max(Fraction(y), y1))
+        return float((overlap_x * overlap_y) / ((x2 - x1) * (y2 - y1)))
+
+    for proposal in fixed:
+        observation = observations_by_frame[proposal.frame]
+        if observation.fallback:
+            guarded.append(proposal)
+            continue
+        if proposal.frame not in primary_bboxes_by_frame:
+            raise ValueError(f"missing frozen primary bbox for non-fallback frame {proposal.frame}")
+        bbox = tuple(float(value) for value in primary_bboxes_by_frame[proposal.frame])
+        if len(bbox) != 4:
+            raise ValueError("primary bbox must be an xyxy 4-tuple")
+        x1, y1, x2, y2 = bbox
+        safe_x = maximum_overlap_safe_top_left_interval(width, proposal.w, x1, x2)
+        safe_y = maximum_overlap_safe_top_left_interval(height, proposal.h, y1, y2)
+        x = min(max(proposal.x, safe_x.minimum), safe_x.maximum)
+        y = min(max(proposal.y, safe_y.minimum), safe_y.maximum)
+        before = visible_fraction(bbox, proposal.x, proposal.y, Fraction(proposal.w), proposal.h)
+        after = visible_fraction(bbox, x, y, Fraction(proposal.w), proposal.h)
+        ts0_x, ts0_y, _, _, _, _ = place_crop_from_center(
+            width,
+            height,
+            target_w,
+            target_h,
+            (observation.ideal_center_x, observation.ideal_center_y),
+        )
+        guarded.append(
+            replace(
+                proposal,
+                x=x,
+                y=y,
+                placement_status=PLACEMENT_TS4_BBOX_GUARDED_SMOOTHED,
+                matches_ts0_placement=(x, y) == (ts0_x, ts0_y),
+                guard_applied=(x, y) != (proposal.x, proposal.y),
+                guard_correction_x=x - proposal.x,
+                guard_correction_y=y - proposal.y,
+                safe_x_min=safe_x.minimum,
+                safe_x_max=safe_x.maximum,
+                safe_y_min=safe_y.minimum,
+                safe_y_max=safe_y.maximum,
+                guard_mode_x=safe_x.mode,
+                guard_mode_y=safe_y.mode,
+                bbox_fully_containable=safe_x.fully_containable and safe_y.fully_containable,
+                bbox_larger_than_crop=(x2 - x1) > proposal.w or (y2 - y1) > float(proposal.h),
+                per_axis_infeasible_x=not safe_x.fully_containable,
+                per_axis_infeasible_y=not safe_y.fully_containable,
+                visible_fraction_before_guard=round(before, 6),
+                visible_fraction_after_guard=round(after, 6),
+                visible_gain=round(after - before, 6),
             )
         )
     return guarded

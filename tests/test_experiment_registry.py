@@ -80,6 +80,14 @@ def test_describe_stage5_4_amendment2_smoke(registry):
     assert spec["config"] == "configs/experiments/stage5/stage5_4_amendment2_smoke.json"
 
 
+def test_describe_stage5_4_amendment3_pipeline(registry):
+    spec = registry.describe("stage5_4_amendment3_pipeline")
+    assert spec["target"] == "AUTODL"
+    assert spec["gpu"] == "NONE"
+    assert spec["canonical_args"] == ["--experiment", "stage5_4_amendment3_pipeline"]
+    assert spec["config"].endswith("stage5_4_amendment3_pipeline.json")
+
+
 def test_describe_windows_spec(registry):
     for name in ("stage5_infra_tiny_fake", "stage5_3_smoke"):
         spec = registry.describe(name)

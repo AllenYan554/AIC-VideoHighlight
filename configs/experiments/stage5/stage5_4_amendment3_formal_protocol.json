@@ -1,0 +1,50 @@
+{
+  "protocol_id": "stage5_4_amendment3_formal",
+  "title": "Stage 5.4 Amendment 3 — TS-4 BBox-Aware Constrained EMA Formal",
+  "status": "PREREGISTERED_BEFORE_ANY_AMENDMENT3_EXPERIMENT",
+  "created": "2026-09-11",
+  "execution_authorization": "SMOKE_PASS_TO_FORMAL_ONLY",
+  "research_question": "On frozen Full Dev166 and Confirmatory Dev142, does preregistered TS-4 preserve the fixed-EMA temporal benefit while repairing the strong-motion bbox visibility failure that remained under TS-3 center containment?",
+  "scientific_rationale": "TS-3 achieved containment=1.0 but visible>=0.90 remained equal to TS-1 and strong visibility failed on both analysis sets. TS-4 changes only the output safety definition to the discrete maximum-visible frozen-bbox set.",
+  "ts4_algorithm": {
+    "name": "bbox_aware_constrained_ema_v1",
+    "ema": "ema_crop_center_v1 alpha=0.5; reset NEW_VIDEO/FRAME_GAP_GT_1/FALLBACK",
+    "objective": ["maximize area(B intersect crop)/area(B)", "among maximizers minimize distance from integer TS-1 proposal"],
+    "one_axis": "For [b1,b2), extent C, continuous maximum-overlap plateau is [b2-C,b1] if bbox extent<=C else [b1,b2-C]. Intersect with [0,floor(F-C)]; if the plateau lies outside, choose its nearest legal boundary. Contained integers are the discrete argmax; if none, evaluate the two adjacent legal integers. If every legal overlap is zero, the complete legal integer domain is the tie set.",
+    "two_axis_proof": "Intersection area factorizes as overlap_x*overlap_y with positive fixed bbox area; independent one-axis argmax sets therefore form the exact 2-D argmax rectangle.",
+    "projection": "coordinatewise clip of integer TS-1 proposal to the discrete argmax rectangle",
+    "bbox_le_crop": "full containment iff discrete maximum overlap equals bbox extent",
+    "bbox_gt_crop": "maximum possible overlap; no threshold or margin",
+    "frame_edge": "sanitized frozen bbox and legal placement intersection",
+    "half_open_integer": "half-open bbox/crop; float bbox converted exactly through decimal Fraction; exact derived crop height; deterministic ceil/floor and tie set",
+    "state_feedback": false,
+    "fallback_guard": false,
+    "extra_hyperparameters": []
+  },
+  "frozen_before_smoke": true,
+  "no_smoke_to_formal_changes": ["algorithm", "guard", "metrics", "gates", "strata", "dataset", "manifest", "protocol scientific content", "config", "SHA bindings"],
+  "analysis_sets": {
+    "full_dev166": {"definition": "All 166 whole video_ids and frozen Stage 5.1 frame identities in stage5_3_formal_manifest_v1", "videos": 166, "frames": 51256, "identity_sha256": "6d2c14877201ebf8fc6e8c11531f3a201d5e382f5ec5eb496f1d70f7c66d31c3"},
+    "confirmatory_dev142": {"definition": "Frozen Dev166 minus Stage5.4 Smoke24 whole video_ids", "videos": 142, "frames": 43820, "identity_sha256": "d00f99a044fc67a7ae484185cab5e8f94928ec3be350e2b27ac26250b72b7434", "heldout": false}
+  },
+  "treatments": ["TS-0 Stage5.3 frozen", "TS-1 fixed EMA", "TS-2 motion-adaptive EMA", "TS-3 center-constrained EMA", "TS-4 bbox-aware constrained EMA"],
+  "decision_rule": {
+    "application": "Every gate independently passes on Full Dev166 and Confirmatory Dev142.",
+    "temporal_benefit_ts4_vs_ts0": {"minimum_mean_displacement_relative_reduction": 0.2, "minimum_mean_acceleration_relative_reduction": 0.3, "maximum_p95_displacement_relative_regression": 0.0, "large_jump_nonincrease_thresholds": [0.1, 0.2, 0.3], "minimum_gt_0_20_relative_reduction": 0.25},
+    "spatial_guardrails_ts4_vs_ts0": {"minimum_mean_visible_fraction_delta": -0.03, "minimum_visible_ge_0_90_delta": -0.05, "minimum_subject_center_containment_delta": -0.02, "minimum_strong_off_center_mean_visible_delta": -0.05},
+    "mechanism_checks": ["TS-4 bbox visibility pointwise no worse than TS-3", "TS-4 strong visibility strictly better than TS-3", "TS-4 visible>=0.90 no worse than TS-3", "TS-4 objective realized on every eligible frame", "TS-4 displacement/acceleration/>0.20 no worse than TS-2"],
+    "gate_failure": "final result for this protocol; no repair or rerun",
+    "formal_pass": "READY_FOR_HUMAN_REVIEW only; never automatic FINAL_FROZEN"
+  },
+  "metrics": {"temporal": ["displacement", "acceleration", "large jumps"], "spatial": ["visible mean", "visible>=0.90", "containment", "near/moderate/strong"], "pairwise": ["TS-4 vs TS-0", "TS-4 vs TS-1", "TS-4 vs TS-2", "TS-4 vs TS-3"], "multi_subject": "OBSERVATION_ONLY"},
+  "bbox_diagnostics": {"role": "DIAGNOSTIC_ONLY", "analysis_sets": ["Full Dev166", "Dev142"], "fields": ["fully containable", "bbox larger than crop", "full/max-overlap/no-correction", "per-axis infeasible", "before/after/gain", "near/moderate/strong"]},
+  "guard_diagnostics": {"role": "DIAGNOSTIC_ONLY", "fields": ["activation count/rate", "axes", "runs", "correction mean/median/P90/P95/max", "TS-4 incremental correction relative to TS-3"]},
+  "engineering_gates": ["five-arm identities and geometry", "missing/extra/duplicate/unknown=0", "TS-0/1/2/3 regression=0", "TS-4 deterministic", "fallback equality", "frozen Stage5.1/5.2/5.3", "manifest/protocol/config identities", "Heldout/GPU/Qwen/RT-DETR/SAM=0", "snapshots/reports complete"],
+  "statistical_plan": "Complete frozen development populations with matched frame-level treatment comparisons; prespecified practical effect-size gates, no outcome-adaptive tests, no p-value selection, all failed and nonfailed gates reported.",
+  "runtime_contract": {"output_run_id": "stage5_4_amendment3_formal", "resume": "same HEAD/protocol/config/input identity only", "report": "experiment_report.md at Formal output root", "final_status_maximum": "READY_FOR_HUMAN_REVIEW"},
+  "report_contract": ["History", "Method", "TS-0~TS-4", "Smoke result", "Full Dev166", "Dev142", "Temporal", "Spatial", "Strata", "BBox diagnostics", "Guard diagnostics", "Multi-subject", "Fallback", "Engineering gates", "Scientific gates", "Mechanism checks", "Limitations", "Conclusion", "Artifact paths", "Git/Protocol/Config identities"],
+  "limitations": ["primary bbox is frozen detector output, not GT", "Dev166 and Dev142 are development sets", "multi-subject is observation-only", "PASS does not establish official-test performance"],
+  "heldout_lock": {"heldout392": "ABSOLUTELY_LOCKED", "allowed_access": 0},
+  "forbidden": ["Formal without exact Smoke PASS", "post-Smoke scientific edits", "parameter sweep", "margin/visibility threshold", "alpha/reset changes", "new detector", "SAM", "Heldout", "official test", "Stage 5.5", "automatic FINAL_FROZEN"],
+  "references": ["Kassis, T., Agarwal, V., He, Y., Patel, D., & Brueckner, A. M. (2026). Scientific Agent Skills: A Library of Procedural Knowledge for Research Agents. arXiv:2609.00065. https://doi.org/10.48550/arXiv.2609.00065"]
+}

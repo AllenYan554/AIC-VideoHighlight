@@ -257,7 +257,7 @@ def test_multi_subject_summary_includes_primary_plus_all_secondaries_observation
     }
 
 
-@pytest.mark.parametrize("candidate_side", ["ts2", "ts3"])
+@pytest.mark.parametrize("candidate_side", ["ts2", "ts3", "ts4"])
 def test_multi_subject_summary_uses_explicit_candidate_side_with_exact_rates(candidate_side):
     rows = [
         {
@@ -291,7 +291,7 @@ def test_multi_subject_summary_uses_explicit_candidate_side_with_exact_rates(can
 
 def test_multi_subject_summary_rejects_unknown_or_missing_candidate_contract():
     with pytest.raises(ValueError, match="unknown multi-subject candidate side"):
-        summarize_multi_subject_rows([], candidate_side="ts4")
+        summarize_multi_subject_rows([], candidate_side="ts5")
     incomplete = {
         "video_id": "a",
         "frame": 0,

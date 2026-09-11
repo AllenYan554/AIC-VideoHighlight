@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fractions import Fraction
+import random
 
 import pytest
 
@@ -22,6 +23,7 @@ from aic_video_highlight.spatial_composition.temporal_smoothing import (
     MOTION_ADAPTIVE_SMOOTHING_CEILING,
     PLACEMENT_TS2_ADAPTIVE_SMOOTHED,
     PLACEMENT_TS3_GUARDED_SMOOTHED,
+    PLACEMENT_TS4_BBOX_GUARDED_SMOOTHED,
     PLACEMENT_TS1_SMOOTHED,
     RESET_FALLBACK,
     RESET_FRAME_GAP,
@@ -32,10 +34,12 @@ from aic_video_highlight.spatial_composition.temporal_smoothing import (
     displacement_norm,
     large_jump_ratios,
     motion_adaptive_alpha,
+    maximum_overlap_safe_top_left_interval,
     place_crop_from_center,
     smooth_video_sequence,
     smooth_video_sequence_adaptive,
     smooth_video_sequence_guarded,
+    smooth_video_sequence_bbox_guarded,
     temporal_summary,
     transition_pairs,
     transition_triplets,
@@ -467,3 +471,100 @@ def test_containment_interval_handles_horizontal_crop_and_frame_edges_exactly():
     assert 0 <= middle_min <= middle_max <= MAX_X
     with pytest.raises(ValueError, match="half-open frame"):
         containment_safe_top_left_interval(W, CROP_W, float(W))
+
+
+def test_bbox_maximum_overlap_interval_covers_containable_equal_and_oversized_cases():
+    smaller = maximum_overlap_safe_top_left_interval(W, CROP_W, 700.0, 900.0)
+    assert (smaller.minimum, smaller.maximum) == (394, 700)
+    assert smaller.fully_containable and smaller.maximum_overlap == Fraction(200)
+
+    equal = maximum_overlap_safe_top_left_interval(W, CROP_W, 400.0, 906.0)
+    assert (equal.minimum, equal.maximum) == (400, 400)
+    assert equal.fully_containable and equal.maximum_overlap == Fraction(CROP_W)
+
+    oversized = maximum_overlap_safe_top_left_interval(W, CROP_W, 300.0, 1000.0)
+    assert (oversized.minimum, oversized.maximum) == (300, 494)
+    assert not oversized.fully_containable
+    assert oversized.maximum_overlap == Fraction(CROP_W)
+
+
+def test_bbox_maximum_overlap_interval_handles_fractional_integer_infeasibility_and_edges():
+    fractional = maximum_overlap_safe_top_left_interval(10, 1, 1.3, 2.2)
+    assert (fractional.minimum, fractional.maximum) == (1, 1)
+    assert not fractional.fully_containable
+    assert fractional.maximum_overlap == Fraction(7, 10)
+
+    left = maximum_overlap_safe_top_left_interval(W, CROP_W, 0.0, 40.5)
+    right = maximum_overlap_safe_top_left_interval(W, CROP_W, W - 40.5, float(W))
+    assert (left.minimum, left.maximum) == (0, 0)
+    assert (right.minimum, right.maximum) == (MAX_X, MAX_X)
+    assert left.fully_containable and right.fully_containable
+
+
+def test_bbox_guarded_ema_projects_to_nearest_maximum_visibility_placement():
+    observations = [obs(0, 700.0), obs(1, 1220.0)]
+    bboxes = {0: (650.0, 350.0, 750.0, 550.0), 1: (1100.0, 350.0, 1400.0, 550.0)}
+    fixed = smooth_video_sequence(W, H, TW, TH, observations)
+    guarded = smooth_video_sequence_bbox_guarded(W, H, TW, TH, observations, bboxes)
+    x_interval = maximum_overlap_safe_top_left_interval(W, CROP_W, 1100.0, 1400.0)
+    assert fixed[1].x < x_interval.minimum
+    assert guarded[1].x == x_interval.minimum
+    assert guarded[1].guard_applied
+    assert guarded[1].placement_status == PLACEMENT_TS4_BBOX_GUARDED_SMOOTHED
+    assert guarded[1].bbox_fully_containable
+    assert guarded[1].visible_fraction_after_guard == 1.0
+    assert guarded[1].visible_gain > 0.0
+    assert [item.ema_center_x for item in guarded] == [item.ema_center_x for item in fixed]
+
+
+def test_bbox_guarded_ema_oversized_bbox_fallback_reset_and_determinism():
+    fw, fh = 1000, 600
+    observations = [
+        obs(0, 800.0, 300.0),
+        obs(1, 200.0, 300.0),
+        obs(2, 500.0, 300.0, fallback=True),
+        obs(3, 900.0, 300.0),
+    ]
+    bboxes = {
+        0: (100.0, 50.0, 900.0, 550.0),
+        1: (100.0, 50.0, 900.0, 550.0),
+        3: (850.0, 200.0, 950.0, 400.0),
+    }
+    first = smooth_video_sequence_bbox_guarded(fw, fh, TW, TH, observations, bboxes)
+    replay = smooth_video_sequence_bbox_guarded(
+        fw, fh, TW, TH, list(reversed(observations)), bboxes
+    )
+    assert first == replay
+    assert first[0].bbox_larger_than_crop
+    assert first[0].guard_mode_x == "MAXIMUM_OVERLAP"
+    assert first[2].placement_status == PLACEMENT_FALLBACK_CENTER_CROP
+    assert first[2].guard_applied is None
+    assert first[3].reset_reason == RESET_FALLBACK
+    assert all(item.w == first[0].w and item.h == first[0].h for item in first)
+    assert_geometry_valid(first, width=fw, height=fh)
+
+
+def test_bbox_maximum_overlap_closed_form_matches_exhaustive_discrete_geometry():
+    rng = random.Random(5403)
+    for _ in range(500):
+        frame = rng.randint(3, 20)
+        crop = Fraction(rng.randint(1, frame * 4), 4)
+        if crop > frame:
+            crop = Fraction(frame)
+        start_tenth = rng.randint(0, frame * 10 - 1)
+        end_tenth = rng.randint(start_tenth + 1, frame * 10)
+        start = Fraction(start_tenth, 10)
+        end = Fraction(end_tenth, 10)
+        result = maximum_overlap_safe_top_left_interval(
+            frame, crop, float(start), float(end)
+        )
+        legal = range(0, int(Fraction(frame) - crop) + 1)
+
+        def overlap(q):
+            return max(Fraction(0), min(Fraction(q) + crop, end) - max(Fraction(q), start))
+
+        maximum = max(overlap(q) for q in legal)
+        maximizers = [q for q in legal if overlap(q) == maximum]
+        assert (result.minimum, result.maximum) == (min(maximizers), max(maximizers))
+        assert result.maximum_overlap == maximum
+        assert result.fully_containable is (maximum == end - start)

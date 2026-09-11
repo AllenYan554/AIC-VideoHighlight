@@ -18,6 +18,8 @@ Registered experiments:
 - stage5_4_amendment2_formal: PREREGISTERED constrained-EMA Formal, four arms over
                               Frozen Dev166 + Confirmatory Dev142 (AutoDL CPU;
                               DEFAULT NOT RUN)
+- stage5_4_amendment3_smoke/formal: jointly preregistered five-arm bbox-aware EMA
+- stage5_4_amendment3_pipeline: fail-closed Smoke→Formal meta executor
 
 Environment auto-selection: on Windows the default environment is
 configs/environments/windows_local.json, otherwise configs/environments/autodl.json.
@@ -42,6 +44,9 @@ RUNNERS = {
     "stage5_4_amendment_smoke": "scripts/experiments/stage5/run_stage5_4_temporal.py",
     "stage5_4_amendment2_smoke": "scripts/experiments/stage5/run_stage5_4_temporal.py",
     "stage5_4_amendment2_formal": "scripts/experiments/stage5/run_stage5_4_temporal.py",
+    "stage5_4_amendment3_smoke": "scripts/experiments/stage5/run_stage5_4_temporal.py",
+    "stage5_4_amendment3_formal": "scripts/experiments/stage5/run_stage5_4_temporal.py",
+    "stage5_4_amendment3_pipeline": "scripts/experiments/stage5/run_stage5_4_amendment3_pipeline.py",
 }
 
 CONFIGS = {
@@ -54,6 +59,9 @@ CONFIGS = {
     "stage5_4_amendment_smoke": "configs/experiments/stage5/stage5_4_amendment_smoke.json",
     "stage5_4_amendment2_smoke": "configs/experiments/stage5/stage5_4_amendment2_smoke.json",
     "stage5_4_amendment2_formal": "configs/experiments/stage5/stage5_4_amendment2_formal.json",
+    "stage5_4_amendment3_smoke": "configs/experiments/stage5/stage5_4_amendment3_smoke.json",
+    "stage5_4_amendment3_formal": "configs/experiments/stage5/stage5_4_amendment3_formal.json",
+    "stage5_4_amendment3_pipeline": "configs/experiments/stage5/stage5_4_amendment3_pipeline.json",
 }
 
 # Launch metadata consumed by scripts/experiments/registry.py (single source of
@@ -70,6 +78,9 @@ LAUNCH = {
     "stage5_4_amendment_smoke": {"target": "AUTODL", "gpu": "NONE"},
     "stage5_4_amendment2_smoke": {"target": "AUTODL", "gpu": "NONE"},
     "stage5_4_amendment2_formal": {"target": "AUTODL", "gpu": "NONE"},
+    "stage5_4_amendment3_smoke": {"target": "AUTODL", "gpu": "NONE"},
+    "stage5_4_amendment3_formal": {"target": "AUTODL", "gpu": "NONE"},
+    "stage5_4_amendment3_pipeline": {"target": "AUTODL", "gpu": "NONE"},
 }
 
 
