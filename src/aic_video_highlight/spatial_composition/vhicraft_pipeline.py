@@ -1,15 +1,17 @@
-"""Stage 5.6 End-to-End ablation, reproduction and final-freeze helpers.
+"""VHiCraft-v1 pipeline helpers: Stage 5.6 validation and final freeze.
 
-This module does NOT redefine any scientific method.  It only integrates the
-already FINAL_FROZEN Stage 1..5.5 modules, assembles the official-format
-predictions, and provides the preregistered comparison / invariant checks.
+VHiCraft = Video Highlight Context-Aware Retrieval and Adaptive Framing with
+Temporal Stabilization.  This module does not redefine any scientific method;
+it integrates the already FINAL_FROZEN Stage 1..5.5 modules, assembles the
+official-format predictions, and provides the preregistered comparison and
+invariant checks.
 
 Arms (exactly three):
 
-* ``E2E-0`` ``cached_replay_final_v1``            -- frozen artifact-chain replay.
-* ``E2E-1`` ``fresh_full_final_v1``               -- fresh full pipeline.
-* ``E2E-A0`` ``no_temporal_stabilization_control`` -- E2E-1 with TS-0 instead
-  of TS-5 Revised; the only scientific difference is Stage 5.4.
+* ``VC-0`` ``cached_v1_replay``                 -- frozen artifact-chain replay.
+* ``VC-1`` ``fresh_v1_pipeline``                -- fresh full pipeline.
+* ``VC-A0`` ``no_temporal_stabilization_control`` -- VC-1 with TS-0 instead of
+  TS-5 Revised; the only scientific difference is Stage 5.4.
 """
 
 from __future__ import annotations
@@ -25,17 +27,24 @@ from aic_video_highlight.spatial_composition.validation import (
     validate_submission_file,
 )
 
-E2E0 = "E2E-0"
-E2E1 = "E2E-1"
-E2EA0 = "E2E-A0"
-ARMS = (E2E0, E2E1, E2EA0)
+FRAMEWORK_NAME = "VHiCraft"
+FRAMEWORK_FULL_NAME = (
+    "Video Highlight Context-Aware Retrieval and Adaptive Framing with "
+    "Temporal Stabilization"
+)
+FRAMEWORK_VERSION = "v1"
+
+VC0 = "VC-0"
+VC1 = "VC-1"
+VCA0 = "VC-A0"
+ARMS = (VC0, VC1, VCA0)
 ARM_NAMES = {
-    E2E0: "cached_replay_final_v1",
-    E2E1: "fresh_full_final_v1",
-    E2EA0: "no_temporal_stabilization_control",
+    VC0: "cached_v1_replay",
+    VC1: "fresh_v1_pipeline",
+    VCA0: "no_temporal_stabilization_control",
 }
 # Stage 5.4 output geometry key consumed by each arm.
-ARM_STAGE5_4_KEY = {E2E0: "ts5", E2E1: "ts5", E2EA0: "ts0"}
+ARM_STAGE5_4_KEY = {VC0: "ts5", VC1: "ts5", VCA0: "ts0"}
 
 TARGET_RATIO = (9, 16)
 
@@ -53,7 +62,7 @@ FRESH_REPRODUCTION_POLICY = {
 }
 
 
-class E2EPipelineError(ValueError):
+class VHiCraftPipelineError(ValueError):
     """Raised when a Stage 5.6 identity or reproduction invariant is broken."""
 
 
@@ -138,15 +147,15 @@ def fs0_identity_holds(before_frames: Iterable[int], after_frames: Iterable[int]
 def ablation_invariants(
     ts0_crops: Mapping[int, FrameCrop], ts5_crops: Mapping[int, FrameCrop]
 ) -> dict[str, Any]:
-    """E2E-A0 vs E2E-1: only the bbox trajectory (x/y) may differ."""
+    """VC-A0 vs VC-1: only the bbox trajectory (x/y) may differ."""
     if set(ts0_crops) != set(ts5_crops):
-        raise E2EPipelineError("Stage 5.4 ablation changed the frame set")
+        raise VHiCraftPipelineError("Stage 5.4 ablation changed the frame set")
     width_changes = 0
     for frame in ts0_crops:
         if ts0_crops[frame].w != ts5_crops[frame].w:
             width_changes += 1
     if width_changes:
-        raise E2EPipelineError(
+        raise VHiCraftPipelineError(
             f"Stage 5.4 ablation changed crop width for {width_changes} frames"
         )
     moved = sum(
@@ -180,7 +189,7 @@ def compare_replays(
     cached_lines: Sequence[Mapping[str, Any]],
     fresh_lines: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any]:
-    """Structural reproduction comparison between cached replay and fresh E2E."""
+    """Structural reproduction comparison between cached replay and fresh VHiCraft."""
     cached = _video_crops(cached_lines)
     fresh = _video_crops(fresh_lines)
     cached_ids = set(cached)

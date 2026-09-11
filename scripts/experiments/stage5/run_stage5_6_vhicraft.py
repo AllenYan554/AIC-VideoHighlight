@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
-"""Stage 5.6 End-to-End Ablation & Final Freeze runner.
+"""Stage 5.6 VHiCraft-v1 Validation & Final Freeze runner.
 
 Single entry point for the full competition pipeline.  It chains the already
 FINAL_FROZEN Stage 1..5.5 modules (it does not re-implement them) and emits the
 official-format ``predictions.jsonl``.
 
 Arms:
-- E2E-0 ``cached_replay_final_v1``             : replay the frozen artifact chain.
-- E2E-1 ``fresh_full_final_v1``                : fresh full pipeline (user Formal).
-- E2E-A0 ``no_temporal_stabilization_control`` : E2E-1 with TS-0 (ablation only).
+- VC-0 ``cached_v1_replay``                  : replay the frozen artifact chain.
+- VC-1 ``fresh_v1_pipeline``                 : fresh full pipeline (user Formal).
+- VC-A0 ``no_temporal_stabilization_control``: VC-1 with TS-0 (ablation only).
 
 Registered experiments:
-- ``stage5_6_e2e_smoke``  : tiny CPU/GPU engineering smoke.
-- ``stage5_6_e2e_formal`` : full Dev166 final freeze (user-triggered; DEFAULT NOT RUN).
-- ``stage5_6_e2e_ablation``: TS-0 vs TS-5 Revised E2E ablation.
+- ``stage5_6_vhicraft_smoke``  : tiny CPU/GPU engineering smoke.
+- ``stage5_6_vhicraft_formal`` : full Dev166 final freeze (user-triggered; DEFAULT NOT RUN).
+- ``stage5_6_vhicraft_ablation``: TS-0 vs TS-5 Revised VHiCraft ablation.
 """
 
 from __future__ import annotations
@@ -35,16 +35,16 @@ if __package__ in (None, ""):  # direct script execution
 
 from aic_video_highlight.experiment_runtime.hashing import file_sha256
 from aic_video_highlight.experiment_runtime.paths import EnvironmentPaths
-from aic_video_highlight.spatial_composition.e2e_pipeline import (
+from aic_video_highlight.spatial_composition.vhicraft_pipeline import (
     ARM_NAMES,
     ARM_STAGE5_4_KEY,
     ARMS,
     DETERMINISM_POLICY,
-    E2E0,
-    E2E1,
-    E2EA0,
+    VC0,
+    VC1,
+    VCA0,
     TARGET_RATIO,
-    E2EPipelineError,
+    VHiCraftPipelineError,
     FrameCrop,
     ablation_invariants,
     assemble_prediction_lines,
@@ -76,16 +76,16 @@ MASTER_PATH = STAGE5_CONFIGS / "stage5_6_master_preregistration.json"
 SMOKE_PROTOCOL_PATH = STAGE5_CONFIGS / "stage5_6_smoke_protocol.json"
 FORMAL_PROTOCOL_PATH = STAGE5_CONFIGS / "stage5_6_formal_protocol.json"
 ABLATION_PROTOCOL_PATH = STAGE5_CONFIGS / "stage5_6_ablation_protocol.json"
-SMOKE_CONFIG_PATH = STAGE5_CONFIGS / "stage5_6_e2e_smoke.json"
-FORMAL_CONFIG_PATH = STAGE5_CONFIGS / "stage5_6_e2e_formal.json"
-ABLATION_CONFIG_PATH = STAGE5_CONFIGS / "stage5_6_e2e_ablation.json"
+SMOKE_CONFIG_PATH = STAGE5_CONFIGS / "stage5_6_vhicraft_smoke.json"
+FORMAL_CONFIG_PATH = STAGE5_CONFIGS / "stage5_6_vhicraft_formal.json"
+ABLATION_CONFIG_PATH = STAGE5_CONFIGS / "stage5_6_vhicraft_ablation.json"
 
-STAGE5_6_METHOD = "stage5_6_e2e_v1"
+STAGE5_6_METHOD = "stage5_6_vhicraft_v1"
 MASTER_STATUS = "PREREGISTERED_BEFORE_ANY_STAGE5_6_EXPERIMENT"
 PROTOCOL_SCHEMA_VERSION = "aic.stage5.6-experiment-protocol/v1"
 EXECUTION_CONFIG_SCHEMA_VERSION = "aic.stage5.6-execution-config/v1"
 OUTPUT_SCHEMA_VERSION = "aic.official-prediction-jsonl/v1"
-RUNNER_IDENTITY = "scripts/experiments/stage5/run_stage5_6_e2e.py"
+RUNNER_IDENTITY = "scripts/experiments/stage5/run_stage5_6_vhicraft.py"
 VALIDATOR_IDENTITY = "scripts/validation/validate_official_contract.py"
 
 FROZEN_CANDIDATE_CACHE_GLOBAL_SHA256 = (
@@ -106,10 +106,10 @@ REPORT_SECTIONS = (
     "Executive Summary",
     "Final Frozen Pipeline",
     "Input / Model Identities",
-    "E2E Architecture",
+    "VHiCraft Architecture",
     "Preregistered Validation",
     "Cache Replay",
-    "Fresh E2E Reproduction",
+    "Fresh VHiCraft Reproduction",
     "TS-0 vs TS-5 Revised Ablation",
     "FS-0 Identity Validation",
     "Official Contract Validation",
@@ -126,7 +126,7 @@ REPORT_SECTIONS = (
 def _read_json(path: Path) -> dict[str, Any]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
-        raise E2EPipelineError(f"expected a JSON object: {path}")
+        raise VHiCraftPipelineError(f"expected a JSON object: {path}")
     return payload
 
 
@@ -145,7 +145,7 @@ def validate_protocol(protocol: Mapping[str, Any], expected_status: str) -> dict
     if claimed != _canonical_semantic(protocol, "protocol_semantic_sha256"):
         raise FrozenInputError("Stage 5.6 protocol semantic hash mismatch")
     if tuple(protocol.get("arms", {})) != ARMS:
-        raise FrozenInputError("Stage 5.6 protocol must register exactly E2E-0/1/A0")
+        raise FrozenInputError("Stage 5.6 protocol must register exactly VC-0/1/A0")
     return {"protocol_id": protocol.get("protocol_id"), "semantic": claimed}
 
 
@@ -269,16 +269,16 @@ def build_video_crops(
     shard = load_stage5_4_shard(shards_dir / f"{video_id}.json")
     ts5_frames = tuple(sorted(frame for frame, crops in shard.items() if "ts5" in crops))
     if not fs0_identity_holds(selection.candidate_frames, selection.emitted_frames):
-        raise E2EPipelineError(f"Stage 5.5 FS-0 is not identity for {video_id}")
+        raise VHiCraftPipelineError(f"Stage 5.5 FS-0 is not identity for {video_id}")
     if tuple(sorted(selection.candidate_frames)) != ts5_frames:
-        raise E2EPipelineError(
+        raise VHiCraftPipelineError(
             f"Stage 5.4 frame identity differs from frozen segments for {video_id}"
         )
     crops: dict[int, FrameCrop] = {}
     for frame in ts5_frames:
         geometry = shard[frame].get(stage5_4_key)
         if geometry is None:
-            raise E2EPipelineError(
+            raise VHiCraftPipelineError(
                 f"missing {stage5_4_key} geometry for {video_id} frame {frame}"
             )
         crops[frame] = geometry
@@ -336,7 +336,7 @@ def run_arm(
     shards_out.mkdir(parents=True, exist_ok=True)
     machine.mkdir(parents=True, exist_ok=True)
 
-    if arm == E2E1:
+    if arm == VC1:
         _run_fresh_orchestration(config, environment)
 
     cache_dir, records, role, metadata, shards_dir = load_frozen_chain(config, environment)
@@ -392,7 +392,7 @@ def run_arm(
             completed += 1
             progress.append({"index": index, "video_id": video_id, "state": "done",
                              "frames": len(crops)})
-        except E2EPipelineError as exc:
+        except VHiCraftPipelineError as exc:
             errors.append({"video_id": video_id, "error": str(exc)})
             progress.append({"index": index, "video_id": video_id, "state": "error"})
         print(f"[stage5.6] {arm} {index}/{len(ordered_video_ids)} {video_id}", flush=True)
@@ -457,8 +457,8 @@ def run_arm(
     )
     _write_json(machine / "pipeline_manifest.json", manifest)
 
-    # E2E-A0 ablation invariants vs the frozen TS-5 reference (shared upstream).
-    if arm == E2EA0:
+    # VC-A0 ablation invariants vs the frozen TS-5 reference (shared upstream).
+    if arm == VCA0:
         ts5_dir = _resolve(
             str(config["inputs"]["stage5_4_shards"]["base"]),
             str(config["inputs"]["stage5_4_shards"]["path"]),
@@ -567,7 +567,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     mode = "execute"
     if args.execute:
         mode = "execute"
-    elif args.smoke or str(config.get("experiment_id")) == "stage5_6_e2e_smoke":
+    elif args.smoke or str(config.get("experiment_id")) == "stage5_6_vhicraft_smoke":
         mode = "smoke"
     if args.resume:
         config = {**config, "runtime": {**config.get("runtime", {}), "resume": True}}

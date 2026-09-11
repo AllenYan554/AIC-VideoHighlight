@@ -1,24 +1,29 @@
 {
   "preregistration_id": "stage5_6_master_preregistration_v1",
-  "title": "Stage 5.6 End-to-End Ablation & Final Freeze Master Preregistration",
+  "title": "Stage 5.6 VHiCraft-v1 Validation & Final Freeze Master Preregistration",
   "status": "PREREGISTERED_BEFORE_ANY_STAGE5_6_EXPERIMENT",
   "created": "2026-09-11",
+  "framework": {
+    "name": "VHiCraft",
+    "full_name": "Video Highlight Context-Aware Retrieval and Adaptive Framing with Temporal Stabilization",
+    "version": "v1"
+  },
   "scope": "Development and preregistration only. Full Formal is future user-triggered and fail-closed.",
-  "method": "stage5_6_e2e_v1",
+  "method": "stage5_6_vhicraft_v1",
   "arms": {
-    "E2E-0": {
-      "arm": "cached_replay_final_v1",
-      "description": "replay the frozen artifact chain; no Qwen/RT-DETR recomputation",
+    "VC-0": {
+      "arm": "cached_v1_replay",
+      "description": "replay the frozen VHiCraft-v1 artifact chain; no Qwen/RT-DETR recomputation",
       "stage5_4_key": "ts5"
     },
-    "E2E-1": {
-      "arm": "fresh_full_final_v1",
-      "description": "fresh full pipeline from raw video; requires fresh_orchestration.commands",
+    "VC-1": {
+      "arm": "fresh_v1_pipeline",
+      "description": "fresh full VHiCraft-v1 pipeline from raw video; requires fresh_orchestration.commands",
       "stage5_4_key": "ts5"
     },
-    "E2E-A0": {
+    "VC-A0": {
       "arm": "no_temporal_stabilization_control",
-      "description": "E2E-1 upstream with TS-0 (CMP-1) instead of TS-5 Revised; only Stage 5.4 differs",
+      "description": "VC-1 upstream with TS-0 (CMP-1) instead of TS-5 Revised; only Stage 5.4 differs",
       "stage5_4_key": "ts0"
     }
   },
@@ -58,35 +63,35 @@
     "stage5_5_fs0_identity_pass": true,
     "stage5_4_ablation_regression_pass": true,
     "determinism_reproducibility_pass": true,
-    "fresh_reproduction_pass": "required for FINAL_CANDIDATE_V1; if E2E-1 not executed, status = READY_FOR_USER_FORMAL_EXECUTION"
+    "fresh_reproduction_pass": "required for FINAL_CANDIDATE_V1; if VC-1 not executed, status = READY_FOR_USER_FORMAL_EXECUTION"
   },
   "artifacts": {
     "smoke_protocol": {
       "path": "configs/experiments/stage5/stage5_6_smoke_protocol.json",
-      "byte_sha256": "70b1782e4c717896fedb2e4f404b00cb6ad8e0f4af0f21a68a94fa9c35639d64",
-      "semantic_sha256": "da64efe3c54c6b34978162ec24f5a12d0d2083a81d1ed71cbc3e37b640beec34"
+      "byte_sha256": "73de6ac4fa53c6c85371e47fd06d45f4ed02703c03c90226f97dbf3d79ed8eb8",
+      "semantic_sha256": "bb22e2368a133f5ae6ffb9e4e17fb64f12d0e957f7dfb1ca869f50050396e099"
     },
     "formal_protocol": {
       "path": "configs/experiments/stage5/stage5_6_formal_protocol.json",
-      "byte_sha256": "4bf223116b20cf24ea3b5d1b43ce641d98121c8167df86b83def1f941a831074",
-      "semantic_sha256": "e68cafab1677e296e9e3e11e2ff593e59ee1398d2093ca6813a7873019ada82e"
+      "byte_sha256": "f4236326e05eb430e3d03d552700b305d5c9e5801baad2e9b4cfab36810de8fb",
+      "semantic_sha256": "88323a1b2697ca19b2f0eabe46b8d1e36171f70fbedbab5a171d6339a28201f7"
     },
     "ablation_protocol": {
       "path": "configs/experiments/stage5/stage5_6_ablation_protocol.json",
-      "byte_sha256": "1fcd0b4e97e9dd20e81c4fde0b6ab44cfcfaf9b1488ebf85b7232e3275805628",
-      "semantic_sha256": "6b4683746974e7dd90ce9d75d7c32a22944ef28342d8293b9e83045ea8836225"
+      "byte_sha256": "5b44ff739d5b7f0d5e79a24403e359bcb3e788fbea62eea7a8205eb0b9eba169",
+      "semantic_sha256": "9a00ecc033232fb14070029b07ceb2f070ccad783fbe63c411f8b84ce6ced507"
     },
     "smoke_config": {
-      "path": "configs/experiments/stage5/stage5_6_e2e_smoke.json",
-      "byte_sha256": "3083531495917fb0697a9459e195f743dd3ccba16229ad2ad23b35f41513a886"
+      "path": "configs/experiments/stage5/stage5_6_vhicraft_smoke.json",
+      "byte_sha256": "a28332e2542bab58eb7d979db55a507ece8db51499cd705d559a5d8a1232ebd6"
     },
     "formal_config": {
-      "path": "configs/experiments/stage5/stage5_6_e2e_formal.json",
-      "byte_sha256": "0171b5b27464fd4930956956de55f8fe28501a6229def4406eafa598e80b2111"
+      "path": "configs/experiments/stage5/stage5_6_vhicraft_formal.json",
+      "byte_sha256": "e337c0bfb45895039d7ffdfee2a6b00890af0fa41b5fefc5b9e56223d6bd0681"
     },
     "ablation_config": {
-      "path": "configs/experiments/stage5/stage5_6_e2e_ablation.json",
-      "byte_sha256": "1988551a251426eb37390de8974f19fd764953936e85b2a8cb206ae34384f07b"
+      "path": "configs/experiments/stage5/stage5_6_vhicraft_ablation.json",
+      "byte_sha256": "8ae479a195564985a9d13199478fb7dcef230eb78c9b85c0c0570ce339ca8ed3"
     }
   },
   "execution_locks": {

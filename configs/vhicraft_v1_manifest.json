@@ -1,0 +1,54 @@
+{
+  "schema_version": "aic.vhicraft-manifest/v1",
+  "framework_name": "VHiCraft",
+  "full_name": "Video Highlight Context-Aware Retrieval and Adaptive Framing with Temporal Stabilization",
+  "version": "v1",
+  "status": "FINAL_ROUTE",
+  "model": {
+    "repo_id": "Qwen/Qwen3.5-4B",
+    "revision": "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a"
+  },
+  "prompt_identity": "high_recall_retrieval_v0",
+  "stage_identities": {
+    "stage4_candidate_cache_global_semantic_sha256": "4b515a6d6fb47073413c686214c3fa5f97293655a3824241eb3305b9e7753246",
+    "stage4_role_dev166_semantic_sha256": "bceb82034bcc5eed42a5099d7f54dd0fa776fe240969dfada231d255a368ec71",
+    "stage5_1_predictions_sha256": "ca44cc2831e935e82fa7b05820b1269d7f2cc0d360c030b5847a192ede11b9a5",
+    "stage5_1_metadata_cache_sha256": "52e46f16cfe5012aa68cfb8d7440f4d53e31b7cc133add7e29b78d648a9d5675",
+    "stage5_1_index_sha256": "b541ade5c05e066dd5163f5d1cf2f7deb8780613589839000b55b1c55803a04e",
+    "stage5_2_freeze_sha256": "4d407b2578e92a6b02820651de369f5fa6728cbda6f8b94efdf54689d49cc03a",
+    "stage5_2_policy_v1_semantic_sha256": "222258d1d7960639697bd6c3f36339443c85a27bee9dcee7742f24fda238871d",
+    "stage5_3_freeze_sha256": "2b7081443cbb0e6ed0fd73d49217f6d4ff071a1e094146bbfd0c78b5696beb49",
+    "stage5_3_cmp1_sha256": "dce61c4ce1e83358a02a0c4a0ef38666eae2726fa116826980506997005580b1",
+    "stage5_3_manifest_semantic_sha256": "2af7d66468fc8d5546f2fabf20aba2f799a17d76ce7c8f4c281fb930539cb24d",
+    "stage5_4_method": "projected_state_canonical_center_ema_v1",
+    "stage5_4_protocol_semantic_sha256": "b31f78931a714d0e2021b49752951e1d492766717a2b1f2f372ec2e9224a7618",
+    "stage5_5_final_policy": "FS-0 (all_frames_v1)",
+    "stage5_5_terminal": "STAGE5_5_CLOSED"
+  },
+  "runner": "scripts/experiments/stage5/run_stage5_6_vhicraft.py",
+  "runner_identity": "scripts/experiments/stage5/run_stage5_6_vhicraft.py",
+  "validator": "scripts/validation/validate_official_contract.py",
+  "pipeline_module": "src/aic_video_highlight/spatial_composition/vhicraft_pipeline.py",
+  "arms": {
+    "VC-0": "cached_v1_replay",
+    "VC-1": "fresh_v1_pipeline",
+    "VC-A0": "no_temporal_stabilization_control"
+  },
+  "formal_experiment": "stage5_6_vhicraft_formal",
+  "execution_head": "BOUND_AT_RUNTIME",
+  "execution_head_resolution": "run_stage5_6_vhicraft.py::_resolve_execution_head (git rev-parse HEAD)",
+  "manifest_created_from_head": "1c4372e84f6c5ace14b818448b7cf4abac749fcb",
+  "local_model_snapshot": {
+    "path": "D:\\CDUT\\硕士\\2026-09 AIC\\models\\Qwen3.5-4B",
+    "revision": "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
+    "matches_formal_revision": true
+  },
+  "heldout_lock": {
+    "heldout392": "ABSOLUTELY_LOCKED",
+    "allowed_access": 0
+  },
+  "official_test_lock": {
+    "official_test": "ABSOLUTELY_LOCKED",
+    "allowed_access": 0
+  }
+}

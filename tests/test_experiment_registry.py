@@ -49,43 +49,34 @@ def test_list_matches_stage_registry(registry, stage5):
 
 
 def test_describe_autodl_spec(registry):
-    spec = registry.describe("stage5_4_formal")
+    spec = registry.describe("stage5_6_vhicraft_formal")
     assert spec["schema_version"] == "aic.experiment-launch-spec/v1"
-    assert spec["experiment"] == "stage5_4_formal"
+    assert spec["experiment"] == "stage5_6_vhicraft_formal"
     assert spec["target"] == "AUTODL"
     assert spec["gpu"] == "NONE"
     assert spec["stage_launcher"] == "scripts/experiments/stage5/run.py"
-    assert spec["canonical_args"] == ["--experiment", "stage5_4_formal"]
-    assert spec["config"] == "configs/experiments/stage5/stage5_4_formal.json"
+    assert spec["canonical_args"] == ["--experiment", "stage5_6_vhicraft_formal"]
+    assert spec["config"] == "configs/experiments/stage5/stage5_6_vhicraft_formal.json"
     assert spec["environment_config"] == "configs/environments/autodl.json"
     assert spec["remote_repo"] == "/root/autodl-tmp/AIC-VideoHighlight-run"
     assert spec["supports"] == {"resume": True, "dry_run": True, "validate_only": True}
 
 
-def test_describe_stage5_4_amendment_smoke(registry):
-    spec = registry.describe("stage5_4_amendment_smoke")
-    assert spec["experiment"] == "stage5_4_amendment_smoke"
-    assert spec["target"] == "AUTODL"
-    assert spec["gpu"] == "NONE"
-    assert spec["canonical_args"] == ["--experiment", "stage5_4_amendment_smoke"]
-    assert spec["config"] == "configs/experiments/stage5/stage5_4_amendment_smoke.json"
+def test_describe_vhicraft_smoke_and_ablation(registry):
+    for name in ("stage5_6_vhicraft_smoke", "stage5_6_vhicraft_ablation"):
+        spec = registry.describe(name)
+        assert spec["experiment"] == name
+        assert spec["target"] == "AUTODL"
+        assert spec["gpu"] == "NONE"
+        assert spec["canonical_args"] == ["--experiment", name]
+        assert spec["config"] == f"configs/experiments/stage5/{name}.json"
 
 
-def test_describe_stage5_4_amendment2_smoke(registry):
-    spec = registry.describe("stage5_4_amendment2_smoke")
-    assert spec["experiment"] == "stage5_4_amendment2_smoke"
-    assert spec["target"] == "AUTODL"
-    assert spec["gpu"] == "NONE"
-    assert spec["canonical_args"] == ["--experiment", "stage5_4_amendment2_smoke"]
-    assert spec["config"] == "configs/experiments/stage5/stage5_4_amendment2_smoke.json"
-
-
-def test_describe_stage5_4_amendment3_pipeline(registry):
-    spec = registry.describe("stage5_4_amendment3_pipeline")
-    assert spec["target"] == "AUTODL"
-    assert spec["gpu"] == "NONE"
-    assert spec["canonical_args"] == ["--experiment", "stage5_4_amendment3_pipeline"]
-    assert spec["config"].endswith("stage5_4_amendment3_pipeline.json")
+def test_describe_final_v1_stages(registry):
+    for name in ("stage5_4_amendment4_revised_formal", "stage5_5_dev_formal"):
+        spec = registry.describe(name)
+        assert spec["target"] == "AUTODL"
+        assert spec["gpu"] == "NONE"
 
 
 def test_describe_windows_spec(registry):

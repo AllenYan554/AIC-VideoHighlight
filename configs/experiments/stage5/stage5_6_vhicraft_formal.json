@@ -1,19 +1,24 @@
 {
   "execution_config_schema_version": "aic.stage5.6-execution-config/v1",
-  "experiment_id": "stage5_6_e2e_formal",
+  "experiment_id": "stage5_6_vhicraft_formal",
   "stage": "stage5",
-  "run_type": "STAGE5_6_E2E_FINAL_FREEZE_FORMAL",
+  "framework": {
+    "name": "VHiCraft",
+    "full_name": "Video Highlight Context-Aware Retrieval and Adaptive Framing with Temporal Stabilization",
+    "version": "v1"
+  },
+  "run_type": "VHICRAFT_V1_FINAL_FREEZE_FORMAL",
   "status_note": "PREREGISTERED; AutoDL CPU/GPU; Formal is user-triggered",
-  "config_repo_path": "configs/experiments/stage5/stage5_6_e2e_formal.json",
+  "config_repo_path": "configs/experiments/stage5/stage5_6_vhicraft_formal.json",
   "master_preregistration": "configs/experiments/stage5/stage5_6_master_preregistration.json",
   "protocol": "configs/experiments/stage5/stage5_6_formal_protocol.json",
-  "protocol_sha256": "4bf223116b20cf24ea3b5d1b43ce641d98121c8167df86b83def1f941a831074",
-  "protocol_semantic_sha256": "e68cafab1677e296e9e3e11e2ff593e59ee1398d2093ca6813a7873019ada82e",
+  "protocol_sha256": "f4236326e05eb430e3d03d552700b305d5c9e5801baad2e9b4cfab36810de8fb",
+  "protocol_semantic_sha256": "88323a1b2697ca19b2f0eabe46b8d1e36171f70fbedbab5a171d6339a28201f7",
   "arms": [
-    "E2E-0",
-    "E2E-A0"
+    "VC-0",
+    "VC-A0"
   ],
-  "output_run_id": "stage5_6_e2e_formal",
+  "output_run_id": "stage5_6_vhicraft_formal",
   "inputs": {
     "frozen_candidate_cache": {
       "base": "outputs",

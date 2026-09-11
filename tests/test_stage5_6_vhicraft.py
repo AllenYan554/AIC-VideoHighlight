@@ -10,13 +10,13 @@ from pathlib import Path
 import pytest
 
 from aic_video_highlight.experiment_runtime.hashing import canonical_sha256, file_sha256
-from aic_video_highlight.spatial_composition.e2e_pipeline import (
+from aic_video_highlight.spatial_composition.vhicraft_pipeline import (
     ARM_NAMES,
     ARMS,
-    E2E0,
-    E2E1,
-    E2EA0,
-    E2EPipelineError,
+    VC0,
+    VC1,
+    VCA0,
+    VHiCraftPipelineError,
     FrameCrop,
     ablation_invariants,
     assemble_prediction_lines,
@@ -33,7 +33,7 @@ from aic_video_highlight.spatial_composition.submission import (
     write_predictions_jsonl,
 )
 from scripts.experiments.stage5 import run as stage5_registry
-from scripts.experiments.stage5 import run_stage5_6_e2e as runner
+from scripts.experiments.stage5 import run_stage5_6_vhicraft as runner
 from scripts.validation import validate_official_contract as contract_cli
 
 REPO = Path(__file__).resolve().parents[1]
@@ -58,15 +58,15 @@ def test_master_and_protocols_close():
     formal = json.loads((CONF / "stage5_6_formal_protocol.json").read_text(encoding="utf-8"))
     assert tuple(smoke["arms"]) == ARMS
     assert smoke["protocol_semantic_sha256"] != formal["protocol_semantic_sha256"]
-    assert "E2E-A0" in formal["arms"]
+    assert "VC-A0" in formal["arms"]
     assert "high_recall_retrieval_v0" == formal["frozen_identities"]["prompt"]
 
 
 def test_execution_configs_bind_protocol_bytes():
     for config_path, protocol_path in (
-        (CONF / "stage5_6_e2e_smoke.json", CONF / "stage5_6_smoke_protocol.json"),
-        (CONF / "stage5_6_e2e_formal.json", CONF / "stage5_6_formal_protocol.json"),
-        (CONF / "stage5_6_e2e_ablation.json", CONF / "stage5_6_ablation_protocol.json"),
+        (CONF / "stage5_6_vhicraft_smoke.json", CONF / "stage5_6_smoke_protocol.json"),
+        (CONF / "stage5_6_vhicraft_formal.json", CONF / "stage5_6_formal_protocol.json"),
+        (CONF / "stage5_6_vhicraft_ablation.json", CONF / "stage5_6_ablation_protocol.json"),
     ):
         config = json.loads(config_path.read_text(encoding="utf-8"))
         assert config["protocol_sha256"] == file_sha256(protocol_path)
@@ -89,9 +89,9 @@ def test_ablation_invariants_only_xy_may_differ():
     result = ablation_invariants(ts0, ts5)
     assert result["frame_ids_identical"] and result["crop_width_identical"]
     assert result["frames_with_changed_xy"] == 2
-    with pytest.raises(E2EPipelineError):
+    with pytest.raises(VHiCraftPipelineError):
         ablation_invariants(ts0, _crops(f0=(10, 0, 168)))
-    with pytest.raises(E2EPipelineError):
+    with pytest.raises(VHiCraftPipelineError):
         ablation_invariants(ts0, _crops(f0=(10, 0, 200), f1=(20, 0, 168)))
 
 
@@ -231,7 +231,7 @@ def test_final_pipeline_manifest_binds_identities():
 
 
 def test_report_generator_sections(tmp_path):
-    config = json.loads((CONF / "stage5_6_e2e_formal.json").read_text(encoding="utf-8"))
+    config = json.loads((CONF / "stage5_6_vhicraft_formal.json").read_text(encoding="utf-8"))
     output = tmp_path / "experiment_report.md"
     runner.render_stage5_6_report(
         output, config=config,
@@ -243,14 +243,14 @@ def test_report_generator_sections(tmp_path):
 
 
 def test_registry_and_launcher():
-    for experiment in ("stage5_6_e2e_smoke", "stage5_6_e2e_formal", "stage5_6_e2e_ablation"):
+    for experiment in ("stage5_6_vhicraft_smoke", "stage5_6_vhicraft_formal", "stage5_6_vhicraft_ablation"):
         assert experiment in stage5_registry.RUNNERS
         assert stage5_registry.LAUNCH[experiment]["target"] == "AUTODL"
         assert stage5_registry.LAUNCH[experiment]["strict_git_preflight"] is True
     assert (REPO / "scripts" / "experiments" / "launch_experiment.ps1").is_file()
     described = subprocess.run(
         [sys.executable, str(REPO / "scripts" / "experiments" / "registry.py"),
-         "describe", "--experiment", "stage5_6_e2e_formal"],
+         "describe", "--experiment", "stage5_6_vhicraft_formal"],
         capture_output=True, text=True, check=True,
     )
     spec = json.loads(described.stdout)
@@ -258,7 +258,7 @@ def test_registry_and_launcher():
 
 
 def test_validate_only_mode_returns_without_execution():
-    config = CONF / "stage5_6_e2e_smoke.json"
+    config = CONF / "stage5_6_vhicraft_smoke.json"
     environment = REPO / "configs" / "environments" / "windows_local.json"
     assert runner.main(["--config", str(config), "--environment", str(environment), "--validate-only"]) == 0
 
@@ -271,3 +271,28 @@ def test_deterministic_serialization(tmp_path):
     write_predictions_jsonl(lines, path_b)
     assert path_a.read_bytes() == path_b.read_bytes()
     assert canonical_sha256(lines) == canonical_sha256(json.loads(json.dumps(lines)))
+
+
+def test_vhicraft_manifest_and_framework_metadata():
+    from aic_video_highlight.spatial_composition.vhicraft_pipeline import (
+        FRAMEWORK_FULL_NAME,
+        FRAMEWORK_NAME,
+        FRAMEWORK_VERSION,
+    )
+
+    assert FRAMEWORK_NAME == "VHiCraft"
+    assert FRAMEWORK_VERSION == "v1"
+    assert "Temporal Stabilization" in FRAMEWORK_FULL_NAME
+    manifest = json.loads((REPO / "configs" / "vhicraft_v1_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["framework_name"] == "VHiCraft"
+    assert manifest["full_name"] == FRAMEWORK_FULL_NAME
+    assert manifest["version"] == "v1"
+    assert manifest["runner"] == "scripts/experiments/stage5/run_stage5_6_vhicraft.py"
+    assert manifest["arms"] == {
+        "VC-0": "cached_v1_replay",
+        "VC-1": "fresh_v1_pipeline",
+        "VC-A0": "no_temporal_stabilization_control",
+    }
+    assert manifest["stage_identities"]["stage5_4_method"] == "projected_state_canonical_center_ema_v1"
+    assert manifest["heldout_lock"]["allowed_access"] == 0
+    assert manifest["official_test_lock"]["allowed_access"] == 0

@@ -1,24 +1,29 @@
 {
   "protocol_schema_version": "aic.stage5.6-experiment-protocol/v1",
   "protocol_id": "stage5_6_ablation_protocol",
-  "title": "Stage 5.6 End-to-End TS-0 vs TS-5 Revised Ablation Protocol",
+  "title": "Stage 5.6 VHiCraft-v1 TS-0 vs TS-5 Revised Ablation Protocol",
   "status": "PREREGISTERED_BEFORE_ANY_STAGE5_6_EXPERIMENT",
   "created": "2026-09-11",
-  "method": "stage5_6_e2e_v1",
+  "framework": {
+    "name": "VHiCraft",
+    "full_name": "Video Highlight Context-Aware Retrieval and Adaptive Framing with Temporal Stabilization",
+    "version": "v1"
+  },
+  "method": "stage5_6_vhicraft_v1",
   "arms": {
-    "E2E-0": {
-      "arm": "cached_replay_final_v1",
-      "description": "replay the frozen artifact chain; no Qwen/RT-DETR recomputation",
+    "VC-0": {
+      "arm": "cached_v1_replay",
+      "description": "replay the frozen VHiCraft-v1 artifact chain; no Qwen/RT-DETR recomputation",
       "stage5_4_key": "ts5"
     },
-    "E2E-1": {
-      "arm": "fresh_full_final_v1",
-      "description": "fresh full pipeline from raw video; requires fresh_orchestration.commands",
+    "VC-1": {
+      "arm": "fresh_v1_pipeline",
+      "description": "fresh full VHiCraft-v1 pipeline from raw video; requires fresh_orchestration.commands",
       "stage5_4_key": "ts5"
     },
-    "E2E-A0": {
+    "VC-A0": {
       "arm": "no_temporal_stabilization_control",
-      "description": "E2E-1 upstream with TS-0 (CMP-1) instead of TS-5 Revised; only Stage 5.4 differs",
+      "description": "VC-1 upstream with TS-0 (CMP-1) instead of TS-5 Revised; only Stage 5.4 differs",
       "stage5_4_key": "ts0"
     }
   },
@@ -108,10 +113,10 @@
     "stage5_5_fs0_identity_pass": true,
     "stage5_4_ablation_regression_pass": true,
     "determinism_reproducibility_pass": true,
-    "fresh_reproduction_pass": "required for FINAL_CANDIDATE_V1; if E2E-1 not executed, status = READY_FOR_USER_FORMAL_EXECUTION"
+    "fresh_reproduction_pass": "required for FINAL_CANDIDATE_V1; if VC-1 not executed, status = READY_FOR_USER_FORMAL_EXECUTION"
   },
   "fs0_identity_requirement": "Stage 5.5 FS-0 must be a pure identity (frame ids, count, bbox, canonical JSON order)",
-  "stage5_4_ablation_invariant": "E2E-A0 vs E2E-1 differ only in Stage 5.4 (TS-0 vs TS-5 Revised); frame ids, count, crop width, subject source and target ratio identical",
+  "stage5_4_ablation_invariant": "VC-A0 vs VC-1 differ only in Stage 5.4 (TS-0 vs TS-5 Revised); frame ids, count, crop width, subject source and target ratio identical",
   "heldout_lock": {
     "heldout392": "ABSOLUTELY_LOCKED",
     "allowed_access": 0
@@ -136,6 +141,6 @@
     "treating weak reference as GT",
     "post-hoc method changes"
   ],
-  "scope": "Stage 5.4 fork only: E2E-A0 (TS-0) vs E2E-1/E2E-0 (TS-5 Revised); no Qwen re-run twice.",
-  "protocol_semantic_sha256": "6b4683746974e7dd90ce9d75d7c32a22944ef28342d8293b9e83045ea8836225"
+  "scope": "Stage 5.4 fork only: VC-A0 (TS-0) vs VC-1/VC-0 (TS-5 Revised); no Qwen re-run twice.",
+  "protocol_semantic_sha256": "9a00ecc033232fb14070029b07ceb2f070ccad783fbe63c411f8b84ce6ced507"
 }
