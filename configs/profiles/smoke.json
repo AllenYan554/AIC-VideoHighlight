@@ -1,0 +1,44 @@
+{
+  "schema_version": "aic.vhicraft.inference-profile/v1",
+  "profile": "smoke",
+  "run_type": "LOCAL_QUANTIZED_DEPLOYMENT",
+  "protocol": "configs/vhicraft_v1_protocol.json",
+  "inputs": {
+    "mode": "dev_role",
+    "role_manifest": {
+      "base": "datasets",
+      "path": "aic_highlight_dev/weak/dev_tune_166.json"
+    }
+  },
+  "inference": {
+    "schema_version": "aic.vhicraft.inference-pipeline/v1",
+    "dev_manifest": {
+      "base": "datasets",
+      "path": "aic_highlight_dev/manifests/dev.jsonl"
+    },
+    "video_root": {
+      "base": "datasets",
+      "path": "aic_highlight_dev"
+    },
+    "source_index": {
+      "base": "datasets",
+      "path": "aic_highlight_dev/weak/dev_index.jsonl"
+    },
+    "qwen_snapshot": {
+      "base": "models",
+      "path": "Qwen3.5-4B"
+    },
+    "rtdetr_snapshot": {
+      "base": "models",
+      "path": "PekingU-rtdetr_r50vd"
+    },
+    "qwen_backend": "transformers-bnb-nf4",
+    "qwen_compute_dtype": "float16",
+    "rtdetr_dtype": "float32"
+  },
+  "video_ids": [
+    "qvh_000215_9x16",
+    "qvh_000190_9x16",
+    "qvh_000836_9x16"
+  ]
+}

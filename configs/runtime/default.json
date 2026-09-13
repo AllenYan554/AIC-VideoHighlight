@@ -1,0 +1,13 @@
+{
+  "schema_version": "aic.vhicraft.runtime-profile/v1",
+  "runtime_profile": "default",
+  "attention_backend": "transformers_sdpa_auto",
+  "gqa_execution_mode": "transformers_default",
+  "chunk_heartbeat": false,
+  "fail_closed": false,
+  "hardware_scope": {
+    "device_type": "portable",
+    "compute_dtypes": ["framework_default"],
+    "requires_gqa": false
+  }
+}

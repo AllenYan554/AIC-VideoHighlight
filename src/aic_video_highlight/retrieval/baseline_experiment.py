@@ -1,0 +1,565 @@
+"""Reproducible experiment outputs for the Baseline 20 development set."""
+
+from __future__ import annotations
+
+import csv
+import json
+import math
+import statistics
+from collections.abc import Callable, Iterable
+from pathlib import Path
+from typing import Any
+
+from .temporal_metrics import ZERO_DURATION_EPSILON_SEC, duration_based_metrics
+
+
+def atomic_write_json(path: Path, payload: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(path)
+
+
+def persist_run_config(
+    path: Path,
+    payload: dict[str, Any],
+    *,
+    resume: bool,
+    overwrite: bool = False,
+) -> dict[str, Any]:
+    """Protect the original experiment snapshot unless overwrite is explicit."""
+    if path.is_file():
+        if resume:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(existing, dict):
+                raise ValueError("existing run_config.json must contain a JSON object")
+            return existing
+        if not overwrite:
+            raise FileExistsError(
+                "run_config.json already exists; use --resume or --overwrite"
+            )
+    atomic_write_json(path, payload)
+    return payload
+
+
+def _read_manifest_items(manifest_file: Path) -> tuple[list[dict[str, Any]], str]:
+    text = manifest_file.read_text(encoding="utf-8")
+    if text.lstrip().startswith("["):
+        payload = json.loads(text)
+        if not isinstance(payload, list):
+            raise ValueError("baseline manifest must be a JSON array")
+        return payload, "json_array"
+    items: list[dict[str, Any]] = []
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            item = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"manifest line {line_number} is not valid JSON: {exc.msg}") from exc
+        if not isinstance(item, dict):
+            raise ValueError(f"manifest line {line_number} must be a JSON object")
+        items.append(item)
+    if not items:
+        raise ValueError("jsonl manifest contains no items")
+    return items, "jsonl"
+
+
+def _load_reference_entry(
+    reference_path: str,
+    video_id: str,
+    root: Path,
+    manifest_file: Path,
+    cache: dict[Path, dict[str, dict[str, Any]]],
+) -> dict[str, Any]:
+    locator = reference_path.split("#", 1)
+    relative = locator[0].strip()
+    expected_video_id = locator[1].strip() if len(locator) > 1 else video_id
+    if not relative:
+        raise ValueError(f"reference_path has no file component for {video_id}")
+    candidates = [root / relative, manifest_file.parent / relative]
+    reference_file = next((path for path in candidates if path.is_file()), None)
+    if reference_file is None:
+        raise FileNotFoundError(f"reference file does not exist for {video_id}: {relative}")
+    if reference_file not in cache:
+        entries: dict[str, dict[str, Any]] = {}
+        for line_number, line in enumerate(reference_file.read_text(encoding="utf-8").splitlines(), start=1):
+            if not line.strip():
+                continue
+            entry = json.loads(line)
+            if not isinstance(entry, dict) or not isinstance(entry.get("video_id"), str):
+                raise ValueError(f"reference line {line_number} in {reference_file} is invalid")
+            if entry["video_id"] in entries:
+                raise ValueError(f"reference file has duplicate video_id: {entry['video_id']}")
+            entries[entry["video_id"]] = entry
+        cache[reference_file] = entries
+    entry = cache[reference_file].get(expected_video_id)
+    if entry is None:
+        raise KeyError(f"reference entry is missing for {expected_video_id} in {reference_file}")
+    if entry.get("coordinate_system") != "clip-local seconds":
+        raise ValueError(f"reference coordinate system is not clip-local for {expected_video_id}")
+    return entry
+
+
+def _validate_clip_reference_segments(
+    references: list[dict[str, Any]],
+    clip_duration: float,
+    video_id: str,
+) -> None:
+    for segment in references:
+        start = float(segment["start_sec"])
+        end = float(segment["end_sec"])
+        if start < 0 or end < start or end > clip_duration + ZERO_DURATION_EPSILON_SEC:
+            raise ValueError(f"weak reference is outside clip-local bounds for {video_id}")
+
+
+def _select_jsonl_samples(
+    payload: list[dict[str, Any]],
+    root: Path,
+    manifest_file: Path,
+    *,
+    video_id: str | None,
+    limit: int | None,
+    dataset_name: str | None,
+    dataset_version: str | None,
+) -> list[dict[str, Any]]:
+    reference_cache: dict[Path, dict[str, dict[str, Any]]] = {}
+    selected: list[dict[str, Any]] = []
+    seen_video_ids: set[str] = set()
+    seen_video_paths: set[str] = set()
+    for index, raw_item in enumerate(payload, start=1):
+        if not isinstance(raw_item, dict):
+            raise ValueError(f"manifest item {index} must be an object")
+        item = dict(raw_item)
+        item_video_id = item.get("video_id")
+        relative_video_path = item.get("relative_video_path")
+        if not isinstance(item_video_id, str) or not item_video_id:
+            raise ValueError(f"manifest item {index} has an invalid video_id")
+        if (
+            not isinstance(relative_video_path, str)
+            or not relative_video_path
+            or Path(relative_video_path).is_absolute()
+            or ".." in Path(relative_video_path).parts
+        ):
+            raise ValueError(f"manifest item {index} has an invalid relative_video_path")
+        if not isinstance(item.get("split"), str) or not item["split"]:
+            raise ValueError(f"manifest item {index} has an invalid split")
+        if item_video_id in seen_video_ids or relative_video_path in seen_video_paths:
+            raise ValueError(f"manifest contains a duplicate item: {item_video_id}")
+        seen_video_ids.add(item_video_id)
+        seen_video_paths.add(relative_video_path)
+        if video_id is not None and item_video_id != video_id:
+            continue
+
+        clip_start = float(item["clip_start_sec"])
+        clip_end = float(item["clip_end_sec"])
+        if clip_start < 0 or clip_end <= clip_start:
+            raise ValueError(f"invalid clip bounds for {item_video_id}")
+        clip_duration = clip_end - clip_start
+
+        references = item.get("weak_reference_segments")
+        reference_origin = item.get("annotation_source") or item.get("origin")
+        if references is None:
+            reference_path = item.get("reference_path")
+            if not isinstance(reference_path, str) or not reference_path:
+                raise ValueError(f"manifest item {index} has no weak reference locator")
+            entry = _load_reference_entry(reference_path, item_video_id, root, manifest_file, reference_cache)
+            if float(entry.get("clip_start_sec", clip_start)) != clip_start or float(
+                entry.get("clip_end_sec", clip_end)
+            ) != clip_end:
+                raise ValueError(f"reference clip bounds disagree with manifest for {item_video_id}")
+            references = entry.get("segments")
+            reference_origin = entry.get("origin", reference_origin)
+        if not isinstance(references, list):
+            raise ValueError(f"weak_reference_segments must be an array for {item_video_id}")
+        references = [
+            {"start_sec": float(segment["start_sec"]), "end_sec": float(segment["end_sec"])}
+            for segment in references
+        ]
+        _validate_clip_reference_segments(references, clip_duration, item_video_id)
+        expected_segments = item.get("reference_segment_count")
+        if expected_segments is not None and int(expected_segments) != len(references):
+            raise ValueError(f"reference_segment_count disagrees with references for {item_video_id}")
+
+        if dataset_name is not None:
+            item["dataset_name"] = dataset_name
+        if dataset_version is not None:
+            item["dataset_version"] = dataset_version
+        item["weak_reference_segments"] = references
+        item["reference_origin"] = reference_origin
+        item.setdefault("group", f"refseg_{len(references)}")
+        item.setdefault("sample_index", index)
+        item["source_video_path"] = str((root / relative_video_path).resolve())
+        item["clip_duration_sec"] = clip_duration
+        selected.append(item)
+        if limit is not None and len(selected) >= limit:
+            break
+
+    if video_id is not None and not selected:
+        raise ValueError(f"video_id is not present in manifest: {video_id}")
+    return selected
+
+
+def load_baseline_samples(
+    manifest_path: str | Path,
+    video_root: str | Path,
+    *,
+    video_id: str | None = None,
+    limit: int | None = None,
+    dataset_name: str | None = None,
+    dataset_version: str | None = None,
+) -> list[dict[str, Any]]:
+    manifest_file = Path(manifest_path).expanduser().resolve()
+    root = Path(video_root).expanduser().resolve()
+    payload, manifest_format = _read_manifest_items(manifest_file)
+    if limit is not None and limit <= 0:
+        raise ValueError("limit must be greater than zero")
+
+    if manifest_format == "jsonl":
+        return _select_jsonl_samples(
+            payload,
+            root,
+            manifest_file,
+            video_id=video_id,
+            limit=limit,
+            dataset_name=dataset_name,
+            dataset_version=dataset_version,
+        )
+
+    selected: list[dict[str, Any]] = []
+    seen_video_ids: set[str] = set()
+    seen_filenames: set[str] = set()
+    for index, raw_item in enumerate(payload, start=1):
+        if not isinstance(raw_item, dict):
+            raise ValueError(f"manifest item {index} must be an object")
+        item = dict(raw_item)
+        item_video_id = item.get("video_id")
+        filename = item.get("filename")
+        if not isinstance(item_video_id, str) or not item_video_id:
+            raise ValueError(f"manifest item {index} has an invalid video_id")
+        if not isinstance(filename, str) or Path(filename).name != filename:
+            raise ValueError(f"manifest item {index} has an invalid filename")
+        if item.get("dataset_split") != "train":
+            raise ValueError(f"manifest item {index} is not in the train split")
+        if item_video_id in seen_video_ids or filename in seen_filenames:
+            raise ValueError(f"manifest contains a duplicate item: {item_video_id}")
+        seen_video_ids.add(item_video_id)
+        seen_filenames.add(filename)
+        if video_id is not None and item_video_id != video_id:
+            continue
+
+        clip_start = float(item["clip_start_sec"])
+        clip_end = float(item["clip_end_sec"])
+        if clip_start < 0 or clip_end <= clip_start:
+            raise ValueError(f"invalid clip bounds for {item_video_id}")
+        references = item.get("weak_reference_segments")
+        if not isinstance(references, list):
+            raise ValueError(f"weak_reference_segments must be an array for {item_video_id}")
+        clip_duration = clip_end - clip_start
+        _validate_clip_reference_segments(references, clip_duration, item_video_id)
+
+        item["source_video_path"] = str((root / filename).resolve())
+        item["clip_duration_sec"] = clip_duration
+        selected.append(item)
+        if limit is not None and len(selected) >= limit:
+            break
+
+    if video_id is not None and not selected:
+        raise ValueError(f"video_id is not present in manifest: {video_id}")
+    return selected
+
+
+def resume_decision(
+    result_path: Path,
+    *,
+    raw_path: Path,
+    resume: bool,
+    overwrite: bool = False,
+) -> str:
+    if overwrite:
+        return "run_model"
+    if result_path.is_file():
+        try:
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            result = None
+        if isinstance(result, dict) and result.get("success") is True:
+            return "skip" if resume else "blocked"
+        if not resume:
+            return "blocked"
+    if resume and raw_path.is_file() and raw_path.stat().st_size > 0:
+        return "recover_raw"
+    return "run_model"
+
+
+class RawOutputJournal:
+    """Atomically persist every model response before downstream processing."""
+
+    def __init__(self, path: Path, metadata: dict[str, Any]) -> None:
+        self.path = path
+        self.payload = {**metadata, "chunks": []}
+        atomic_write_json(self.path, self.payload)
+
+    def record(self, chunk_record: dict[str, Any]) -> None:
+        snapshot = json.loads(json.dumps(chunk_record, ensure_ascii=False))
+        chunks = self.payload["chunks"]
+        for index, existing in enumerate(chunks):
+            if existing["chunk_index"] == snapshot["chunk_index"]:
+                chunks[index] = snapshot
+                break
+        else:
+            chunks.append(snapshot)
+        chunks.sort(key=lambda item: item["chunk_index"])
+        atomic_write_json(self.path, self.payload)
+
+
+def evaluate_weak_references(
+    prediction_segments: Iterable[dict[str, Any]],
+    weak_reference_segments: Iterable[dict[str, Any]],
+    *,
+    zero_duration_epsilon_sec: float = ZERO_DURATION_EPSILON_SEC,
+) -> dict[str, float | int]:
+    predicted = [
+        (float(segment["start_sec"]), float(segment["end_sec"]))
+        for segment in prediction_segments
+    ]
+    references = [
+        (float(segment["start_sec"]), float(segment["end_sec"]))
+        for segment in weak_reference_segments
+    ]
+    metrics = duration_based_metrics(
+        predicted,
+        references,
+        zero_duration_epsilon_sec=zero_duration_epsilon_sec,
+    )
+    return {
+        "weak_ref_precision": metrics["precision"],
+        "weak_ref_recall": metrics["recall"],
+        "weak_ref_f1": metrics["f1"],
+        "temporal_iou": metrics["temporal_iou"],
+        "intersection_sec": metrics["intersection_sec"],
+        "prediction_duration_sec": metrics["predicted_sec"],
+        "reference_duration_sec": metrics["reference_sec"],
+        "duration_union_sec": metrics["union_sec"],
+        "zero_duration_reference_count": metrics["zero_duration_reference_count"],
+    }
+
+
+def _percentile(values: list[float], probability: float) -> float:
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return ordered[0]
+    position = (len(ordered) - 1) * probability
+    lower = math.floor(position)
+    upper = math.ceil(position)
+    if lower == upper:
+        return ordered[lower]
+    weight = position - lower
+    return ordered[lower] * (1 - weight) + ordered[upper] * weight
+
+
+def aggregate_results(results: Iterable[dict[str, Any]]) -> dict[str, Any]:
+    records = list(results)
+    successful = [item for item in records if item.get("success") is True]
+    metric_sources = {
+        "weak_ref_precision": lambda item: item["metrics"]["weak_ref_precision"],
+        "weak_ref_recall": lambda item: item["metrics"]["weak_ref_recall"],
+        "weak_ref_f1": lambda item: item["metrics"]["weak_ref_f1"],
+        "temporal_iou": lambda item: item["metrics"]["temporal_iou"],
+        "inference_time_sec": lambda item: item["timing"]["model_inference_sec"],
+    }
+    summaries: dict[str, dict[str, float] | None] = {}
+    for name, getter in metric_sources.items():
+        values = []
+        for item in successful:
+            try:
+                values.append(float(getter(item)))
+            except KeyError:
+                continue
+        summaries[name] = (
+            {
+                "mean": statistics.fmean(values),
+                "median": statistics.median(values),
+                "p50": _percentile(values, 0.50),
+                "p95": _percentile(values, 0.95),
+            }
+            if values
+            else None
+        )
+    return {
+        "processed": len(records),
+        "success": len(successful),
+        "failed": len(records) - len(successful),
+        "metrics": summaries,
+    }
+
+
+def run_with_failure_isolation(
+    items: Iterable[dict[str, Any]],
+    processor: Callable[[dict[str, Any]], dict[str, Any]],
+    *,
+    component: str,
+) -> list[dict[str, Any]]:
+    results: list[dict[str, Any]] = []
+    for item in items:
+        try:
+            results.append(processor(item))
+        except Exception as exc:
+            results.append(
+                {
+                    "video_id": item.get("video_id"),
+                    "group": item.get("group"),
+                    "success": False,
+                    "warnings": [],
+                    "errors": [
+                        {
+                            "component": component,
+                            "exception_type": type(exc).__name__,
+                            "message": str(exc),
+                        }
+                    ],
+                }
+            )
+    return results
+
+
+def _load_pyplot():
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except ImportError as exc:
+        raise RuntimeError("matplotlib is required for experiment figures") from exc
+    return plt
+
+
+def write_timeline_figure(
+    *,
+    video_id: str,
+    duration_sec: float,
+    weak_reference_segments: list[dict[str, Any]],
+    prediction_segments: list[dict[str, Any]],
+    metrics: dict[str, Any],
+    output_path: Path,
+) -> None:
+    plt = _load_pyplot()
+    figure, axis = plt.subplots(figsize=(10, 2.8))
+    for segment in weak_reference_segments:
+        start = float(segment["start_sec"])
+        duration = float(segment["end_sec"]) - start
+        if duration > 0:
+            axis.broken_barh([(start, duration)], (1.25, 0.5), facecolors="tab:blue")
+        else:
+            axis.axvline(start, ymin=0.62, ymax=0.82, color="tab:blue", linewidth=2)
+    for segment in prediction_segments:
+        start = float(segment["start_sec"])
+        duration = float(segment["end_sec"]) - start
+        axis.broken_barh([(start, duration)], (0.25, 0.5), facecolors="tab:orange")
+    axis.set_xlim(0, max(duration_sec, 1e-6))
+    axis.set_ylim(0, 2)
+    axis.set_yticks([0.5, 1.5], labels=["Prediction", "Weak reference"])
+    axis.set_xlabel("Clip-local seconds")
+    axis.set_title(
+        f"{video_id} | F1={metrics['weak_ref_f1']:.3f} "
+        f"R={metrics['weak_ref_recall']:.3f} P={metrics['weak_ref_precision']:.3f}"
+    )
+    axis.grid(axis="x", alpha=0.25)
+    figure.tight_layout()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    figure.savefig(output_path, dpi=150)
+    plt.close(figure)
+
+
+def write_aggregate_figures(results: list[dict[str, Any]], figures_dir: Path) -> list[Path]:
+    successful = [item for item in results if item.get("success") is True]
+    specifications = [
+        ("weak_ref_recall", "Weak-reference recall", lambda item: item["metrics"]["weak_ref_recall"]),
+        ("weak_ref_precision", "Weak-reference precision", lambda item: item["metrics"]["weak_ref_precision"]),
+        ("weak_ref_f1", "Weak-reference F1", lambda item: item["metrics"]["weak_ref_f1"]),
+        ("temporal_iou", "Duration-set temporal IoU", lambda item: item["metrics"]["temporal_iou"]),
+        ("latency", "Model inference latency (seconds)", lambda item: item["timing"]["model_inference_sec"]),
+    ]
+    plt = _load_pyplot()
+    outputs: list[Path] = []
+    labels = [str(item.get("sample_index", item["video_id"])) for item in successful]
+    for filename, title, getter in specifications:
+        available = []
+        for item in successful:
+            try:
+                available.append((item, float(getter(item))))
+            except KeyError:
+                continue
+        if not available:
+            continue
+        figure, axis = plt.subplots(figsize=(max(6, len(successful) * 0.55), 3.6))
+        labels = [str(item.get("sample_index", item["video_id"])) for item, _ in available]
+        values = [value for _, value in available]
+        axis.bar(labels, values, color="tab:blue")
+        axis.set_xlabel("Sample index")
+        axis.set_ylabel(title)
+        axis.set_title(title)
+        axis.grid(axis="y", alpha=0.25)
+        figure.tight_layout()
+        output = figures_dir / f"{filename}.png"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        figure.savefig(output, dpi=150)
+        plt.close(figure)
+        outputs.append(output)
+    return outputs
+
+
+def write_summary_files(
+    results: list[dict[str, Any]],
+    *,
+    output_dir: Path,
+) -> dict[str, Any]:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    predictions_path = output_dir / "predictions.jsonl"
+    predictions_path.write_text(
+        "".join(json.dumps(item, ensure_ascii=False) + "\n" for item in results),
+        encoding="utf-8",
+    )
+    aggregate = aggregate_results(results)
+    atomic_write_json(output_dir / "metrics.json", aggregate)
+
+    fields = [
+        "video_id",
+        "group",
+        "success",
+        "segment_count_ref",
+        "segment_count_pred",
+        "weak_ref_precision",
+        "weak_ref_recall",
+        "weak_ref_f1",
+        "temporal_iou",
+        "inference_time_sec",
+        "total_time_sec",
+        "warning_count",
+    ]
+    with (output_dir / "metrics.csv").open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        for item in results:
+            metrics = item.get("metrics", {})
+            timing = item.get("timing", {})
+            writer.writerow(
+                {
+                    "video_id": item.get("video_id"),
+                    "group": item.get("group"),
+                    "success": item.get("success", False),
+                    "segment_count_ref": len(item.get("weak_reference_segments", [])),
+                    "segment_count_pred": len(item.get("merged_prediction_segments", [])),
+                    "weak_ref_precision": metrics.get("weak_ref_precision", ""),
+                    "weak_ref_recall": metrics.get("weak_ref_recall", ""),
+                    "weak_ref_f1": metrics.get("weak_ref_f1", ""),
+                    "temporal_iou": metrics.get("temporal_iou", ""),
+                    "inference_time_sec": timing.get("model_inference_sec", ""),
+                    "total_time_sec": timing.get("total_sec", ""),
+                    "warning_count": len(item.get("warnings", [])),
+                }
+            )
+    return aggregate

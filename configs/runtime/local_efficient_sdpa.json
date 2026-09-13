@@ -1,0 +1,16 @@
+{
+  "schema_version": "aic.vhicraft.runtime-profile/v1",
+  "runtime_profile": "local_efficient_sdpa",
+  "attention_backend": "pytorch_efficient_attention",
+  "gqa_execution_mode": "temporary_kv_head_expansion",
+  "chunk_heartbeat": true,
+  "fail_closed": true,
+  "hardware_scope": {
+    "device_type": "cuda",
+    "compute_dtypes": ["float16", "bfloat16"],
+    "requires_gqa": true,
+    "query_heads_must_exceed_kv_heads": true,
+    "query_heads_must_be_divisible_by_kv_heads": true,
+    "attention_type": "full_attention_sdpa"
+  }
+}
