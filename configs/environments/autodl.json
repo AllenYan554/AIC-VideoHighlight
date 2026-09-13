@@ -8,5 +8,6 @@
   "logs": "/root/autodl-tmp/logs",
   "cache": "/root/autodl-tmp/cache",
   "tmp": "/root/autodl-tmp/tmp",
-  "archive": "/root/autodl-tmp/archive"
+  "archive": "/root/autodl-tmp/archive",
+  "retrieval_backend": "vllm"
 }

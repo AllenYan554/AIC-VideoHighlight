@@ -92,6 +92,63 @@ def candidate_cache_split_for_input_mode(input_mode: str) -> str:
     return "test" if input_mode == "numbered_videos" else "dev"
 
 
+RETRIEVAL_BACKENDS = ("vllm", "transformers-bnb-nf4")
+
+
+def resolve_retrieval_backend(fresh: Mapping[str, Any], environment: EnvironmentPaths) -> str:
+    """Resolve the retrieval engine from the deployment environment, then the profile.
+
+    The inference profile describes the scientific pipeline; the environment
+    descriptor names the deployment.  A backend declared by the environment
+    (for example the AutoDL vLLM server) overrides the profile value so a
+    Windows local profile can never silently force the bitsandbytes route on a
+    server host.
+    """
+    backend = environment.retrieval_backend or str(fresh.get("qwen_backend", "vllm"))
+    if backend not in RETRIEVAL_BACKENDS:
+        raise FreshPipelineError(f"unsupported qwen_backend: {backend}")
+    return backend
+
+
+def build_retrieval_command(
+    *,
+    python: str,
+    manifest: Path,
+    video_root: Path,
+    output_dir: Path,
+    dataset_name: str,
+    dataset_version: str,
+    runtime_profile_path: Path,
+    qwen_backend: str,
+    local_model_path: Path | None,
+    local_compute_dtype: str,
+    base_url: str | None,
+    resume: bool,
+) -> list[str]:
+    """Assemble the frozen retrieval-runner command for the resolved backend."""
+    command = [
+        python, "-u", "-m", "aic_video_highlight.retrieval.runner",
+        "--manifest", str(manifest), "--video-root", str(video_root),
+        "--output-dir", str(output_dir), "--config", str(REPO_ROOT / "configs/highlight_retrieval.yaml"),
+        "--dataset-name", dataset_name, "--dataset-version", dataset_version,
+        "--model-revision", QWEN_REVISION,
+        "--runtime-profile", str(runtime_profile_path),
+    ]
+    if qwen_backend == "transformers-bnb-nf4":
+        command.extend([
+            "--local-model-path", str(local_model_path),
+            "--local-quantization", "bnb-nf4",
+            "--local-compute-dtype", local_compute_dtype,
+        ])
+    elif qwen_backend == "vllm":
+        command.extend(["--base-url", str(base_url)])
+    else:
+        raise FreshPipelineError(f"unsupported qwen_backend: {qwen_backend}")
+    if resume:
+        command.append("--resume")
+    return command
+
+
 def _read_json(path: Path) -> dict[str, Any]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
@@ -149,6 +206,7 @@ def build_run_identity(
     runtime_profile_path: Path | None = None,
     scope: str | None = None,
     video_ids: Sequence[str] | None = None,
+    retrieval_backend: str | None = None,
 ) -> dict[str, Any]:
     runtime_profile = runtime_profile or default_runtime_profile()
     identity = {
@@ -169,6 +227,8 @@ def build_run_identity(
         identity["video_ids"] = [str(video_id) for video_id in video_ids]
     if runtime_profile_path is not None:
         identity["runtime_profile_sha256"] = file_sha256(runtime_profile_path)
+    if retrieval_backend is not None:
+        identity["retrieval_backend"] = retrieval_backend
     identity["identity_sha256"] = canonical_sha256(identity)
     return identity
 
@@ -670,6 +730,7 @@ def run_inference(
         if input_mode == "numbered_videos"
         else "development"
     )
+    qwen_backend = resolve_retrieval_backend(fresh, environment)
     identity = build_run_identity(
         config_path=config_path, protocol_path=protocol_path,
         selected_manifest=selected_manifest, profile=profile_name,
@@ -677,6 +738,7 @@ def run_inference(
         runtime_profile_path=runtime_profile_path,
         scope=scope,
         video_ids=video_ids,
+        retrieval_backend=qwen_backend,
     )
     resume_count = bind_resume(root, identity, resume=resume)
     progress = Progress(len(video_ids))
@@ -688,35 +750,34 @@ def run_inference(
     retrieval_marker = retrieval / "fresh_identity.json"
     retrieval_inputs = {"selected_manifest": file_sha256(selected_manifest), "run_identity": identity["identity_sha256"]}
     if not _marker_matches(retrieval_marker, inputs=retrieval_inputs, outputs=[retrieval / "predictions.jsonl", retrieval / "run_config.json"]):
-        qwen_backend = str(fresh.get("qwen_backend", "vllm"))
         if runtime_profile.uses_local_efficient_sdpa and qwen_backend != "transformers-bnb-nf4":
             raise FreshPipelineError(
                 "local_efficient_sdpa requires qwen_backend=transformers-bnb-nf4"
             )
         owned_vllm: subprocess.Popen[Any] | None = None
         try:
-            command = [
-                python, "-u", "-m", "aic_video_highlight.retrieval.runner",
-                "--manifest", str(selected_manifest), "--video-root", str(video_root),
-                "--output-dir", str(retrieval), "--config", str(REPO_ROOT / "configs/highlight_retrieval.yaml"),
-                "--dataset-name", dataset_name, "--dataset-version", dataset_version,
-                "--model-revision", QWEN_REVISION,
-                "--runtime-profile", str(runtime_profile_path),
-            ]
-            if qwen_backend == "transformers-bnb-nf4":
-                model_path = _resolve(fresh["qwen_snapshot"], environment)
-                command.extend([
-                    "--local-model-path", str(model_path),
-                    "--local-quantization", "bnb-nf4",
-                    "--local-compute-dtype", str(fresh.get("qwen_compute_dtype", "float16")),
-                ])
-            elif qwen_backend == "vllm":
+            local_model_path = (
+                _resolve(fresh["qwen_snapshot"], environment)
+                if qwen_backend == "transformers-bnb-nf4"
+                else None
+            )
+            base_url: str | None = None
+            if qwen_backend == "vllm":
                 owned_vllm, base_url = start_vllm(config, environment, root / "logs" / "vllm.log")
-                command.extend(["--base-url", base_url])
-            else:
-                raise FreshPipelineError(f"unsupported qwen_backend: {qwen_backend}")
-            if resume:
-                command.append("--resume")
+            command = build_retrieval_command(
+                python=python,
+                manifest=selected_manifest,
+                video_root=video_root,
+                output_dir=retrieval,
+                dataset_name=dataset_name,
+                dataset_version=dataset_version,
+                runtime_profile_path=runtime_profile_path,
+                qwen_backend=qwen_backend,
+                local_model_path=local_model_path,
+                local_compute_dtype=str(fresh.get("qwen_compute_dtype", "float16")),
+                base_url=base_url,
+                resume=resume,
+            )
             _run(
                 command,
                 label="Retrieval Qwen fresh inference",
