@@ -79,9 +79,9 @@ def test_autodl_resolves_to_vllm_even_with_local_profile(tmp_path):
     assert "bnb-nf4" not in " ".join(command)
 
 
-def test_windows_local_environment_keeps_local_quantized_backend(tmp_path):
+def test_windows_local_environment_declares_local_quantized_backend(tmp_path):
     environment = _environment("windows_local")
-    assert environment.retrieval_backend is None
+    assert environment.retrieval_backend == "transformers-bnb-nf4"
     backend = resolve_retrieval_backend(_inference("smoke"), environment)
     assert backend == "transformers-bnb-nf4"
     command = _command(backend, tmp_path)
@@ -91,13 +91,27 @@ def test_windows_local_environment_keeps_local_quantized_backend(tmp_path):
     assert "--base-url" not in command
 
 
-def test_explicit_environment_backend_overrides_profile():
+def test_explicit_environment_backend_overrides_profile_hint():
     environment = _environment_paths(retrieval_backend="vllm")
     profile = {"qwen_backend": "transformers-bnb-nf4"}
     assert resolve_retrieval_backend(profile, environment) == "vllm"
 
 
 def test_unknown_backend_is_rejected():
-    profile = {"qwen_backend": "bogus"}
+    environment = _environment_paths(retrieval_backend="bogus")
     with pytest.raises(FreshPipelineError, match="unsupported qwen_backend"):
-        resolve_retrieval_backend(profile, _environment_paths())
+        resolve_retrieval_backend(_inference("smoke"), environment)
+
+
+def test_generic_cuda_environment_never_silently_uses_nf4():
+    """A server host that forgets to declare its backend must fail fast.
+
+    Regression guard: previously an environment without ``retrieval_backend``
+    silently inherited the profile's ``transformers-bnb-nf4`` value, so a
+    4090/4090D/A100/H100 host could be quantized against its will.
+    """
+    environment = _environment_paths()
+    assert environment.retrieval_backend is None
+    profile = {"qwen_backend": "transformers-bnb-nf4"}
+    with pytest.raises(FreshPipelineError, match="does not declare retrieval_backend"):
+        resolve_retrieval_backend(profile, environment)

@@ -96,17 +96,29 @@ RETRIEVAL_BACKENDS = ("vllm", "transformers-bnb-nf4")
 
 
 def resolve_retrieval_backend(fresh: Mapping[str, Any], environment: EnvironmentPaths) -> str:
-    """Resolve the retrieval engine from the deployment environment, then the profile.
+    """Resolve the retrieval engine from the deployment environment only.
 
-    The inference profile describes the scientific pipeline; the environment
-    descriptor names the deployment.  A backend declared by the environment
-    (for example the AutoDL vLLM server) overrides the profile value so a
-    Windows local profile can never silently force the bitsandbytes route on a
-    server host.
+    The inference profile describes the scientific pipeline; the deployment
+    environment descriptor names the execution backend.  It is the single
+    authority: the ``configs/environments/*.json`` file must declare
+    ``retrieval_backend`` (``vllm`` on servers, ``transformers-bnb-nf4`` for the
+    local low-memory profile).  A profile's historical ``qwen_backend`` hint is
+    never used as a fallback, so no host can be silently routed to the
+    bitsandbytes NF4 deployment, and a host that forgets to declare its backend
+    fails fast instead of guessing.
     """
-    backend = environment.retrieval_backend or str(fresh.get("qwen_backend", "vllm"))
+    backend = environment.retrieval_backend
+    if backend is None:
+        raise FreshPipelineError(
+            "deployment environment does not declare retrieval_backend; refusing to "
+            "silently fall back to a quantized backend (set 'vllm' for server GPUs or "
+            "'transformers-bnb-nf4' for the local low-memory profile)"
+        )
     if backend not in RETRIEVAL_BACKENDS:
-        raise FreshPipelineError(f"unsupported qwen_backend: {backend}")
+        raise FreshPipelineError(
+            f"unsupported qwen_backend: {backend} "
+            f"(profile hint: {fresh.get('qwen_backend')!r})"
+        )
     return backend
 
 

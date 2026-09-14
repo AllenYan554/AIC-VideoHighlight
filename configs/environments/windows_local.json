@@ -8,5 +8,6 @@
   "logs": "D:/CDUT/硕士/2026-09 AIC/实验运行/logs",
   "cache": "D:/CDUT/硕士/2026-09 AIC/实验运行/cache",
   "tmp": "D:/CDUT/硕士/2026-09 AIC/实验运行/tmp",
-  "archive": "D:/CDUT/硕士/2026-09 AIC/实验记录"
+  "archive": "D:/CDUT/硕士/2026-09 AIC/实验记录",
+  "retrieval_backend": "transformers-bnb-nf4"
 }
