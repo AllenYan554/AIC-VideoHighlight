@@ -12,6 +12,24 @@ from .subject_localization import SubjectCandidate, SubjectPolicyConfig, Subject
 DEFAULT_MODEL_ID = "PekingU/rtdetr_r50vd"
 
 
+def resolve_device(device: str | None, *, cuda_available: bool) -> str:
+    """Resolve the inference device; never silently fall back to CPU.
+
+    An explicit CUDA request stays a CUDA request.  When CUDA is unavailable
+    the caller either asked for CPU explicitly or the deployment is broken;
+    falling back silently would hide the misconfiguration for hours.
+    """
+    if device is None:
+        return "cuda" if cuda_available else "cpu"
+    resolved = str(device)
+    if resolved.split(":")[0] == "cuda" and not cuda_available:
+        raise RuntimeError(
+            "CUDA device requested but torch.cuda.is_available() is False; "
+            "refusing silent CPU fallback (pass device='cpu' to opt in)"
+        )
+    return resolved
+
+
 class RTDetrLocalizer:
     """Zero-shot COCO RT-DETR localizer; deterministic single-frame inference."""
 
@@ -29,9 +47,7 @@ class RTDetrLocalizer:
         self.torch = torch
         self.model_id = model_id
         source = str(local_path) if local_path is not None else model_id
-        if device is None:
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.device = device
+        self.device = resolve_device(device, cuda_available=bool(torch.cuda.is_available()))
         self.torch_dtype = {"float32": torch.float32, "float16": torch.float16}[torch_dtype]
         self.processor = AutoImageProcessor.from_pretrained(
             source,

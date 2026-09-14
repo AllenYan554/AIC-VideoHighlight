@@ -26,6 +26,7 @@ from aic_video_highlight.localization import (
     subject_centered_crop,
     write_shard,
 )
+from aic_video_highlight.runtime.cpu_threads import configure_math_threads
 
 FROZEN_REPLAY_MODE = "FROZEN_REPLAY"
 FRESH_PIPELINE_MODE = "FRESH_PIPELINE"
@@ -137,7 +138,15 @@ def main_frame_record(video_id, frame_id, width, height, candidates, model_error
 def run(args: argparse.Namespace) -> int:
     import torch
 
-    torch.cuda.reset_peak_memory_stats()
+    thread_info = configure_math_threads()
+    print(
+        f"[localization] threads torch_before={thread_info['previous_threads']} "
+        f"torch_after={thread_info['effective_threads']} "
+        f"cpu_budget={thread_info['cpu_budget']}",
+        flush=True,
+    )
+    if torch.cuda.is_available():
+        torch.cuda.reset_peak_memory_stats()
     index = {
         json.loads(line)["video_id"]: json.loads(line)
         for line in Path(args.index).read_text(encoding="utf-8").splitlines()
@@ -168,6 +177,18 @@ def run(args: argparse.Namespace) -> int:
         device=args.device,
         torch_dtype=args.dtype,
     )
+    parameter_device = next(localizer.model.parameters()).device
+    print("[localization] backend=RT-DETR", flush=True)
+    print(f"[localization] device={localizer.device}", flush=True)
+    print(f"[localization] model_dtype={args.dtype}", flush=True)
+    print(
+        f"[localization] gpu={torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'cpu'}",
+        flush=True,
+    )
+    print(
+        f"[localization] model_parameter_device={parameter_device}",
+        flush=True,
+    )
     provenance = {
         "model_id": args.model_id,
         "snapshot": args.local_path or "",
@@ -185,6 +206,8 @@ def run(args: argparse.Namespace) -> int:
     started = time.perf_counter()
     total_videos = len(predictions)
     work_root = Path(args.work_dir) if args.work_dir else Path(tempfile.gettempdir()) / "localization_fulldev"
+    input_logged = False
+    peak_logged = False
 
     for video_id in sorted(predictions):
         frame_ids = sorted(predictions[video_id])
@@ -244,10 +267,26 @@ def run(args: argparse.Namespace) -> int:
                         ta = time.perf_counter()
                         inputs = localizer.processor(images=image, return_tensors="pt")
                         pixel_values = inputs["pixel_values"].to(localizer.device, dtype=localizer.torch_dtype)
+                        if not input_logged:
+                            print(
+                                f"[localization] input_device={pixel_values.device} "
+                                f"input_dtype={pixel_values.dtype}",
+                                flush=True,
+                            )
+                            input_logged = True
                         outputs = localizer.model(pixel_values=pixel_values)
                         candidates = localizer._decode(outputs, width, height, top_k=100)
                         tb = time.perf_counter()
                         inference_ms.append((tb - ta) * 1000.0)
+                        if not peak_logged and torch.cuda.is_available():
+                            print(
+                                f"[localization] peak_cuda_allocated_mib="
+                                f"{round(torch.cuda.max_memory_allocated() / 1024**2, 1)} "
+                                f"peak_cuda_reserved_mib="
+                                f"{round(torch.cuda.max_memory_reserved() / 1024**2, 1)}",
+                                flush=True,
+                            )
+                            peak_logged = True
                         break
                     except Exception as exc:
                         attempt += 1
