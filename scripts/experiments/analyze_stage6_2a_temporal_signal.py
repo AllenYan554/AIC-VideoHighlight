@@ -820,9 +820,10 @@ def _verdict(summary: Mapping[str, Any], runner: Any) -> str:
     coarse = [value for value in (q5 + top) if value is not None]
     frame_best = max([value for value in frame_means if value is not None], default=None)
     coarse_best = max(coarse) if coarse else None
+    coarse_text = f"{coarse_best:.3f}" if coarse_best is not None else "n/a"
     detail = (
         f"(per-video AUROC mean PGL {frame_means[0]:.4f} / VAS {frame_means[1]:.4f}; "
-        f"coarse enrichment max {coarse_best:.3f} if coarse_best else 'n/a')"
+        f"coarse enrichment max {coarse_text})"
     )
     # Narrative label conventions, NOT preregistration go/no-go thresholds.
     if frame_best is not None and frame_best >= 0.55 and coarse_best is not None and coarse_best >= 1.3:
