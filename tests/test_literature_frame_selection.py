@@ -14,6 +14,7 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 sys.path.insert(0, str(REPO))
 
+import aic_video_highlight.composition.literature_frame_selection as literature_module  # noqa: E402
 from aic_video_highlight.composition.frame_projection import (  # noqa: E402
     CFR_FPS,
     PTS_TABLE,
@@ -126,6 +127,18 @@ def test_feature_extractor_honors_gpu_batch_size_without_full_stack():
 def test_knapsack_selects_high_value_shots():
     selected = knapSack(5, [2, 3, 1], [1.0, 2.0, 5.0], 3)
     assert selected == [1, 2]
+
+
+def test_vasnet_knapsack_value_scale_truncates_like_upstream(monkeypatch):
+    captured = {}
+
+    def fake_knapsack(capacity, weights, values, count):
+        captured["args"] = (capacity, weights, values, count)
+        return []
+
+    monkeypatch.setattr(literature_module, "knapSack", fake_knapsack)
+    select_shots("vasnet", [0.0006, 0.0016], [1, 1], 1)
+    assert captured["args"] == (1, [1, 1], [0, 1], 2)
 
 
 def test_budget_matches_upstream_definitions():

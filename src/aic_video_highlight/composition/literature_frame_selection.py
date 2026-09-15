@@ -393,11 +393,12 @@ def select_shots(method: str, shot_scores_: Sequence[float], shot_lengths: Seque
     scale = VALUE_SCALE[method]
     values = [float(score) * scale for score in shot_scores_]
     # knapSack needs integer-ish values; keep floats for the DP exactly as the
-    # reference does for PGL-SUM and use rounded scaled ints for VASNet.
+    # reference does for PGL-SUM and use truncated scaled ints for VASNet
+    # (its ``(values * 1000).astype(np.int)`` contract for non-negative scores).
     if method == PGL_SUM:
         dp_values: Sequence[float] = values
     else:
-        dp_values = [int(round(v)) for v in values]
+        dp_values = [int(v) for v in values]
     return knapSack(int(budget_frames), list(shot_lengths), list(dp_values), len(shot_lengths))
 
 
