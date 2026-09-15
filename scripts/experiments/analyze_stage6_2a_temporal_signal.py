@@ -817,19 +817,18 @@ def _verdict(summary: Mapping[str, Any], runner: Any) -> str:
         for metrics in arm_stats["segments"].values():
             if metrics.get("window_count", 0):
                 top.append(metrics["top_enrichment"]["top_10pct"]["enrichment_over_baseline"])
-    frame_above_chance = [value for value in frame_means if value is not None and value > 0.52]
     coarse = [value for value in (q5 + top) if value is not None]
-    coarse_above = [value for value in coarse if value > 1.2]
+    frame_best = max([value for value in frame_means if value is not None], default=None)
+    coarse_best = max(coarse) if coarse else None
     detail = (
         f"(per-video AUROC mean PGL {frame_means[0]:.4f} / VAS {frame_means[1]:.4f}; "
-        f"coarse enrichment max {max(coarse):.3f} if coarse else n/a)"
+        f"coarse enrichment max {coarse_best:.3f} if coarse_best else 'n/a')"
     )
-    if frame_above_chance and coarse_above:
+    # Narrative label conventions, NOT preregistration go/no-go thresholds.
+    if frame_best is not None and frame_best >= 0.55 and coarse_best is not None and coarse_best >= 1.3:
         return f"COARSE_TEMPORAL_SIGNAL_SUPPORTED {detail}"
-    if coarse_above:
-        return f"WEAK_SIGNAL_ONLY — coarse enrichment present but frame-level ranking ≈ chance {detail}"
-    if frame_above_chance:
-        return f"WEAK_SIGNAL_ONLY — frame-level only {detail}"
+    if (frame_best is not None and frame_best >= 0.50) and (coarse_best is not None and coarse_best >= 1.05):
+        return f"WEAK_SIGNAL_ONLY {detail}"
     return f"LITERATURE_SIGNAL_NOT_SUPPORTED {detail}"
 
 
