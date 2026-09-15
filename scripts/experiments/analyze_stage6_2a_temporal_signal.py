@@ -281,7 +281,7 @@ def run(args: argparse.Namespace) -> int:
                                  "tp_density": tp / candidates})
             # --- KTS segments (auxiliary) -----------------------------------
             selection = runner.select_with_scores(runner.METHOD_OF_ARM[arm], spec, features, raw)
-            kts_rows = window_stats.setdefault("kts", [])
+            kts_rows = per_arm[arm]["window_stats"].setdefault("kts", [])
             for start, end in selection.shot_bounds:
                 if end <= start:
                     continue
