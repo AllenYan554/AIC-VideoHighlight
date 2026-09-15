@@ -458,11 +458,9 @@ def run(args: argparse.Namespace) -> int:
                 frame_scores = [float(mean_scores[frame_to_sample_index(spec.sample_frames, frame)]) for frame in spec.fs0_frames]
                 stats["pooled_scores"].extend(frame_scores)
                 stats["pooled_labels"].extend(labels)
-                for checkpoint_index in range(ckpt.shape[0]):
-                    stats["pooled_ckpt"].append([
-                        float(ckpt[checkpoint_index, frame_to_sample_index(spec.sample_frames, frame)])
-                        for frame in spec.fs0_frames
-                    ])
+                for frame in spec.fs0_frames:
+                    sample_index = frame_to_sample_index(spec.sample_frames, frame)
+                    stats["pooled_ckpt"].append([float(ckpt[k, sample_index]) for k in range(ckpt.shape[0])])
 
             per_video_rows.append({
                 "arm": arm,
