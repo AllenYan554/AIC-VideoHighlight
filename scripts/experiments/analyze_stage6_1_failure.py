@@ -538,7 +538,7 @@ def run(args: argparse.Namespace) -> int:
         },
     )
     try:
-        _render(output_root, runner, per_arm, per_video_rows, summary, dels=deltas, specs=specs, kept_by_arm_video=kept_by_arm_video, reference_records=reference_records, fs0_f=fs0_f)
+        _render(output_root, runner, per_arm, per_video_rows, summary, dels=deltas, specs=specs, kept_by_arm_video=kept_by_arm_video, reference_records=reference_records, fs0_f=fs0_f, valid_ids=valid_ids)
     except Exception as exc:  # pragma: no cover - plotting environment
         _write_json(output_root / "audit" / "figure_error.json", {"error": str(exc)})
 
@@ -795,6 +795,7 @@ def _render(
     kept_by_arm_video: Mapping[tuple[str, str], set[int]],
     reference_records: Mapping[str, Mapping[str, Any]],
     fs0_f: Mapping[str, float],
+    valid_ids: set[str],
 ) -> None:
     import matplotlib
 
@@ -826,15 +827,19 @@ def _render(
     ax.set_title("H1: model vs random equal-budget TP retention"); ax.legend()
     fig.tight_layout(); fig.savefig(figures / "model_vs_random_equal_budget.png", dpi=140); plt.close(fig)
 
+    def fig_label(arm: str) -> str:
+        return "pgl" if arm == runner.PGL else "vas"
+
     for arm in arms:
         scores = np.asarray(per_arm[arm]["pooled_scores"], dtype=np.float64)
         labels = np.asarray(per_arm[arm]["pooled_labels"], dtype=np.int64)
+        tag = fig_label(arm)
         fig, ax = plt.subplots(figsize=(7, 4))
         ax.hist(scores[labels == 1], bins=40, alpha=0.5, density=True, label="TP")
         ax.hist(scores[labels == 0], bins=40, alpha=0.5, density=True, label="FP")
         ax.set_xlabel("raw ensemble importance score"); ax.set_ylabel("density")
         ax.set_title(f"H2: {arm.upper()} raw score TP vs FP (valid109 FS0 candidates)")
-        ax.legend(); fig.tight_layout(); fig.savefig(figures / f"{arm}_tp_fp_score_distribution.png", dpi=140); plt.close(fig)
+        ax.legend(); fig.tight_layout(); fig.savefig(figures / f"{tag}_tp_fp_score_distribution.png", dpi=140); plt.close(fig)
 
         fpr, tpr = roc_points(scores, labels)
         recall, precision = pr_points(scores, labels)
@@ -845,7 +850,7 @@ def _render(
         axes[1].plot(recall, precision, label=f"AP={summary['arms'][arm]['average_precision']:.3f}")
         axes[1].set_xlabel("recall"); axes[1].set_ylabel("precision"); axes[1].set_title("PR"); axes[1].legend()
         fig.suptitle(f"H2: {arm.upper()} raw score separability"); fig.tight_layout()
-        fig.savefig(figures / f"{arm}_score_roc_pr.png", dpi=140); plt.close(fig)
+        fig.savefig(figures / f"{tag}_score_roc_pr.png", dpi=140); plt.close(fig)
 
         corr = np.asarray(summary["arms"][arm]["checkpoint_correlation_mean"], dtype=np.float64)
         fig, ax = plt.subplots(figsize=(5.5, 5))
@@ -853,7 +858,7 @@ def _render(
         ax.set_title(f"H3: {arm.upper()} checkpoint score correlation")
         ax.set_xlabel("checkpoint index"); ax.set_ylabel("checkpoint index")
         fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-        fig.tight_layout(); fig.savefig(figures / f"checkpoint_correlation_{arm}.png", dpi=140); plt.close(fig)
+        fig.tight_layout(); fig.savefig(figures / f"checkpoint_correlation_{tag}.png", dpi=140); plt.close(fig)
 
     shot_seconds = np.concatenate([np.asarray(per_arm[a]["shot_lengths_seconds"], dtype=np.float64) for a in arms])
     fig, ax = plt.subplots(figsize=(7, 4))
@@ -873,7 +878,10 @@ def _render(
 
     spec_by_id = {spec.video_id: spec for spec in specs}
     for arm in arms:
-        ordered = sorted(dels[arm].items(), key=lambda item: item[1])
+        ordered = sorted(
+            ((vid, value) for vid, value in dels[arm].items() if vid in valid_ids),
+            key=lambda item: item[1],
+        )
         picks = [("worst regression", ordered[0][0]),
                  ("near tie", min(ordered, key=lambda item: abs(item[1]))[0]),
                  ("best gain", ordered[-1][0])]
@@ -904,7 +912,7 @@ def _render(
             ax.set_ylim(-0.05, 1.2); ax.set_xlabel("time (s)")
             ax.set_title(f"{arm.upper()} {label}: {video_id} (dF={dels[arm][video_id]:+.3f})", fontsize=9)
             ax.legend(fontsize=7, loc="lower right", ncol=2)
-        fig.tight_layout(); fig.savefig(figures / f"representative_timeline_{arm}.png", dpi=140); plt.close(fig)
+        fig.tight_layout(); fig.savefig(figures / f"representative_timeline_{fig_label(arm)}.png", dpi=140); plt.close(fig)
 
 
 # ---------------------------------------------------------------------------
@@ -991,7 +999,7 @@ def _write_report(output_root: Path, runner: Any, summary: Mapping[str, Any]) ->
     add("")
     add("## 11. Timeline case studies (H9)")
     add("")
-    add("- `figures/representative_timeline_pgl.png`, `figures/representative_timeline_vasnet.png`.")
+    add("- `figures/representative_timeline_pgl.png`, `figures/representative_timeline_vas.png`.")
     add("")
     add("## 12. Root-cause ranking")
     add("")
