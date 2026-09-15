@@ -10,7 +10,7 @@ Frozen definitions (Stage 5.6 corrective preregistration):
 
 from __future__ import annotations
 
-from aic_video_highlight.spatial_composition.vhicraft_pipeline import (
+from aic_video_highlight.composition.vhicraft_pipeline import (
     FRESH_REPRODUCTION_POLICY,
     compare_replays,
     evaluate_fresh_reproduction,

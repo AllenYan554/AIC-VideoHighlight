@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-from aic_video_highlight.spatial_composition.center_crop import (
+from aic_video_highlight.composition.center_crop import (
     CenterCropBox,
     compute_center_crop,
     derived_height,

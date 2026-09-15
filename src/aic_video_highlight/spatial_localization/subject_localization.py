@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
-from aic_video_highlight.spatial_composition.center_crop import compute_center_crop
+from aic_video_highlight.composition.center_crop import compute_center_crop
 
 STATUS_PRIMARY = "PRIMARY"
 STATUS_CENTER_CROP_FALLBACK = "CENTER_CROP_FALLBACK"

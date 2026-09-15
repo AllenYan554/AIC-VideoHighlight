@@ -1,6 +1,6 @@
 import pytest
 
-from aic_video_highlight.spatial_composition.frame_projection import (
+from aic_video_highlight.composition.frame_projection import (
     VideoTiming,
     frame_timestamp,
     frames_in_segment,

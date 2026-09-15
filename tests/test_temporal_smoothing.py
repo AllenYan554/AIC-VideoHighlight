@@ -7,17 +7,17 @@ import random
 
 import pytest
 
-from aic_video_highlight.spatial_composition.center_crop import compute_center_crop, derived_height
-from aic_video_highlight.spatial_composition.composition_metrics import (
+from aic_video_highlight.composition.center_crop import compute_center_crop, derived_height
+from aic_video_highlight.composition.composition_metrics import (
     crop_rect_from_xywh,
     subject_center_inside_crop,
     subject_visible_fraction,
 )
-from aic_video_highlight.spatial_composition.subject_shifted_crop import (
+from aic_video_highlight.composition.subject_shifted_crop import (
     PLACEMENT_FALLBACK_CENTER_CROP,
     sanitize_primary_bbox,
 )
-from aic_video_highlight.spatial_composition.temporal_smoothing import (
+from aic_video_highlight.composition.temporal_smoothing import (
     DEFAULT_EMA_ALPHA,
     MOTION_ADAPTIVE_FULL_RESPONSE,
     MOTION_ADAPTIVE_SMOOTHING_CEILING,

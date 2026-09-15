@@ -57,6 +57,32 @@ from aic_video_highlight.localization.subject_localization import (
 NEAR_CENTER_DEFAULT = 0.10
 STRONGLY_OFF_CENTER_DEFAULT = 0.25
 
+# Deprecated Stage 5 input-binding names, retained because the frozen Stage 5.3
+# / 5.4 experiment configs still declare them.  Canonical names are the values.
+LEGACY_INPUT_BINDING_ALIASES = {
+    "stage5_1_predictions": "frame_projection_predictions",
+    "stage5_2_policy_artifact": "subject_policy_artifact",
+    "stage5_2_raw_detector": "localization_raw_detector",
+}
+
+
+def _canonical_input_name(name: str) -> str:
+    return LEGACY_INPUT_BINDING_ALIASES.get(name, name)
+
+
+def _resolve_input_hash(
+    hashes: Mapping[str, str], canonical: str, default: str | None = None
+) -> str:
+    """Read an input hash by canonical name, tolerating the legacy Stage 5 name."""
+    if canonical in hashes:
+        return hashes[canonical]
+    for legacy, mapped in LEGACY_INPUT_BINDING_ALIASES.items():
+        if mapped == canonical and legacy in hashes:
+            return hashes[legacy]
+    if default is not None:
+        return default
+    raise FrozenInputError(f"missing frozen input hash: {canonical}")
+
 
 class FrozenInputError(RuntimeError):
     """Raised when a frozen frame projection/5.2 input is missing, unreadable, or hash-mismatched."""
@@ -79,6 +105,11 @@ class FrozenInputs:
     raw_frames: dict[tuple[str, int], dict[str, Any]]
     weak_reference: dict[str, dict[str, Any]]
     input_hashes: dict[str, str]
+
+    @property
+    def stage5_1_predictions(self) -> dict[str, dict[str, Any]]:
+        """Deprecated Stage 5 alias for :attr:`frame_projection_predictions`."""
+        return self.frame_projection_predictions
 
 
 def verify_input_bindings(bindings: Sequence[InputBinding]) -> dict[str, str]:
@@ -201,33 +232,36 @@ def load_frozen_inputs(
                 f"frozen input hash mismatch: {binding.name}: expected {binding.sha256}, got {actual}"
             )
         hashes[binding.name] = actual
+        canonical_name = _canonical_input_name(binding.name)
         if binding.format == "jsonl":
-            payloads[binding.name] = [
+            payloads[canonical_name] = [
                 json.loads(line)
                 for line in binding.path.read_text(encoding="utf-8").splitlines()
                 if line.strip()
             ]
         else:
-            payloads[binding.name] = json.loads(binding.path.read_text(encoding="utf-8"))
+            payloads[canonical_name] = json.loads(binding.path.read_text(encoding="utf-8"))
 
     predictions = {record["video_id"]: record for record in payloads["frame_projection_predictions"]}
     metadata_payload = payloads["video_metadata_cache"]
     metadata = metadata_payload["records"] if "records" in metadata_payload else metadata_payload
     index = {record["video_id"]: record for record in payloads["dev166_index"]}
     weak_reference = {record["video_id"]: record for record in payloads["weak_spatial_reference"]}
-    if "subject_policy_artifact" not in hashes:
+    if not any(_canonical_input_name(binding.name) == "subject_policy_artifact" for binding in bindings):
         raise FrozenInputError("subject_policy_artifact binding is required")
     if policy_records == ():
         policy_records = tuple(payloads["subject_policy_artifact"])
 
     raw_frames: dict[tuple[str, int], dict[str, Any]] = {}
     if include_raw:
-        raw_binding = next((b for b in bindings if b.name == "localization_raw_detector"), None)
+        raw_binding = next(
+            (b for b in bindings if _canonical_input_name(b.name) == "localization_raw_detector"), None
+        )
         if raw_binding is None:
             raise FrozenInputError("localization_raw_detector binding is required")
         if raw_binding.format == "raw_shard_dir":
             raw_frames = load_raw_shard_dir(raw_binding.path)
-            hashes["localization_raw_detector"] = "SHARD_DIR_VERIFIED_SEPARATELY"
+            hashes[raw_binding.name] = "SHARD_DIR_VERIFIED_SEPARATELY"
         else:
             raw_frames = {
                 (frame["video_id"], int(frame["frame"])): frame
@@ -341,10 +375,10 @@ def build_manifest(
         "frame_count": frame_count,
         "strata_counts": dict(sorted(strata_counts.items())),
         "frozen_bindings": {
-            "frame_projection_predictions_sha256": inputs.input_hashes["frame_projection_predictions"],
+            "frame_projection_predictions_sha256": _resolve_input_hash(inputs.input_hashes, "frame_projection_predictions"),
             "video_metadata_cache_sha256": inputs.input_hashes["video_metadata_cache"],
-            "subject_policy_artifact_sha256": inputs.input_hashes["subject_policy_artifact"],
-            "localization_raw_detector_sha256": inputs.input_hashes.get("localization_raw_detector", "DEFERRED_NOT_LOADED"),
+            "subject_policy_artifact_sha256": _resolve_input_hash(inputs.input_hashes, "subject_policy_artifact"),
+            "localization_raw_detector_sha256": _resolve_input_hash(inputs.input_hashes, "localization_raw_detector", "DEFERRED_NOT_LOADED"),
             "weak_spatial_reference_sha256": inputs.input_hashes["weak_spatial_reference"],
         },
     }

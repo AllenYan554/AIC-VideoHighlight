@@ -33,10 +33,10 @@ from aic_video_highlight.experiment_runtime.hashing import (
     file_sha256,
 )
 from aic_video_highlight.experiment_runtime.paths import EnvironmentPaths
-from aic_video_highlight.spatial_composition.composition_pipeline import (
+from aic_video_highlight.composition.composition_pipeline import (
     FrozenInputError,
 )
-from aic_video_highlight.spatial_composition.frame_calibration_metrics import (
+from aic_video_highlight.composition.frame_calibration_metrics import (
     adjudicate_stage5_5,
     evaluate_video_set,
     hard_gates,
@@ -44,11 +44,11 @@ from aic_video_highlight.spatial_composition.frame_calibration_metrics import (
 )
 from fractions import Fraction
 
-from aic_video_highlight.spatial_composition.frame_projection import (
+from aic_video_highlight.composition.frame_projection import (
     VideoTiming,
     frames_in_segment,
 )
-from aic_video_highlight.spatial_composition.frame_selection import (
+from aic_video_highlight.composition.frame_selection import (
     ARM_NAMES,
     FS0,
     FS1,

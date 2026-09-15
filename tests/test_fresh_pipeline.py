@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from aic_video_highlight.spatial_composition.fresh_pipeline import (
+from aic_video_highlight.composition.fresh_pipeline import (
     FRESH_SHARD_SCHEMA_VERSION,
     FreshPipelineError,
     audit_fresh_shard,

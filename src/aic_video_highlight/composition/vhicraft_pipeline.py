@@ -366,3 +366,23 @@ def build_final_pipeline_manifest(
         "heldout_access": 0,
         "official_test_access": 0,
     }
+
+
+# ---------------------------------------------------------------------------
+# Deprecated Stage 5 public aliases, retained because the frozen Stage 5.6
+# protocol configs (``arms = ["VC-0", "VC-1", "VC-A0"]``) and their tests still
+# import these names.  Canonical names: STABILIZED / UNSTABILIZED_CONTROL /
+# VARIANTS / ARM_STABILIZATION_KEY / load_stabilization_shard.
+# ---------------------------------------------------------------------------
+VC0 = "VC-0"
+VC1 = "VC-1"
+VCA0 = "VC-A0"
+ARMS = (VC0, VC1, VCA0)
+ARM_NAMES = {
+    VC0: "cached_v1_replay",
+    VC1: "fresh_v1_pipeline",
+    VCA0: "no_temporal_stabilization_control",
+}
+ARM_STAGE5_4_KEY = {VC0: "ts5", VC1: "ts5", VCA0: "ts0"}
+
+load_stage5_4_shard = load_stabilization_shard

@@ -6,8 +6,8 @@ import math
 
 import pytest
 
-from aic_video_highlight.spatial_composition.center_crop import compute_center_crop, derived_height
-from aic_video_highlight.spatial_composition.composition_metrics import (
+from aic_video_highlight.composition.center_crop import compute_center_crop, derived_height
+from aic_video_highlight.composition.composition_metrics import (
     classify_center_stratum,
     crop_rect_from_xywh,
     crop_shift_normalized,
@@ -20,7 +20,7 @@ from aic_video_highlight.spatial_composition.composition_metrics import (
     summarize,
     visible_fraction_thresholds,
 )
-from aic_video_highlight.spatial_composition.subject_shifted_crop import (
+from aic_video_highlight.composition.subject_shifted_crop import (
     PLACEMENT_CENTER_EQUIVALENT,
     PLACEMENT_FALLBACK_CENTER_CROP,
     PLACEMENT_SUBJECT_SHIFTED,

@@ -23,8 +23,8 @@ from aic_video_highlight.experiment_runtime.progress import ProgressReporter
 from aic_video_highlight.experiment_runtime.raw_report import render_raw_report, write_ai_report_inputs
 from aic_video_highlight.experiment_runtime.run_context import RunContext, RunIdentityMismatch
 from aic_video_highlight.experiment_runtime.shards import ShardStore
-from aic_video_highlight.spatial_composition.composition_figures import render_all_figures
-from aic_video_highlight.spatial_composition.composition_pipeline import (
+from aic_video_highlight.composition.composition_figures import render_all_figures
+from aic_video_highlight.composition.composition_pipeline import (
     InputBinding,
     FrozenInputError,
     aggregate_metrics,
@@ -41,7 +41,7 @@ from aic_video_highlight.spatial_composition.composition_pipeline import (
     verify_input_bindings,
     verify_shard_dir_integrity,
 )
-from aic_video_highlight.spatial_composition.official_emission import write_and_validate_official
+from aic_video_highlight.composition.official_emission import write_and_validate_official
 from aic_video_highlight.spatial_localization.subject_localization import SubjectPolicyConfig
 
 BASE_FIELDS = {

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from aic_video_highlight.spatial_composition.temporal_diagnostics import (
+from aic_video_highlight.composition.temporal_diagnostics import (
     crop_geometry_valid,
     observations_from_records,
     spatial_guardrail_metrics,

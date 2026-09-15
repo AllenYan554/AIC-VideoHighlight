@@ -27,7 +27,7 @@ from typing import Any, Mapping
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from aic_video_highlight.spatial_composition.validation import validate_submission_file
+from aic_video_highlight.composition.validation import validate_submission_file
 
 
 def _read_json(path: Path) -> dict[str, Any]:

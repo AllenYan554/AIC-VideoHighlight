@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from aic_video_highlight.spatial_composition.center_crop import compute_center_crop, derived_height
+from aic_video_highlight.composition.center_crop import compute_center_crop, derived_height
 from aic_video_highlight.spatial_localization import (
     DEFAULT_MODEL_ID,
     RTDetrLocalizer,
