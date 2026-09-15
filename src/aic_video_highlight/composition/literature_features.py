@@ -9,8 +9,9 @@ model on AIC videos we must reproduce that feature space.
 This module is therefore an AIC adapter, not author code.  It is deliberately
 thin and lazy: torchvision is imported only when features are actually
 requested, so the rest of the package stays importable in CPU-only
-environments.  The exact resize/normalisation must be re-verified against the
-author pipeline before the Formal run (see ``adapter_design.md``).
+environments.  It is a compatible reproduction of the published 1024-D
+GoogleNet pool5 feature contract; bitwise identity with the unavailable
+original precomputed Caffe features is not claimed.
 """
 
 from __future__ import annotations
@@ -38,7 +39,7 @@ class GoogleNetPool5Extractor:
     SumMe/TVSum h5 files were built from.
     """
 
-    def __init__(self, *, device: str = "cpu") -> None:
+    def __init__(self, *, device: str = "cpu", batch_size: int = 64) -> None:
         try:
             import torch
             from torchvision.models import GoogLeNet_Weights, googlenet
@@ -48,6 +49,8 @@ class GoogleNetPool5Extractor:
                 "install torchvision in the cloud environment before the Formal run"
             ) from exc
 
+        if isinstance(batch_size, bool) or not isinstance(batch_size, int) or batch_size < 1:
+            raise ValueError("batch_size must be a positive integer")
         self.torch = torch
         weights = GoogLeNet_Weights.IMAGENET1K_V1
         self.weights = weights
@@ -55,6 +58,7 @@ class GoogleNetPool5Extractor:
         model.fc = torch.nn.Identity()
         model.eval()
         self.device = device
+        self.batch_size = batch_size
         self.model = model.to(device)
         self.preprocess = weights.transforms()
 
@@ -63,15 +67,20 @@ class GoogleNetPool5Extractor:
         if not frames_bgr:
             return np.zeros((0, FEATURE_DIM), dtype=np.float32)
         torch = self.torch
-        tensors = []
-        for frame in frames_bgr:
-            rgb = np.asarray(frame)[:, :, ::-1].copy()
-            tensor = torch.from_numpy(np.ascontiguousarray(rgb)).permute(2, 0, 1).float() / 255.0
-            tensors.append(self.preprocess(tensor))
-        batch = torch.stack(tensors).to(self.device)
-        with torch.no_grad():
-            feats = self.model(batch)
-        return feats.detach().cpu().numpy().astype(np.float32).reshape(len(frames_bgr), FEATURE_DIM)
+        chunks: list[np.ndarray] = []
+        for start in range(0, len(frames_bgr), self.batch_size):
+            tensors = []
+            for frame in frames_bgr[start:start + self.batch_size]:
+                rgb = np.asarray(frame)[:, :, ::-1].copy()
+                tensor = torch.from_numpy(np.ascontiguousarray(rgb)).permute(2, 0, 1).float() / 255.0
+                tensors.append(self.preprocess(tensor))
+            batch = torch.stack(tensors).to(self.device)
+            with torch.no_grad():
+                feats = self.model(batch)
+            chunks.append(
+                feats.detach().cpu().numpy().astype(np.float32).reshape(len(tensors), FEATURE_DIM)
+            )
+        return np.concatenate(chunks, axis=0)
 
 
 def read_frames_bgr(video_path: str | Path, frames: Sequence[int]) -> list[np.ndarray]:

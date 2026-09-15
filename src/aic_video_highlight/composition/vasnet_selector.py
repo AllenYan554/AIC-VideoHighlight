@@ -144,12 +144,23 @@ def load_vasnet_model(
     *,
     device: str | torch.device = "cpu",
 ) -> VASNet:
-    """Instantiate VASNet and load an upstream ``*.tar.pth`` checkpoint."""
+    """Instantiate VASNet and strictly load an upstream/XAI-SUM checkpoint.
+
+    XAI-SUM's released secondary VASNet checkpoints use ``attention.*`` for
+    the same module named ``att.*`` in the original VASNet source.  Only that
+    documented prefix is remapped; tensors and all other keys are untouched.
+    """
     model = VASNet()
-    state_dict = torch.load(Path(state_dict_path), map_location="cpu")
+    state_dict = torch.load(Path(state_dict_path), map_location="cpu", weights_only=True)
     if not isinstance(state_dict, dict):
         raise ValueError("VASNet checkpoint did not yield a state_dict")
-    model.load_state_dict(state_dict)
+    remapped: dict[str, torch.Tensor] = {}
+    for key, tensor in state_dict.items():
+        mapped = "att." + key.removeprefix("attention.") if key.startswith("attention.") else key
+        if mapped in remapped:
+            raise ValueError(f"VASNet checkpoint key collision after prefix remap: {mapped}")
+        remapped[mapped] = tensor
+    model.load_state_dict(remapped, strict=True)
     model.to(device)
     model.eval()
     return model

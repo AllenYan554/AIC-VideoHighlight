@@ -50,7 +50,9 @@ an *external* dataset pipeline; neither upstream repository defines the KTS
 
 from __future__ import annotations
 
+from bisect import bisect_left
 from dataclasses import dataclass
+from fractions import Fraction
 from typing import Mapping, Sequence
 
 import numpy as np
@@ -96,6 +98,16 @@ class KTSConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class SampledFrame:
+    """One auditable point on the uniform sampling grid."""
+
+    sample_index: int
+    source_frame: int
+    target_timestamp: Fraction
+    source_timestamp: Fraction
+
+
+@dataclass(frozen=True, slots=True)
 class LiteratureFrameSelection:
     """Auditable result of one literature selector over one video."""
 
@@ -123,8 +135,10 @@ class LiteratureFrameSelection:
             raise LiteratureFrameSelectionError("KEEP and DROP overlap")
         if kept | dropped != fs0:
             raise LiteratureFrameSelectionError("KEEP + DROP must cover the FS-0 universe exactly")
-        if not set(self.selected_source_frames) <= fs0:
-            raise LiteratureFrameSelectionError("selected source frames escape the FS-0 universe")
+        if kept != set(self.selected_source_frames) & fs0:
+            raise LiteratureFrameSelectionError(
+                "KEEP must equal selected source frames intersected with FS-0"
+            )
 
     @property
     def is_subset_of_fs0(self) -> bool:
@@ -270,36 +284,73 @@ def knapSack(W: int, wt: Sequence[int], val: Sequence[float], n: int) -> list[in
 # Sampling grid (reuses the AIC VideoTiming machinery)
 # ---------------------------------------------------------------------------
 
-def sample_frames_uniform(timing: VideoTiming, sample_fps: float) -> tuple[int, ...]:
-    """Deterministic uniform frame sample, VFR/PTS aware.
+def _floor_fraction(value: Fraction) -> int:
+    return value.numerator // value.denominator
 
-    Fractional-frame timestamps are avoided by walking the timing timeline
-    through :func:`fps_rational` for CFR and the PTS table for VFR.
+
+def _ceil_fraction(value: Fraction) -> int:
+    return -((-value.numerator) // value.denominator)
+
+
+def sample_frame_mapping(timing: VideoTiming, sample_fps: float) -> tuple[SampledFrame, ...]:
+    """Map an exact uniform time grid to the first source frame at/after it.
+
+    Target times are always ``k / sample_fps`` from video time zero.  The grid
+    never advances from a decoded PTS, which prevents accumulated VFR drift.
+    Duplicate source frames (possible when sampling above the source rate) are
+    retained only for the earliest target and sample indices stay contiguous.
     """
     if not np.isfinite(sample_fps) or sample_fps <= 0:
         raise LiteratureFrameSelectionError("sample_fps must be finite and positive")
+    rate = Fraction(str(float(sample_fps)))
+
+    rows: list[tuple[int, Fraction, Fraction]] = []
 
     if timing.timestamp_mode == CFR_FPS:
-        step = float(fps_rational(timing)) / float(sample_fps)
-        if step <= 0:
-            raise LiteratureFrameSelectionError("invalid CFR sampling step")
-        count = int(np.floor((timing.frame_count - 1) / step)) + 1
-        return tuple(sorted({int(round(i * step)) for i in range(count)} & set(range(timing.frame_count))))
-
-    if timing.timestamp_mode == PTS_TABLE:
+        source_rate = fps_rational(timing)
+        final_timestamp = Fraction(timing.frame_count - 1, 1) / source_rate
+        target_count = _floor_fraction(final_timestamp * rate) + 1
+        for target_index in range(max(0, target_count)):
+            target = Fraction(target_index, 1) / rate
+            frame = _ceil_fraction(target * source_rate)
+            if 0 <= frame < timing.frame_count:
+                rows.append((frame, target, Fraction(frame, 1) / source_rate))
+    elif timing.timestamp_mode == PTS_TABLE:
         pts = timing.pts_timestamps
         if pts is None:
             raise LiteratureFrameSelectionError("PTS_TABLE timing requires pts timestamps")
-        interval = 1.0 / float(sample_fps)
-        selected: list[int] = []
-        next_target = 0.0
-        for frame, stamp in enumerate(pts):
-            if float(stamp) >= next_target - 1e-12:
-                selected.append(frame)
-                next_target = float(stamp) + interval
-        return tuple(selected)
+        if tuple(pts) != tuple(sorted(pts)):
+            raise LiteratureFrameSelectionError("PTS timestamps must be monotonic")
+        final_timestamp = pts[-1]
+        target_count = _floor_fraction(final_timestamp * rate) + 1
+        for target_index in range(max(0, target_count)):
+            target = Fraction(target_index, 1) / rate
+            frame = bisect_left(pts, target)
+            if frame < len(pts):
+                rows.append((frame, target, pts[frame]))
+    else:
+        raise LiteratureFrameSelectionError(f"unsupported timestamp_mode: {timing.timestamp_mode}")
 
-    raise LiteratureFrameSelectionError(f"unsupported timestamp_mode: {timing.timestamp_mode}")
+    mapping: list[SampledFrame] = []
+    seen: set[int] = set()
+    for frame, target, source_timestamp in rows:
+        if frame in seen:
+            continue
+        seen.add(frame)
+        mapping.append(
+            SampledFrame(
+                sample_index=len(mapping),
+                source_frame=frame,
+                target_timestamp=target,
+                source_timestamp=source_timestamp,
+            )
+        )
+    return tuple(mapping)
+
+
+def sample_frames_uniform(timing: VideoTiming, sample_fps: float) -> tuple[int, ...]:
+    """Return source-frame indices from :func:`sample_frame_mapping`."""
+    return tuple(item.source_frame for item in sample_frame_mapping(timing, sample_fps))
 
 
 # ---------------------------------------------------------------------------
@@ -389,10 +440,14 @@ def literature_select(
     selected_shots = tuple(sorted(select_shots(method, scores_by_shot, lengths, budget)))
 
     selected_samples: list[int] = []
+    selected_source_set: set[int] = set()
     for shot_index in selected_shots:
         start, end = shot_bounds[shot_index]
         selected_samples.extend(range(start, end))
-    selected_source = tuple(sorted({samples[i] for i in selected_samples}))
+        first_frame = samples[start]
+        exclusive_end = samples[end] if end < len(samples) else n_frames
+        selected_source_set.update(range(first_frame, exclusive_end))
+    selected_source = tuple(sorted(selected_source_set))
 
     fs0 = tuple(sorted({int(frame) for frame in fs0_frames}))
     fs0_set = set(fs0)

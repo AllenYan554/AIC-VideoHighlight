@@ -238,10 +238,10 @@ def load_pgl_sum_model(
         fusion=fusion,
         pos_enc=pos_enc,
     )
-    state_dict = torch.load(Path(state_dict_path), map_location="cpu")
+    state_dict = torch.load(Path(state_dict_path), map_location="cpu", weights_only=True)
     if not isinstance(state_dict, dict):
         raise ValueError("PGL-SUM checkpoint did not yield a state_dict")
-    model.load_state_dict(state_dict)
+    model.load_state_dict(state_dict, strict=True)
     model.to(device)
     model.eval()
     return model

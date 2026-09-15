@@ -22,14 +22,19 @@ from aic_video_highlight.composition.frame_projection import (  # noqa: E402
 from aic_video_highlight.composition.literature_frame_selection import (  # noqa: E402
     KTSConfig,
     LiteratureFrameSelectionError,
+    SampledFrame,
     apply_keep_drop,
     knapSack,
     kts_change_points,
     literature_select,
+    sample_frame_mapping,
     sample_frames_uniform,
     select_shots,
     shot_bounds_from_boundaries,
     summary_budget_frames,
+)
+from aic_video_highlight.composition.literature_features import (  # noqa: E402
+    GoogleNetPool5Extractor,
 )
 from aic_video_highlight.composition.pgl_sum_selector import (  # noqa: E402
     PGL_SUM,
@@ -80,6 +85,42 @@ def test_vasnet_forward_shape_and_checkpoint_roundtrip(tmp_path):
     assert set(loaded.state_dict().keys()) == set(model.state_dict().keys())
 
 
+def test_vasnet_xai_sum_attention_prefix_is_remapped_strictly(tmp_path):
+    model = VASNet()
+    xai_sum_state_dict = {
+        ("attention." + key.removeprefix("att.")) if key.startswith("att.") else key: value
+        for key, value in model.state_dict().items()
+    }
+    path = tmp_path / "xai-sum-vasnet.pth.tar"
+    torch.save(xai_sum_state_dict, path)
+    loaded = load_vasnet_model(path)
+    assert set(loaded.state_dict()) == set(model.state_dict())
+    for key, expected in model.state_dict().items():
+        assert torch.equal(loaded.state_dict()[key], expected)
+
+
+def test_feature_extractor_honors_gpu_batch_size_without_full_stack():
+    class FakeModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.batch_sizes = []
+
+        def forward(self, batch):
+            self.batch_sizes.append(int(batch.shape[0]))
+            return torch.zeros((batch.shape[0], D), dtype=torch.float32)
+
+    extractor = GoogleNetPool5Extractor.__new__(GoogleNetPool5Extractor)
+    extractor.torch = torch
+    extractor.device = "cpu"
+    extractor.batch_size = 2
+    extractor.preprocess = lambda tensor: tensor
+    extractor.model = FakeModel()
+    frames = [np.zeros((4, 4, 3), dtype=np.uint8) for _ in range(5)]
+    features = extractor.extract(frames)
+    assert features.shape == (5, D)
+    assert extractor.model.batch_sizes == [2, 2, 1]
+
+
 # --- post-processing -------------------------------------------------------
 
 def test_knapsack_selects_high_value_shots():
@@ -114,6 +155,28 @@ def test_sample_frames_uniform_pts_table():
     timing = VideoTiming("v", fps=4.0, frame_count=8, timestamp_mode=PTS_TABLE, pts_timestamps=pts)
     frames = sample_frames_uniform(timing, 2.0)
     assert frames == (0, 2, 4, 6)
+
+
+def test_sample_frame_mapping_records_exact_cfr_trace():
+    timing = VideoTiming("v", fps=float(Fraction(30000, 1001)), frame_count=61, timestamp_mode=CFR_FPS)
+    mapping = sample_frame_mapping(timing, 2.0)
+    assert all(isinstance(item, SampledFrame) for item in mapping)
+    assert tuple(item.sample_index for item in mapping) == tuple(range(len(mapping)))
+    assert tuple(item.source_frame for item in mapping[:5]) == (0, 15, 30, 45, 60)
+    assert mapping[1].target_timestamp == Fraction(1, 2)
+    assert mapping[1].source_timestamp == Fraction(15, 1) / Fraction(str(timing.fps))
+
+
+def test_sample_frame_mapping_pts_uses_fixed_grid_without_drift():
+    # Frame 1 is late (0.51 s). Anchoring the next target to its PTS would drift
+    # to 1.01 s and choose frame 4; the fixed 2-FPS grid must choose frame 3.
+    pts = tuple(Fraction(value) for value in ("0", "0.51", "0.99", "1.0", "1.02", "1.5"))
+    timing = VideoTiming("v", fps=4.0, frame_count=len(pts), timestamp_mode=PTS_TABLE, pts_timestamps=pts)
+    mapping = sample_frame_mapping(timing, 2.0)
+    assert tuple(item.source_frame for item in mapping) == (0, 1, 3, 5)
+    assert tuple(item.target_timestamp for item in mapping) == (
+        Fraction(0), Fraction(1, 2), Fraction(1), Fraction(3, 2)
+    )
 
 
 # --- FS-0 subset adapter ---------------------------------------------------
@@ -155,6 +218,22 @@ def test_kept_frames_are_selected_intersect_fs0():
     )
     assert set(selection.kept_frames) <= set(fs0)
     assert set(selection.kept_frames) == ({0, 4, 8, 12} & set(selection.selected_source_frames))
+
+
+def test_selected_keyshot_expands_to_source_interval_before_fs0_intersection():
+    # Only source frames 0 and 2 are sampled, but selecting that keyshot means
+    # the complete source interval [0, 4), including unsampled FS-0 frames.
+    selection = literature_select(
+        method="pgl_sum",
+        sample_frames=(0, 2, 4, 30),
+        frame_scores=(1.0, 1.0, 0.0, 0.0),
+        n_frames=40,
+        fs0_frames=(1, 3, 7, 31),
+        shot_bounds=((0, 2), (2, 4)),
+    )
+    assert selection.selected_shots == (0,)
+    assert selection.selected_source_frames == tuple(range(4))
+    assert selection.kept_frames == (1, 3)
 
 
 def test_apply_keep_drop_preserves_bbox_rows_and_drops_rejected_frames():
