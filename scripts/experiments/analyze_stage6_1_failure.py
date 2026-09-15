@@ -309,6 +309,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--random-trials", type=int, default=100)
     parser.add_argument("--seed", type=int, default=20260915)
+    parser.add_argument("--max-videos", type=int, default=0, help="smoke only; 0 = all 166")
     return parser.parse_args(argv)
 
 
@@ -347,6 +348,8 @@ def run(args: argparse.Namespace) -> int:
     }
     specs = runner.build_video_specs(metadata_records, control_records, video_shas)
     _expect(len(specs) == 166, "expected 166 videos")
+    if args.max_videos:
+        specs = specs[: args.max_videos]
 
     reference_path = Path(protocol["frozen_stage6_0_control"]["weak_spatial_reference_path"])
     reference_records = {str(row["video_id"]): row for row in runner.read_jsonl(reference_path)}
@@ -370,7 +373,7 @@ def run(args: argparse.Namespace) -> int:
             "ensemble_range": [], "single_range": [],
             "direction_ok": 0, "direction_total": 0,
             "shot_lengths_samples": [], "shot_lengths_seconds": [],
-            "selected_shots": [], "total_shots": 0,
+            "selected_shots": 0, "total_shots": 0,
             "tp_kept_total": 0,
             "curves": {}, "shots": {},
         }
