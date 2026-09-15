@@ -367,12 +367,26 @@ def _shot_source_length(shot: tuple[int, int], sample_frames: Sequence[int], n_f
     return max(1, last_frame - first_frame + 1)
 
 
-def shot_scores(frame_scores: np.ndarray, shot_bounds: Sequence[tuple[int, int]]) -> list[float]:
-    """Average per-sample score inside each shot (upstream ``seg_score``)."""
+def shot_scores(
+    frame_scores: np.ndarray,
+    shot_bounds: Sequence[tuple[int, int]],
+    *,
+    sample_frames: Sequence[int],
+    n_frames: int,
+) -> list[float]:
+    """Mean source-frame score after the upstream ``positions`` expansion.
+
+    Each sampled score covers the source interval up to the next sample (or
+    the video end). Weighting by that interval length is equivalent to the
+    author code's expanded frame-score vector, including VFR/unequal picks.
+    """
+    edges = np.asarray(tuple(sample_frames) + (n_frames,), dtype=np.int64)
+    weights = np.diff(edges)
     scores: list[float] = []
     for start, end in shot_bounds:
         window = frame_scores[start:end]
-        scores.append(float(np.mean(window)) if window.size else 0.0)
+        coverage = weights[start:end]
+        scores.append(float(np.average(window, weights=coverage)) if window.size else 0.0)
     return scores
 
 
@@ -385,7 +399,7 @@ def summary_budget_frames(method: str, n_frames: int) -> int:
         final_max_length = int(np.floor(n_frames * proportion))
     else:
         raise LiteratureFrameSelectionError(f"unknown method: {method}")
-    return max(1, final_max_length)
+    return final_max_length
 
 
 def select_shots(method: str, shot_scores_: Sequence[float], shot_lengths: Sequence[int], budget_frames: int) -> list[int]:
@@ -436,7 +450,7 @@ def literature_select(
         shot_bounds = shot_bounds_from_boundaries(len(samples), boundaries)
 
     lengths = [_shot_source_length(shot, samples, n_frames) for shot in shot_bounds]
-    scores_by_shot = shot_scores(scores, shot_bounds)
+    scores_by_shot = shot_scores(scores, shot_bounds, sample_frames=samples, n_frames=n_frames)
     budget = summary_budget_frames(method, n_frames)
     selected_shots = tuple(sorted(select_shots(method, scores_by_shot, lengths, budget)))
 

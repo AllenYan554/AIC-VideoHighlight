@@ -32,6 +32,7 @@ from aic_video_highlight.composition.literature_frame_selection import (  # noqa
     sample_frames_uniform,
     select_shots,
     shot_bounds_from_boundaries,
+    shot_scores,
     summary_budget_frames,
 )
 from aic_video_highlight.composition.literature_features import (  # noqa: E402
@@ -144,6 +145,18 @@ def test_vasnet_knapsack_value_scale_truncates_like_upstream(monkeypatch):
 def test_budget_matches_upstream_definitions():
     assert summary_budget_frames("pgl_sum", 1000) == 150
     assert summary_budget_frames("vasnet", 1000) == 150
+    assert summary_budget_frames("pgl_sum", 5) == 0
+    assert summary_budget_frames("vasnet", 5) == 0
+
+
+def test_shot_score_weights_source_frame_coverage_like_upstream_expansion():
+    scores = shot_scores(
+        np.asarray([0.0, 1.0, 0.5]),
+        ((0, 2), (2, 3)),
+        sample_frames=(0, 1, 4),
+        n_frames=5,
+    )
+    assert scores == [0.75, 0.5]
 
 
 def test_kts_change_points_are_interior_and_monotonic():
