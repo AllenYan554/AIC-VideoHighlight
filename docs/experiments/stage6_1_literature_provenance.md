@@ -80,6 +80,17 @@ mathematics are unchanged.
 * `src/aic_video_highlight/composition/literature_features.py` (GoogleNet pool5 adapter)
 * `tests/test_literature_frame_selection.py`
 
+## Formal runner
+
+`scripts/experiments/run_stage6_1_literature_frame_selection.py` is the canonical
+Formal orchestration entry point (option A of the BLOCKED follow-up).  It is
+orchestration only: protocol/identity verification, frozen upstream loading, the
+shared feature cache, model-ensemble execution, resume, evaluation, tables,
+figures and the report.  All scientific steps stay in the four library modules
+above.  CLI modes: `--validate-only`, `--arm fs0|pgl|vasnet|all`, `--resume`.
+Unit/async tests live in `tests/test_stage6_1_runner.py`.  The script never
+touches `src/`, so the frozen-science identity of the protocol HEAD is preserved.
+
 ## Data policy
 
 Training data, benchmark splits, h5 datasets and pretrained weights were **not**
