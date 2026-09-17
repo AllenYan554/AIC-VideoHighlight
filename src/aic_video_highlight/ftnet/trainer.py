@@ -48,6 +48,73 @@ class TrainStepResult:
     loss: float
     gradients_finite: bool
     parameters_updated: bool
+    gradient_norm: float | None
+
+
+def build_adamw_optimizer(
+    model: FTNet,
+    *,
+    learning_rate: float,
+    weight_decay: float,
+    betas: tuple[float, float],
+    eps: float,
+) -> torch.optim.AdamW:
+    """Build AdamW with decay only on non-bias, non-LayerNorm weights."""
+
+    if learning_rate <= 0.0:
+        raise ValueError("learning_rate must be positive")
+    if weight_decay < 0.0:
+        raise ValueError("weight_decay cannot be negative")
+    if eps <= 0.0:
+        raise ValueError("eps must be positive")
+
+    decay: list[torch.nn.Parameter] = []
+    no_decay: list[torch.nn.Parameter] = []
+    for module in model.modules():
+        for parameter_name, parameter in module.named_parameters(recurse=False):
+            if not parameter.requires_grad:
+                continue
+            if parameter_name == "bias" or isinstance(module, torch.nn.LayerNorm):
+                no_decay.append(parameter)
+            else:
+                decay.append(parameter)
+
+    classified = {id(parameter) for parameter in decay + no_decay}
+    trainable = {
+        id(parameter) for parameter in model.parameters() if parameter.requires_grad
+    }
+    if classified != trainable:
+        raise RuntimeError("AdamW parameter grouping did not classify every trainable parameter")
+
+    return torch.optim.AdamW(
+        [
+            {"params": decay, "weight_decay": weight_decay},
+            {"params": no_decay, "weight_decay": 0.0},
+        ],
+        lr=learning_rate,
+        betas=betas,
+        eps=eps,
+        weight_decay=0.0,
+    )
+
+
+def build_cosine_scheduler(
+    optimizer: torch.optim.Optimizer,
+    *,
+    max_epochs: int,
+    eta_min: float,
+) -> torch.optim.lr_scheduler.CosineAnnealingLR:
+    """Build the epoch-stepped cosine schedule used by the frozen baseline."""
+
+    if max_epochs <= 0:
+        raise ValueError("max_epochs must be positive")
+    if eta_min < 0.0:
+        raise ValueError("eta_min cannot be negative")
+    return torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer,
+        T_max=max_epochs,
+        eta_min=eta_min,
+    )
 
 
 def _validate_example(example: FTNetExample) -> int:
@@ -141,6 +208,7 @@ def train_step(
     optimizer: torch.optim.Optimizer,
     *,
     positive_class_weight: float | None = None,
+    max_grad_norm: float | None = None,
 ) -> TrainStepResult:
     """Run exactly one forward/backward/update step for smoke verification."""
 
@@ -169,6 +237,17 @@ def train_step(
     )
     if not gradients_finite:
         raise FloatingPointError("training gradients are missing or non-finite")
+    gradient_norm = None
+    if max_grad_norm is not None:
+        if max_grad_norm <= 0.0:
+            raise ValueError("max_grad_norm must be positive when clipping is enabled")
+        total_norm = torch.nn.utils.clip_grad_norm_(
+            trainable,
+            max_norm=max_grad_norm,
+            norm_type=2.0,
+            error_if_nonfinite=True,
+        )
+        gradient_norm = float(total_norm.detach().cpu())
     optimizer.step()
     parameters_updated = any(
         not torch.equal(old, parameter.detach())
@@ -178,4 +257,5 @@ def train_step(
         loss=float(loss.detach().cpu()),
         gradients_finite=gradients_finite,
         parameters_updated=parameters_updated,
+        gradient_norm=gradient_norm,
     )

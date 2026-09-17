@@ -17,3 +17,49 @@ loss:
 target_strategy: null
 decoder:
   status: NOT_CALIBRATED
+training:
+  protocol_status: FROZEN_BASELINE
+  seed: 20260917
+  optimizer:
+    name: AdamW
+    learning_rate: 0.0003
+    betas: [0.9, 0.999]
+    eps: 0.00000001
+    weight_decay: 0.01
+    no_weight_decay: [bias, layer_norm_weight, layer_norm_bias]
+  scheduler:
+    name: CosineAnnealingLR
+    step_unit: epoch
+    warmup_epochs: 0
+    t_max_epochs: 40
+    eta_min: 0.000001
+  batch_unit: video_candidate_sequence
+  batch_size_videos: 4
+  gradient_accumulation_steps: 1
+  max_epochs: 40
+  gradient_clipping:
+    enabled: true
+    type: global_norm
+    max_norm: 1.0
+    norm_type: 2.0
+    error_if_nonfinite: true
+  precision:
+    amp: false
+    dtype: float32
+  validation_frequency_epochs: 1
+  early_stopping:
+    enabled: false
+  checkpoint:
+    best_monitor: validation_masked_bce
+    best_mode: min
+    tie_break: earliest_epoch
+    save_last: true
+  deterministic:
+    use_deterministic_algorithms: true
+    cudnn_benchmark: false
+    cudnn_deterministic: true
+  dataloader:
+    num_workers: 0
+    pin_memory: false
+    train_shuffle: true
+    drop_last: false

@@ -17,6 +17,7 @@ if str(SRC_ROOT) not in sys.path:
 from aic_video_highlight.ftnet.model import FTNet, FTNetConfig  # noqa: E402
 from aic_video_highlight.ftnet.trainer import (  # noqa: E402
     FTNetExample,
+    build_adamw_optimizer,
     collate_ftnet_examples,
     train_step,
 )
@@ -40,14 +41,23 @@ def run_smoke(*, device: str, steps: int, native_dim: int) -> dict[str, object]:
     if device == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA smoke requested but torch.cuda.is_available() is false")
 
-    torch.manual_seed(17)
-    generator = torch.Generator().manual_seed(17)
+    torch.manual_seed(20260917)
+    generator = torch.Generator().manual_seed(20260917)
     model = FTNet(FTNetConfig(native_dim=native_dim)).to(device)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
+    optimizer = build_adamw_optimizer(
+        model,
+        learning_rate=3e-4,
+        weight_decay=1e-2,
+        betas=(0.9, 0.999),
+        eps=1e-8,
+    )
     batch = collate_ftnet_examples(
         [_example(5, native_dim, generator), _example(9, native_dim, generator)]
     ).to(device)
-    results = [train_step(model, batch, optimizer) for _ in range(steps)]
+    results = [
+        train_step(model, batch, optimizer, max_grad_norm=1.0)
+        for _ in range(steps)
+    ]
     return {
         "status": "PASS",
         "formal_training_started": False,
@@ -55,6 +65,10 @@ def run_smoke(*, device: str, steps: int, native_dim: int) -> dict[str, object]:
         "steps": steps,
         "losses": [result.loss for result in results],
         "gradients_finite": all(result.gradients_finite for result in results),
+        "gradient_norms_before_clipping": [
+            result.gradient_norm for result in results
+        ],
+        "max_grad_norm": 1.0,
         "parameters_updated": all(result.parameters_updated for result in results),
         "parameter_count": sum(parameter.numel() for parameter in model.parameters()),
         "native_dim": native_dim,
