@@ -1,0 +1,16 @@
+datasets:
+  youtube_highlights:
+    relative_path: youtube_highlights
+    adapter: youtube_highlights
+    allow_training: true
+    allow_gt: true
+  tvsum:
+    relative_path: tvsum
+    adapter: tvsum_external_test
+    allow_training: false
+    allow_gt: false
+  aic_highlight_dev:
+    relative_path: aic_highlight_dev
+    adapter: stage6_bootstrap
+    allow_training: true
+    allow_gt: true

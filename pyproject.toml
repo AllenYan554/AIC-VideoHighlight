@@ -15,6 +15,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.3,<10"]
+ftnet = ["torch>=2.5,<3"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
