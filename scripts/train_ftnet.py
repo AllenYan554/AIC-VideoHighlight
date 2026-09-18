@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import platform
 import random
 import sys
@@ -211,10 +212,11 @@ def run(args) -> int:
     history = []
     best_metric = float("inf")
     best_epoch = -1
-    total_steps = max_epochs * max(1, len(train_dataset) // batch_size)
+    total_steps = max_epochs * math.ceil(len(train_dataset) / batch_size)
     reporter = ProgressReporter(experiment_id="ftnet_training", total=total_steps, log_dir=log_dir)
     step = 0
     last_heartbeat = time.monotonic()
+    stop_requested = False
     for epoch in range(start_epoch, max_epochs):
         model.train()
         loader = _loader(train_dataset, batch_size=batch_size, shuffle=True, seed=seed + epoch,
@@ -249,6 +251,9 @@ def run(args) -> int:
                 print(f"\n[HEARTBEAT] epoch={epoch + 1} step={step} elapsed={now - reporter.started:.0f}s "
                       f"loss={running / max(running_frames, 1):.4f} gpu_gb={gpu_mem:.1f}")
                 last_heartbeat = now
+            if args.max_steps and step >= args.max_steps:
+                stop_requested = True
+                break
         scheduler.step()
         train_loss = running / max(running_frames, 1)
         val = evaluate(model, val_dataset, batch_size=batch_size, num_workers=args.num_workers, device=device)
@@ -265,7 +270,7 @@ def run(args) -> int:
                             epoch=epoch + 1, global_step=step, identity=identity, config=model.config)
         print(f"\nEpoch {epoch + 1}/{max_epochs} train={train_loss:.4f} val={metric:.4f} "
               f"best_epoch={best_epoch + 1} lr={optimizer.param_groups[0]['lr']:.2e}")
-        if args.max_steps and step >= args.max_steps:
+        if args.max_steps and stop_requested:
             break
 
     (run_dir / "history.json").write_text(json.dumps(history, indent=2), encoding="utf-8")
