@@ -195,8 +195,9 @@ def _resolve(spec: Mapping[str, Any], environment: EnvironmentPaths) -> Path:
         "datasets": environment.datasets,
         "models": environment.models,
         "hf_cache": environment.hf_cache,
+        "derived": environment.derived,
     }
-    if base not in roots:
+    if base not in roots or roots[base] is None:
         raise FreshPipelineError(f"unsupported fresh input base: {base}")
     path = Path(str(spec["path"]))
     return path if path.is_absolute() else roots[base] / path

@@ -44,6 +44,7 @@ class EnvironmentPaths:
     cache: Path
     tmp: Path
     archive: Path
+    derived: Path | None = None
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "EnvironmentPaths":
@@ -54,7 +55,13 @@ class EnvironmentPaths:
         missing = sorted(required - payload.keys())
         if missing:
             raise ValueError(f"environment config missing: {', '.join(missing)}")
-        return cls(**{key: Path(payload[key]) if key != "name" else payload[key] for key in required})
+        fields = {
+            key: Path(payload[key]) if key != "name" else payload[key] for key in required
+        }
+        derived = payload.get("derived")
+        if derived not in (None, ""):
+            fields["derived"] = Path(str(derived))
+        return cls(**fields)
 
     @classmethod
     def from_json(cls, path: Path) -> "EnvironmentPaths":
