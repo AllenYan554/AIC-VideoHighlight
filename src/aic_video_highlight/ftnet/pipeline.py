@@ -379,7 +379,6 @@ def run_retrieval_stage(
                     retrieval_chunks=len(payload["chunks"]),
                     retrieval_merged=len(payload["merged_candidates"]),
                 )
-                journal.clear(entry.video_id)
                 progress.retrieval_done += 1
             except Exception as exc:  # noqa: BLE001 - per-video isolation is the contract
                 failures += 1
@@ -434,7 +433,6 @@ def run_detection_stage(
                 detection_frames=int(result["frames"]),
                 detection_candidates=int(result["candidates"]),
             )
-            journal.clear(entry.video_id)
             progress.detection_done += 1
         except Exception as exc:  # noqa: BLE001
             failures += 1
