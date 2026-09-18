@@ -115,3 +115,12 @@ def test_recovery_second_failure_propagates(tiny_video: Path) -> None:
     config = HighlightRetrievalConfig()
     with pytest.raises(Exception):
         _run_retrieval_with_recovery(_entry(tiny_video), tiny_video, client, config)
+
+
+def test_recovery_handles_multi_chunk_videos(tiny_video: Path) -> None:
+    client = _StubClient([_Response(VALID_RESPONSE), _Response(VALID_RESPONSE)])
+    config = HighlightRetrievalConfig(chunk_seconds=1.0, overlap_seconds=0.0)
+    result, attempts = _run_retrieval_with_recovery(_entry(tiny_video), tiny_video, client, config)
+    assert len(result.raw_chunk_outputs) == 2
+    assert len(result.candidate_segments) == 2
+    assert {row["chunk_index"] for row in attempts} == {0, 1}

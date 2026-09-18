@@ -29,6 +29,7 @@ from aic_video_highlight.ftnet.materialize import VideoRef
 from aic_video_highlight.retrieval.pipeline import (
     HighlightRetrievalConfig,
     HighlightRetrievalPipeline,
+    _render_chunk,
     load_highlight_retrieval_config,
 )
 from aic_video_highlight.retrieval.qwen_vllm_client import QwenVLLMClient
@@ -342,7 +343,7 @@ def _run_retrieval_with_recovery(
             for chunk in chunks:
                 chunk_path = Path(temp_dir) / f"chunk-{chunk.index:05d}.mp4"
                 extraction_started = time.perf_counter()
-                pipeline._render_chunk(meta.path, chunk, chunk_path, ffmpeg_bin=pipeline.ffmpeg_bin)
+                _render_chunk(meta.path, chunk, chunk_path, ffmpeg_bin=pipeline.ffmpeg_bin)
                 extraction_time += time.perf_counter() - extraction_started
                 local_segments, record, parse_time = _analyze(chunk_path, chunk)
                 candidates.extend(
