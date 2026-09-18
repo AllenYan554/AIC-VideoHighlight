@@ -104,10 +104,13 @@ class MaterializationSettings:
     python: str = field(default_factory=lambda: sys.executable)
     idx0_fallback: str = IDX0_FALLBACK_NONE
     overwrite: bool = False
+    wave_size: int | None = None
 
     def __post_init__(self) -> None:
         if self.idx0_fallback not in IDX0_FALLBACKS:
             raise MaterializationError(f"unknown idx0 fallback: {self.idx0_fallback}")
+        if self.wave_size is not None and self.wave_size <= 0:
+            raise MaterializationError("wave_size must be a positive integer")
         self.dataset_root = Path(self.dataset_root).expanduser().resolve()
         self.work_root = Path(self.work_root).expanduser().resolve()
         self.output_root = Path(self.output_root).expanduser().resolve()
@@ -192,7 +195,6 @@ class ProgressState:
     failed: int = 0
     current_video: str | None = None
     stage: str = STAGE_RETRIEVAL
-
     def emit(self, *, gpu_gb: float | None = None, detail: str | None = None) -> None:
         display: dict[str, Any] = {
             "stage": self.stage,
@@ -326,7 +328,6 @@ def run_retrieval_stage(
         for entry in entries
         if settings.overwrite or not retrieval_artifact_path(settings.work_root, entry.video_id).is_file()
     ]
-    progress.retrieval_done = len(entries) - len(todo)
     progress.emit()
     if not todo:
         return 0
@@ -407,7 +408,6 @@ def run_detection_stage(
         for entry in entries
         if settings.overwrite or not detection_artifact_path(settings.work_root, entry.video_id).is_file()
     ]
-    progress.detection_done = len(entries) - len(todo)
     progress.emit()
     if not todo:
         return 0
@@ -462,7 +462,6 @@ def run_assemble_stage(
     progress: ProgressState,
     journal: FailureJournal,
     status: StatusStore,
-    records_out: list[dict[str, Any]] | None = None,
 ) -> int:
     progress.stage = STAGE_ASSEMBLE
     provider = RealUpstreamProvider(
@@ -470,7 +469,7 @@ def run_assemble_stage(
     )
     fingerprint = assemble_fingerprint(settings)
     failures = 0
-    records = records_out if records_out is not None else []
+    records: list[dict[str, Any]] = []
     for entry in entries:
         progress.current_video = entry.video_id
         ref = video_ref_from_entry(entry)
@@ -524,15 +523,36 @@ def run_assemble_stage(
         progress.failed = len(journal.items)
         progress.emit(detail=entry.video_id)
     if records:
-        write_manifest(
-            settings.output_root,
-            records,
-            extra={
-                "idx0_fallback": settings.idx0_fallback,
-                "assemble_fingerprint": fingerprint,
-            },
-        )
+        _merge_manifest(settings.output_root, records, settings=settings, fingerprint=fingerprint)
     return failures
+
+
+def _merge_manifest(
+    output_root: Path,
+    records: Sequence[dict[str, Any]],
+    *,
+    settings: MaterializationSettings,
+    fingerprint: str,
+) -> None:
+    manifest_path = Path(output_root) / "manifests" / "materialized_videos.json"
+    merged: dict[str, dict[str, Any]] = {}
+    if manifest_path.is_file():
+        try:
+            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+            for row in payload.get("records", []):
+                merged[str(row["canonical_video_id"])] = row
+        except (json.JSONDecodeError, KeyError, TypeError):
+            merged = {}
+    for row in records:
+        merged[str(row["canonical_video_id"])] = row
+    write_manifest(
+        output_root,
+        [merged[key] for key in sorted(merged)],
+        extra={
+            "idx0_fallback": settings.idx0_fallback,
+            "assemble_fingerprint": fingerprint,
+        },
+    )
 
 
 def load_raw_entries(
@@ -614,18 +634,36 @@ def run_materialization(
     reporter = ProgressReporter(
         experiment_id="ftnet_data_materialization", total=len(selected), log_dir=log_dir
     )
-    progress = ProgressState(reporter=reporter, total=len(selected))
+    progress = ProgressState(
+        reporter=reporter,
+        total=len(selected),
+        retrieval_done=sum(
+            1
+            for entry in selected
+            if retrieval_artifact_path(settings.work_root, entry.video_id).is_file()
+        ),
+        detection_done=sum(
+            1
+            for entry in selected
+            if detection_artifact_path(settings.work_root, entry.video_id).is_file()
+        ),
+    )
     started = time.monotonic()
-    records: list[dict[str, Any]] = []
 
-    if STAGE_RETRIEVAL in stages:
-        run_retrieval_stage(settings, selected, progress=progress, journal=journal, status=status)
-    if STAGE_DETECTION in stages:
-        run_detection_stage(settings, selected, progress=progress, journal=journal, status=status)
-    if STAGE_ASSEMBLE in stages:
-        run_assemble_stage(
-            settings, selected, progress=progress, journal=journal, status=status, records_out=records
-        )
+    if settings.wave_size is None:
+        waves = [list(selected)]
+    else:
+        waves = [
+            list(selected[index : index + settings.wave_size])
+            for index in range(0, len(selected), settings.wave_size)
+        ]
+    for wave in waves:
+        if STAGE_RETRIEVAL in stages:
+            run_retrieval_stage(settings, wave, progress=progress, journal=journal, status=status)
+        if STAGE_DETECTION in stages:
+            run_detection_stage(settings, wave, progress=progress, journal=journal, status=status)
+        if STAGE_ASSEMBLE in stages:
+            run_assemble_stage(settings, wave, progress=progress, journal=journal, status=status)
 
     elapsed = time.monotonic() - started
     summary = {
@@ -644,6 +682,7 @@ def run_materialization(
         "retrieval_done": progress.retrieval_done,
         "detection_done": progress.detection_done,
         "assembled": progress.assembled,
+        "materialized_new": progress.assembled - progress.skipped,
         "skipped": progress.skipped,
         "failed": len(journal.failed_ids()),
         "failed_video_ids": journal.failed_ids(),

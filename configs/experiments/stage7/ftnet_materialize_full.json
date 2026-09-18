@@ -11,6 +11,7 @@
   "index_path": {"base": "outputs", "path": "stage7_ftnet/index/frozen_index.json"},
   "output_root": {"base": "derived", "path": "VHiCraFTNet/youtube_highlights_ftnet"},
   "selection": {"splits": ["TRAIN", "VALIDATION", "CALIBRATION"]},
+  "wave_size": 20,
   "device": "cuda",
   "detection_batch_size": 8,
   "detection_top_k": 100,

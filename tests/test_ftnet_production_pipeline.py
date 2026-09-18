@@ -189,6 +189,26 @@ def test_assemble_stage_is_resumable_and_fingerprint_sensitive(tmp_path: Path) -
     assert row["idx0_fallback"] == IDX0_FALLBACK_NORM
 
 
+def test_wave_processing_merges_manifest(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    settings.wave_size = 1
+    entries = [
+        _prepare_video(settings.dataset_root, settings.work_root, video_id="wave-a"),
+        _prepare_video(
+            settings.dataset_root, settings.work_root, video_id="wave-b", category="skating"
+        ),
+    ]
+    write_index(entries, metadata={"dataset_id": "youtube_highlights"}, output_path=settings.index_path)
+    summary = run_materialization(
+        settings, splits=["TRAIN"], stages=[STAGE_ASSEMBLE], verify_sha256=False
+    )
+    assert summary["assembled"] == 2 and summary["failed"] == 0
+    manifest = json.loads(
+        (settings.output_root / "manifests" / "materialized_videos.json").read_text(encoding="utf-8")
+    )
+    assert [row["canonical_video_id"] for row in manifest["records"]] == ["wave-a", "wave-b"]
+
+
 def test_normalization_and_integrity_gate(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
     entries = [

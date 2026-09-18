@@ -164,6 +164,7 @@ def _settings(config: Mapping[str, Any], environment: EnvironmentPaths) -> Mater
         python=sys.executable,
         idx0_fallback=idx0_fallback,
         overwrite=bool(config.get("overwrite", False)),
+        wave_size=int(config["wave_size"]) if config.get("wave_size") else None,
     )
 
 
