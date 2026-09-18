@@ -245,10 +245,17 @@ def _run_retrieval_with_recovery(
     extraction_time = 0.0
     attempts_log: list[dict[str, Any]] = []
 
-    def _analyze(media: Path, chunk: Any) -> tuple[list[Any], dict[str, Any]]:
+    def _analyze(media: Path, chunk: Any) -> tuple[list[Any], dict[str, Any], float]:
+        from aic_video_highlight.retrieval.response_parser import (
+            ResponseParseError,
+            TruncatedResponseError,
+            parse_highlight_response,
+        )
+
         prompt = build_prompt(
             config.prompt_version, chunk.duration_sec, config.max_segments_per_chunk
         )
+        chunk_attempts: list[dict[str, Any]] = []
 
         def _request(max_new_tokens: int, temperature: float, label: str):
             request_started = time.perf_counter()
@@ -261,42 +268,62 @@ def _run_retrieval_with_recovery(
                 enable_thinking=config.enable_thinking,
             )
             latency = time.perf_counter() - request_started
-            attempts_log.append(
-                {
-                    "chunk_index": chunk.index,
-                    "attempt": label,
-                    "temperature": temperature,
-                    "max_new_tokens": max_new_tokens,
-                    "finish_reason": response.finish_reason,
-                    "latency_sec": round(latency, 3),
-                }
-            )
+            entry = {
+                "chunk_index": chunk.index,
+                "attempt": label,
+                "temperature": temperature,
+                "max_new_tokens": max_new_tokens,
+                "finish_reason": response.finish_reason,
+                "latency_sec": round(latency, 3),
+            }
+            chunk_attempts.append(entry)
+            attempts_log.append(entry)
             return response, latency
 
-        attempts: list[dict[str, Any]] = []
-        response, latency = _request(config.max_new_tokens, config.temperature, "primary")
-        parsing_started = time.perf_counter()
-        try:
-            local_segments = parse_highlight_response(
-                response.content, chunk_duration_sec=chunk.duration_sec, source_chunk=chunk.index
-            )
-        except TruncatedResponseError:
-            response, latency = _request(
-                RECOVERY_MAX_NEW_TOKENS, config.temperature, "truncation_retry"
-            )
-            attempts.append({"recovery": "max_new_tokens", "value": RECOVERY_MAX_NEW_TOKENS})
-            local_segments = parse_highlight_response(
-                response.content, chunk_duration_sec=chunk.duration_sec, source_chunk=chunk.index
-            )
-        except ResponseParseError:
-            response, latency = _request(
-                config.max_new_tokens, RECOVERY_TEMPERATURE, "parse_retry"
-            )
-            attempts.append({"recovery": "temperature", "value": RECOVERY_TEMPERATURE})
-            local_segments = parse_highlight_response(
-                response.content, chunk_duration_sec=chunk.duration_sec, source_chunk=chunk.index
-            )
-        parse_time = time.perf_counter() - parsing_started
+        plan: list[tuple[int, float, str]] = [
+            (config.max_new_tokens, config.temperature, "primary")
+        ]
+        last_error: Exception | None = None
+        response = None
+        latency = 0.0
+        local_segments = None
+        parse_time = 0.0
+        while plan:
+            max_new_tokens, temperature, label = plan.pop(0)
+            response, latency = _request(max_new_tokens, temperature, label)
+            parse_started = time.perf_counter()
+            try:
+                local_segments = parse_highlight_response(
+                    response.content,
+                    chunk_duration_sec=chunk.duration_sec,
+                    source_chunk=chunk.index,
+                )
+                parse_time += time.perf_counter() - parse_started
+                last_error = None
+                break
+            except TruncatedResponseError as exc:
+                parse_time += time.perf_counter() - parse_started
+                last_error = exc
+                if label == "primary":
+                    plan = [
+                        (RECOVERY_MAX_NEW_TOKENS, config.temperature, "truncation_retry_512"),
+                        (2 * RECOVERY_MAX_NEW_TOKENS, config.temperature, "truncation_retry_1024"),
+                    ] + plan
+                elif label != "truncation_retry_1024":
+                    plan = [
+                        (2 * RECOVERY_MAX_NEW_TOKENS, config.temperature, "truncation_retry_1024")
+                    ] + plan
+            except ResponseParseError as exc:
+                parse_time += time.perf_counter() - parse_started
+                last_error = exc
+                if label == "primary":
+                    plan = [
+                        (config.max_new_tokens, RECOVERY_TEMPERATURE, "parse_retry_temp"),
+                        (RECOVERY_MAX_NEW_TOKENS, RECOVERY_TEMPERATURE, "parse_retry_512"),
+                    ] + plan
+        if local_segments is None or response is None:
+            assert last_error is not None
+            raise last_error
         record = {
             "chunk_index": chunk.index,
             "chunk_start_sec": chunk.start_sec,
@@ -316,7 +343,9 @@ def _run_retrieval_with_recovery(
                 }
                 for item in local_segments
             ],
-            "recovery_attempts": attempts,
+            "recovery_attempts": [
+                attempt for attempt in chunk_attempts if attempt["attempt"] != "primary"
+            ],
         }
         return local_segments, record, parse_time
 

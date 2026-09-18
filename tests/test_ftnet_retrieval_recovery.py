@@ -109,11 +109,26 @@ def test_recovery_retries_truncation_with_token_budget(tiny_video: Path) -> None
     assert client.calls[1]["temperature"] == config.temperature
 
 
-def test_recovery_second_failure_propagates(tiny_video: Path) -> None:
-    malformed = '{"has_highlight": true, "segments": [{"start_sec": 0.0, "end_sec": 1.0}]}}\n'
-    client = _StubClient([_Response(malformed), _Response(malformed)])
+def test_recovery_escalates_truncation_budget(tiny_video: Path) -> None:
+    truncated = _Response('```json\n{"has_highlight": true, "segments": [{"start_sec":', "length")
+    client = _StubClient([truncated, truncated, _Response(VALID_RESPONSE, "stop")])
     config = HighlightRetrievalConfig()
-    with pytest.raises(Exception):
+    result, attempts = _run_retrieval_with_recovery(_entry(tiny_video), tiny_video, client, config)
+    assert len(result.candidate_segments) == 1
+    assert [call["max_new_tokens"] for call in client.calls] == [
+        config.max_new_tokens,
+        RECOVERY_MAX_NEW_TOKENS,
+        2 * RECOVERY_MAX_NEW_TOKENS,
+    ]
+
+
+def test_recovery_second_failure_propagates(tiny_video: Path) -> None:
+    from aic_video_highlight.retrieval.response_parser import ResponseParseError
+
+    malformed = '{"has_highlight": true, "segments": [{"start_sec": 0.0, "end_sec": 1.0}]}}\n'
+    client = _StubClient([_Response(malformed), _Response(malformed), _Response(malformed)])
+    config = HighlightRetrievalConfig()
+    with pytest.raises(ResponseParseError):
         _run_retrieval_with_recovery(_entry(tiny_video), tiny_video, client, config)
 
 
