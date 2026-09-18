@@ -2,8 +2,9 @@ architecture: ftnet_reference
 visual_dim: 256
 branch_dim: 96
 use_delta: true
-native_dim: 0
+native_dim: 16
 native_branch_dim: 32
+native_schema: stage7-native-v1.1
 temporal_channels: 128
 temporal_kernel_size: 5
 temporal_dilations: [1, 2, 4, 8, 16]
