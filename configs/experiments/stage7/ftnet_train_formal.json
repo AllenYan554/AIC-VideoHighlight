@@ -1,0 +1,11 @@
+{
+  "task": "train",
+  "timestamp_run_id": true,
+  "run_id_prefix": "ftnet_youtubehl",
+  "output_root": {"base": "derived", "path": "VHiCraFTNet/youtube_highlights_ftnet"},
+  "train_output_root": {"base": "outputs", "path": "stage7_ftnet/training"},
+  "train_config": {"base": "repo", "path": "configs/models/ftnet_reference.yaml"},
+  "device": "cuda",
+  "num_workers": 0,
+  "preflight": true
+}

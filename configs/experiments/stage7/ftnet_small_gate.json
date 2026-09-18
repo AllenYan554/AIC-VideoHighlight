@@ -1,0 +1,18 @@
+{
+  "task": "small_gate",
+  "run_id": "small_gate",
+  "model": {
+    "qwen_snapshot": {"base": "models", "path": "Qwen3.5-4B"},
+    "rtdetr_snapshot": {"base": "models", "path": "rtdetr_r50vd"},
+    "rtdetr_model_id": "PekingU/rtdetr_r50vd"
+  },
+  "index_path": {"base": "outputs", "path": "stage7_ftnet/index/frozen_index.json"},
+  "output_root": {"base": "derived", "path": "VHiCraFTNet/youtube_highlights_ftnet"},
+  "selection": {"splits": ["TRAIN"], "limit": 5, "stratified": true},
+  "device": "cuda",
+  "detection_batch_size": 8,
+  "detection_top_k": 100,
+  "decode_window": 64,
+  "vllm_gpu_memory_utilization": 0.80,
+  "vllm_max_model_len": 32768
+}

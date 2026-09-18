@@ -1,0 +1,5 @@
+{
+  "task": "normalize",
+  "run_id": "normalize",
+  "output_root": {"base": "derived", "path": "VHiCraFTNet/youtube_highlights_ftnet"}
+}

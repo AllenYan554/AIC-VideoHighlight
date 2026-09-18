@@ -1,0 +1,6 @@
+{
+  "task": "audit",
+  "run_id": "audit",
+  "split": "TRAIN",
+  "output_root": {"base": "derived", "path": "VHiCraFTNet/youtube_highlights_ftnet"}
+}

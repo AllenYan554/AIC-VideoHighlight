@@ -11,6 +11,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 REGISTRY_PATH = REPO_ROOT / "scripts" / "experiments" / "registry.py"
 STAGE5_LAUNCHER_PATH = REPO_ROOT / "scripts" / "experiments" / "stage5" / "run.py"
+STAGE7_LAUNCHER_PATH = REPO_ROOT / "scripts" / "experiments" / "stage7" / "run.py"
 
 
 def _load(name: str, path: Path):
@@ -30,22 +31,29 @@ def stage5():
     return _load("aic_test_stage5_launcher", STAGE5_LAUNCHER_PATH)
 
 
-def test_launch_metadata_covers_registered_experiments(registry, stage5):
-    assert set(stage5.LAUNCH) == set(stage5.RUNNERS) == set(stage5.CONFIGS)
-    for name, meta in stage5.LAUNCH.items():
-        assert meta["target"] in registry.VALID_TARGETS
-        assert meta["gpu"] in registry.VALID_GPU
+@pytest.fixture(scope="module")
+def stage7():
+    return _load("aic_test_stage7_launcher", STAGE7_LAUNCHER_PATH)
 
 
-def test_list_matches_stage_registry(registry, stage5):
+def test_launch_metadata_covers_registered_experiments(registry, stage5, stage7):
+    for stage in (stage5, stage7):
+        assert set(stage.LAUNCH) == set(stage.RUNNERS) == set(stage.CONFIGS)
+        for name, meta in stage.LAUNCH.items():
+            assert meta["target"] in registry.VALID_TARGETS
+            assert meta["gpu"] in registry.VALID_GPU
+
+
+def test_list_matches_stage_registry(registry, stage5, stage7):
     entries = registry.list_experiments()
     names = [entry["experiment"] for entry in entries]
-    assert names == sorted(stage5.RUNNERS)
+    assert names == sorted(stage5.RUNNERS) + sorted(stage7.RUNNERS)
     by_name = {entry["experiment"]: entry for entry in entries}
-    for name, meta in stage5.LAUNCH.items():
-        assert by_name[name]["target"] == meta["target"]
-        assert by_name[name]["gpu"] == meta["gpu"]
-        assert by_name[name]["stage"] == "stage5"
+    for stage, stage_name in ((stage5, "stage5"), (stage7, "stage7")):
+        for name, meta in stage.LAUNCH.items():
+            assert by_name[name]["target"] == meta["target"]
+            assert by_name[name]["gpu"] == meta["gpu"]
+            assert by_name[name]["stage"] == stage_name
 
 
 def test_describe_autodl_spec(registry):
