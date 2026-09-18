@@ -51,6 +51,7 @@ class IndexEntry:
     fps_rational: str | None = None
     timestamp_mode: str | None = None
     pts_timestamps: tuple[str, ...] | None = None
+    pts_source: str | None = None
     decode_status: str = DECODE_PENDING
     decode_error: str | None = None
     probe_source: str | None = None
@@ -207,6 +208,76 @@ def resolve_annotation_dir(dataset_root: str | Path, entry: IndexEntry) -> Path:
     return root / entry.dataset_id / "annotations" / "upstream_repo" / entry.annotation_identity
 
 
+def _ffprobe_json(command: list[str], path: Path, timeout_sec: float) -> dict[str, Any]:
+    import subprocess
+
+    completed = subprocess.run(
+        command, capture_output=True, text=True, timeout=timeout_sec, check=False
+    )
+    if completed.returncode != 0:
+        raise FrozenIndexError(
+            f"ffprobe failed for {path}: {completed.stderr.strip() or 'unknown error'}"
+        )
+    return json.loads(completed.stdout)
+
+
+def extract_pts_with_fallback(
+    video_path: str | Path,
+    *,
+    expected_frame_count: int | None = None,
+    ffprobe_bin: str = "ffprobe",
+    timeout_sec: float = 600.0,
+) -> tuple[tuple[str, ...], str]:
+    """Canonical PTS table with a documented ``best_effort_timestamp_time`` fallback.
+
+    Some containers expose no per-frame ``pts_time`` while ffmpeg still provides
+    ``best_effort_timestamp_time`` for every frame.  Stage 7 records which source
+    was used in the frozen index; the values are never interpolated.
+    """
+
+    from fractions import Fraction
+
+    path = Path(video_path).expanduser().resolve()
+
+    def _read(field: str) -> list[str]:
+        payload = _ffprobe_json(
+            [
+                ffprobe_bin,
+                "-v", "error",
+                "-select_streams", "v:0",
+                "-show_entries", f"frame={field}",
+                "-of", "json",
+                str(path),
+            ],
+            path,
+            timeout_sec,
+        )
+        frames = payload.get("frames") or []
+        values: list[str] = []
+        for frame in frames:
+            raw = frame.get(field)
+            if raw in (None, "N/A"):
+                raise FrozenIndexError(
+                    f"frame without {field} in {path}; PTS_TABLE unavailable"
+                )
+            values.append(str(Fraction(str(raw))))
+        if not values:
+            raise FrozenIndexError(f"ffprobe returned no frames for {path}")
+        return values
+
+    try:
+        values = _read("pts_time")
+        source = "frame.pts_time"
+    except FrozenIndexError:
+        values = _read("best_effort_timestamp_time")
+        source = "frame.best_effort_timestamp_time"
+    if expected_frame_count is not None and len(values) != expected_frame_count:
+        raise FrozenIndexError(
+            f"PTS table has {len(values)} entries but frame_count is {expected_frame_count}: {path}"
+        )
+    return tuple(values), source
+
+
 def probe_index_entry(
     entry: IndexEntry,
     dataset_root: str | Path,
@@ -220,7 +291,6 @@ def probe_index_entry(
     from aic_video_highlight.composition.frame_projection import PTS_TABLE
     from aic_video_highlight.composition.metadata import (
         VideoMetadataProbeError,
-        extract_pts_timestamps,
         probe_spatial_meta,
     )
 
@@ -253,10 +323,15 @@ def probe_index_entry(
             probe_source="ffprobe",
         )
     pts_serialized: tuple[str, ...] | None = None
+    pts_source: str | None = None
     if meta.timestamp_mode == PTS_TABLE and extract_pts:
         try:
-            pts = extract_pts_timestamps(video_path, ffprobe_bin=ffprobe_bin)
-        except (VideoMetadataProbeError, OSError) as exc:
+            pts_values, pts_source = extract_pts_with_fallback(
+                video_path,
+                expected_frame_count=meta.frame_count,
+                ffprobe_bin=ffprobe_bin,
+            )
+        except (FrozenIndexError, OSError) as exc:
             return replace(
                 entry,
                 width=meta.width,
@@ -270,7 +345,7 @@ def probe_index_entry(
                 decode_error=f"PTS extraction failed: {type(exc).__name__}: {exc}",
                 probe_source="ffprobe",
             )
-        pts_serialized = tuple(str(value) for value in pts)
+        pts_serialized = tuple(str(value) for value in pts_values)
     return replace(
         entry,
         width=meta.width,
@@ -281,6 +356,7 @@ def probe_index_entry(
         fps_rational=meta.fps_rational,
         timestamp_mode=meta.timestamp_mode,
         pts_timestamps=pts_serialized,
+        pts_source=pts_source,
         decode_status=DECODE_OK,
         decode_error=None,
         probe_source="sha256+ffprobe" if verify_sha256 else "ffprobe",
@@ -321,6 +397,7 @@ __all__ = [
     "audit_index",
     "build_index_entries",
     "entries_for_split",
+    "extract_pts_with_fallback",
     "index_payload",
     "index_sha256",
     "load_index",
