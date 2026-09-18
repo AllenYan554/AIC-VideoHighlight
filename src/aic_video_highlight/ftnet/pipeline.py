@@ -302,6 +302,13 @@ def _select_entries(
     return sorted(selected, key=lambda entry: (entry.split, entry.category, entry.video_id))
 
 
+def _vllm_healthy(client) -> bool:
+    try:
+        return bool(client.health_check())
+    except Exception:  # noqa: BLE001 - an unreachable server is simply not healthy
+        return False
+
+
 def run_retrieval_stage(
     settings: MaterializationSettings,
     entries: Sequence[IndexEntry],
@@ -329,7 +336,7 @@ def run_retrieval_stage(
     )
     owned = None
     environment = EnvironmentPaths.from_json(settings.environment_path)
-    if not client.health_check():
+    if not _vllm_healthy(client):
         config = {
             "inference": {
                 "python": settings.python,
