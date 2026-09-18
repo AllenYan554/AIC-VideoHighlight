@@ -61,6 +61,14 @@ class RealProviderError(RuntimeError):
     """Raised when a production stage cannot complete for a video."""
 
 
+# Operational recovery for deterministic Qwen output failures.  These values are
+# used only to re-request a failed chunk; every attempt is recorded in the
+# retrieval artifact provenance.  They never change the frozen prompt, chunking,
+# merge threshold or the frozen parser.
+RECOVERY_TEMPERATURE = 0.3
+RECOVERY_MAX_NEW_TOKENS = 512
+
+
 def _atomic_json(path: Path, payload: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
@@ -190,6 +198,188 @@ def build_grid_for_entry(entry: IndexEntry) -> GridSample:
     return build_uniform_grid(timing)
 
 
+def _run_retrieval_with_recovery(
+    entry: IndexEntry,
+    video_path: Path,
+    client: QwenVLLMClient,
+    config: HighlightRetrievalConfig,
+) -> tuple[Any, list[dict[str, Any]]]:
+    """Chunk-level recovery loop around the frozen retrieval pipeline.
+
+    Used only after the frozen pipeline raises on a deterministic model-output
+    failure.  Frozen building blocks (probe, chunker, chunk renderer, prompt
+    builder, parser, merger) are reused unchanged; a failed chunk is re-requested
+    once with a recovery parameter set and every attempt is journaled.
+    """
+
+    import tempfile
+
+    from aic_video_highlight.retrieval.candidate_merger import merge_segments
+    from aic_video_highlight.retrieval.prompt_builder import build_prompt
+    from aic_video_highlight.retrieval.response_parser import (
+        ResponseParseError,
+        TruncatedResponseError,
+        parse_highlight_response,
+    )
+    from aic_video_highlight.retrieval.schemas import (
+        HighlightRetrievalResult,
+        HighlightSegment,
+    )
+    from aic_video_highlight.retrieval.video_chunker import build_chunks
+    from aic_video_highlight.retrieval.video_metadata import probe_video
+
+    pipeline = HighlightRetrievalPipeline(client, config)
+    started = time.perf_counter()
+    meta = probe_video(video_path, ffprobe_bin=pipeline.ffprobe_bin)
+    chunks = build_chunks(
+        meta.duration_sec,
+        chunk_seconds=config.chunk_seconds,
+        overlap_seconds=config.overlap_seconds,
+    )
+    candidates: list[Any] = []
+    raw_chunk_outputs: list[dict[str, Any]] = []
+    raw_responses: list[str] = []
+    inference_time = 0.0
+    parsing_time = 0.0
+    extraction_time = 0.0
+    attempts_log: list[dict[str, Any]] = []
+
+    def _analyze(media: Path, chunk: Any) -> tuple[list[Any], dict[str, Any]]:
+        prompt = build_prompt(
+            config.prompt_version, chunk.duration_sec, config.max_segments_per_chunk
+        )
+
+        def _request(max_new_tokens: int, temperature: float, label: str):
+            request_started = time.perf_counter()
+            response = client.analyze_video(
+                media,
+                prompt,
+                max_new_tokens=max_new_tokens,
+                temperature=temperature,
+                coarse_fps=config.coarse_fps,
+                enable_thinking=config.enable_thinking,
+            )
+            latency = time.perf_counter() - request_started
+            attempts_log.append(
+                {
+                    "chunk_index": chunk.index,
+                    "attempt": label,
+                    "temperature": temperature,
+                    "max_new_tokens": max_new_tokens,
+                    "finish_reason": response.finish_reason,
+                    "latency_sec": round(latency, 3),
+                }
+            )
+            return response, latency
+
+        attempts: list[dict[str, Any]] = []
+        response, latency = _request(config.max_new_tokens, config.temperature, "primary")
+        parsing_started = time.perf_counter()
+        try:
+            local_segments = parse_highlight_response(
+                response.content, chunk_duration_sec=chunk.duration_sec, source_chunk=chunk.index
+            )
+        except TruncatedResponseError:
+            response, latency = _request(
+                RECOVERY_MAX_NEW_TOKENS, config.temperature, "truncation_retry"
+            )
+            attempts.append({"recovery": "max_new_tokens", "value": RECOVERY_MAX_NEW_TOKENS})
+            local_segments = parse_highlight_response(
+                response.content, chunk_duration_sec=chunk.duration_sec, source_chunk=chunk.index
+            )
+        except ResponseParseError:
+            response, latency = _request(
+                config.max_new_tokens, RECOVERY_TEMPERATURE, "parse_retry"
+            )
+            attempts.append({"recovery": "temperature", "value": RECOVERY_TEMPERATURE})
+            local_segments = parse_highlight_response(
+                response.content, chunk_duration_sec=chunk.duration_sec, source_chunk=chunk.index
+            )
+        parse_time = time.perf_counter() - parsing_started
+        record = {
+            "chunk_index": chunk.index,
+            "chunk_start_sec": chunk.start_sec,
+            "chunk_end_sec": chunk.end_sec,
+            "raw_response": response.content,
+            "finish_reason": response.finish_reason,
+            "request_latency_sec": latency,
+            "parse_success": True,
+            "parse_error": None,
+            "parsed_segments": [
+                {
+                    "start_sec": item.start_sec,
+                    "end_sec": item.end_sec,
+                    "score": item.score,
+                    "reason": item.reason,
+                    "source_chunk": item.source_chunk,
+                }
+                for item in local_segments
+            ],
+            "recovery_attempts": attempts,
+        }
+        return local_segments, record, parse_time
+
+    if len(chunks) == 1:
+        local_segments, record, parse_time = _analyze(meta.path, chunks[0])
+        candidates.extend(
+            HighlightSegment(
+                start_sec=chunks[0].start_sec + item.start_sec,
+                end_sec=chunks[0].start_sec + item.end_sec,
+                score=item.score,
+                reason=item.reason,
+                source_chunk=item.source_chunk,
+            )
+            for item in local_segments
+        )
+        raw_chunk_outputs.append(record)
+        raw_responses.append(record["raw_response"])
+        inference_time += record["request_latency_sec"]
+        parsing_time += parse_time
+    else:
+        with tempfile.TemporaryDirectory(
+            prefix=".aic-highlight-recovery-", dir=meta.path.parent
+        ) as temp_dir:
+            for chunk in chunks:
+                chunk_path = Path(temp_dir) / f"chunk-{chunk.index:05d}.mp4"
+                extraction_started = time.perf_counter()
+                pipeline._render_chunk(meta.path, chunk, chunk_path, ffmpeg_bin=pipeline.ffmpeg_bin)
+                extraction_time += time.perf_counter() - extraction_started
+                local_segments, record, parse_time = _analyze(chunk_path, chunk)
+                candidates.extend(
+                    HighlightSegment(
+                        start_sec=chunk.start_sec + item.start_sec,
+                        end_sec=chunk.start_sec + item.end_sec,
+                        score=item.score,
+                        reason=item.reason,
+                        source_chunk=item.source_chunk,
+                    )
+                    for item in local_segments
+                )
+                raw_chunk_outputs.append(record)
+                raw_responses.append(record["raw_response"])
+                inference_time += record["request_latency_sec"]
+                parsing_time += parse_time
+    merged = merge_segments(candidates, tiou_threshold=config.merge_tiou_threshold)
+    result = HighlightRetrievalResult(
+        video_id=meta.video_id,
+        duration_sec=meta.duration_sec,
+        segments=merged,
+        raw_responses=raw_responses,
+        inference_time_sec=inference_time,
+        candidate_segments=candidates,
+        raw_chunk_outputs=raw_chunk_outputs,
+        timing={
+            "probe_sec": 0.0,
+            "chunk_extraction_sec": extraction_time,
+            "model_inference_sec": inference_time,
+            "parsing_sec": parsing_time,
+            "merging_sec": 0.0,
+            "total_sec": time.perf_counter() - started,
+        },
+    )
+    return result, attempts_log
+
+
 def run_retrieval_for_entry(
     entry: IndexEntry,
     *,
@@ -205,7 +395,19 @@ def run_retrieval_for_entry(
     config = settings.config()
     pipeline = HighlightRetrievalPipeline(client, config)
     started = time.perf_counter()
-    result = pipeline.run(video_path)
+    recovery_log: list[dict[str, Any]] = []
+    try:
+        result = pipeline.run(video_path)
+    except Exception as exc:  # noqa: BLE001 - chunk-level recovery for deterministic failures
+        from aic_video_highlight.retrieval.response_parser import ResponseParseError
+
+        if not isinstance(exc, ResponseParseError):
+            raise
+        recovery_log.append(
+            {"initial_error": f"{type(exc).__name__}: {exc}", "trigger": "frozen_pipeline_failed"}
+        )
+        result, attempts = _run_retrieval_with_recovery(entry, video_path, client, config)
+        recovery_log.extend(attempts)
     wall_sec = time.perf_counter() - started
 
     chunks = []
@@ -266,6 +468,8 @@ def run_retrieval_for_entry(
             "overlap_seconds": config.overlap_seconds,
             "coarse_fps": config.coarse_fps,
             "merge_tiou_threshold": config.merge_tiou_threshold,
+            "recovery_applied": bool(recovery_log),
+            "recovery_log": recovery_log,
         },
     }
     return payload
