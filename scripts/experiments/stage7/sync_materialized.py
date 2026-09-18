@@ -132,23 +132,32 @@ def main(argv=None) -> int:
         print(f"[sync] downloading {len(batch)} files (batch {start // args.batch_size + 1}) ...", flush=True)
         download_batch(args.remote_host, args.remote_root, str(local_root), batch)
 
-    verify_set = sorted(wanted) if missing else sorted(wanted)
-    remote_digests = remote_hashes(args.remote_host, args.remote_root, verify_set)
-    mismatches = []
-    verified = 0
-    for relative in verify_set:
-        local_path = local_root / relative
-        if not local_path.is_file():
-            mismatches.append({"file": relative, "error": "missing local"})
-            continue
-        local_digest = sha256_file(local_path)
-        remote_digest = remote_digests.get(relative)
-        if remote_digest is None or local_digest != remote_digest:
-            mismatches.append(
-                {"file": relative, "local": local_digest, "remote": remote_digest}
-            )
-        else:
-            verified += 1
+    def _verify(relatives: list[str]) -> tuple[int, list[dict]]:
+        remote_digests = remote_hashes(args.remote_host, args.remote_root, relatives)
+        verified_local = 0
+        bad: list[dict] = []
+        for relative in relatives:
+            local_path = local_root / relative
+            if not local_path.is_file():
+                bad.append({"file": relative, "error": "missing local"})
+                continue
+            local_digest = sha256_file(local_path)
+            remote_digest = remote_digests.get(relative)
+            if remote_digest is None or local_digest != remote_digest:
+                bad.append({"file": relative, "local": local_digest, "remote": remote_digest})
+            else:
+                verified_local += 1
+        return verified_local, bad
+
+    verify_set = sorted(wanted)
+    verified, mismatches = _verify(verify_set)
+    if mismatches:
+        retry_files = [row["file"] for row in mismatches]
+        for start in range(0, len(retry_files), args.batch_size):
+            batch = retry_files[start : start + args.batch_size]
+            print(f"[sync] repairing {len(batch)} content-mismatched files ...", flush=True)
+            download_batch(args.remote_host, args.remote_root, str(local_root), batch)
+        verified, mismatches = _verify(verify_set)
 
     metadata_synced = sync_metadata(args.remote_host, args.remote_root, str(local_root)) if args.metadata else []
     summary = {
