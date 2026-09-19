@@ -44,6 +44,7 @@ from .real_provider import (
     RTDETR_MODEL,
     RealUpstreamProvider,
     RetrievalSettings,
+    create_rtdetr_localizer,
     detection_artifact_path,
     retrieval_artifact_path,
     run_detection_for_entry,
@@ -53,6 +54,7 @@ from .real_provider import (
 
 STATUS_SCHEMA = "aic.stage7.ftnet.production-status/v1"
 FAILURE_SCHEMA = "aic.stage7.ftnet.failures/v1"
+PERFORMANCE_SCHEMA = "aic.stage7.ftnet.performance/v1"
 SPLIT_MANIFEST_RELATIVE = Path("manifests") / "stage7_ftnet_split_manifest.json"
 
 STAGE_RETRIEVAL = "retrieval"
@@ -336,6 +338,8 @@ def run_retrieval_stage(
         base_url=settings.vllm_base_url, model=QWEN_MODEL, timeout_sec=settings.retrieval_timeout_sec
     )
     owned = None
+    qwen_model_load_s = 0.0
+    qwen_model_load_count = 0
     environment = EnvironmentPaths.from_json(settings.environment_path)
     if not _vllm_healthy(client):
         config = {
@@ -350,7 +354,10 @@ def run_retrieval_stage(
             }
         }
         log_path = settings.work_root / "logs" / "vllm.log"
+        qwen_load_started = time.perf_counter()
         owned, base_url = start_vllm(config, environment, log_path)
+        qwen_model_load_s = time.perf_counter() - qwen_load_started
+        qwen_model_load_count = 1
         client = QwenVLLMClient(
             base_url=base_url, model=QWEN_MODEL, timeout_sec=settings.retrieval_timeout_sec
         )
@@ -359,9 +366,11 @@ def run_retrieval_stage(
         retrieval_settings = RetrievalSettings(
             base_url=settings.vllm_base_url, timeout_sec=settings.retrieval_timeout_sec
         )
-        for entry in todo:
+        for entry_index, entry in enumerate(todo):
             progress.current_video = entry.video_id
             started = time.perf_counter()
+            retrieval_attempts = int(status.get(entry.video_id).get("retrieval_attempts", 0)) + 1
+            status.update(entry.video_id, retrieval_attempts=retrieval_attempts)
             try:
                 payload = run_retrieval_for_entry(
                     entry,
@@ -376,6 +385,12 @@ def run_retrieval_stage(
                     entry.video_id,
                     retrieval="OK",
                     retrieval_wall_sec=round(time.perf_counter() - started, 3),
+                    qwen_s=round(float(payload.get("timing", {}).get("model_inference_sec", 0.0)), 6),
+                    retrieval_decode_s=round(
+                        float(payload.get("timing", {}).get("chunk_extraction_sec", 0.0)), 6
+                    ),
+                    qwen_model_load_s=round(qwen_model_load_s, 6) if entry_index == 0 else 0.0,
+                    qwen_model_load_count=qwen_model_load_count if entry_index == 0 else 0,
                     retrieval_chunks=len(payload["chunks"]),
                     retrieval_merged=len(payload["merged_candidates"]),
                 )
@@ -411,9 +426,26 @@ def run_detection_stage(
     if not todo:
         return 0
     failures = 0
-    for entry in todo:
+    load_started = time.perf_counter()
+    try:
+        localizer = create_rtdetr_localizer(
+            rtdetr_snapshot=settings.rtdetr_snapshot,
+            rtdetr_model_id=settings.rtdetr_model_id,
+            device=settings.device,
+        )
+    except Exception as exc:  # noqa: BLE001 - one shared runtime gates the stage
+        for entry in todo:
+            journal.record(entry.video_id, STAGE_DETECTION, exc)
+            status.update(entry.video_id, detection="FAILED", detection_error=str(exc))
+        progress.failed = len(journal.items)
+        progress.emit(gpu_gb=_gpu_memory_gb(), detail="RT-DETR load failed")
+        return len(todo)
+    model_load_s = time.perf_counter() - load_started
+    for entry_index, entry in enumerate(todo):
         progress.current_video = entry.video_id
         started = time.perf_counter()
+        detection_attempts = int(status.get(entry.video_id).get("detection_attempts", 0)) + 1
+        status.update(entry.video_id, detection_attempts=detection_attempts)
         try:
             result = run_detection_for_entry(
                 entry,
@@ -425,6 +457,9 @@ def run_detection_stage(
                 batch_size=settings.detection_batch_size,
                 top_k=settings.detection_top_k,
                 decode_window=settings.decode_window,
+                localizer=localizer,
+                model_load_s=model_load_s if entry_index == 0 else 0.0,
+                model_load_count=1 if entry_index == 0 else 0,
             )
             status.update(
                 entry.video_id,
@@ -432,6 +467,12 @@ def run_detection_stage(
                 detection_wall_sec=round(float(result["wall_sec"]), 3),
                 detection_frames=int(result["frames"]),
                 detection_candidates=int(result["candidates"]),
+                decode_s=round(float(result["decode_s"]), 6),
+                rtdetr_load_s=round(float(result["rtdetr_load_s"]), 6),
+                rtdetr_inference_s=round(float(result["rtdetr_inference_s"]), 6),
+                detection_serialize_s=round(float(result["serialize_s"]), 6),
+                model_load_count=int(result["model_load_count"]),
+                batch_count=int(result["batch_count"]),
             )
             progress.detection_done += 1
         except Exception as exc:  # noqa: BLE001
@@ -499,9 +540,15 @@ def run_assemble_stage(
                 raise MaterializationError(
                     f"cannot assemble {entry.video_id}: staged artifacts missing"
                 )
+            assemble_attempts = int(row.get("assemble_attempts", 0)) + 1
+            status.update(entry.video_id, assemble_attempts=assemble_attempts)
+            assemble_started = time.perf_counter()
             upstream = provider.produce(ref)
+            performance = dict(upstream.metadata.get("performance_timing", {}))
             overwrite = settings.overwrite or row.get("assemble_fingerprint") != fingerprint
+            serialize_started = time.perf_counter()
             record = materialize_video(upstream, settings.output_root, overwrite=overwrite)
+            serialize_s = time.perf_counter() - serialize_started
             records.append(record)
             status.update(
                 entry.video_id,
@@ -511,6 +558,12 @@ def run_assemble_stage(
                 assemble_missed_positive=record["missed_positive_frames"],
                 materialized_relative_path=record["relative_path"],
                 idx0_fallback=settings.idx0_fallback,
+                assemble_wall_sec=round(time.perf_counter() - assemble_started, 6),
+                assemble_serialize_s=round(serialize_s, 6),
+                loc_s=round(float(performance.get("loc_s", 0.0)), 6),
+                cmp_s=round(float(performance.get("cmp_s", 0.0)), 6),
+                ts_s=round(float(performance.get("ts_s", 0.0)), 6),
+                native_s=round(float(performance.get("native_s", 0.0)), 6),
             )
             journal.clear(entry.video_id)
             progress.assembled += 1
@@ -551,6 +604,82 @@ def _merge_manifest(
             "assemble_fingerprint": fingerprint,
         },
     )
+
+
+def _write_performance_artifacts(work_root: Path, status: StatusStore) -> dict[str, Any]:
+    """Persist bounded per-video timings without changing scientific tensors."""
+
+    rows: list[dict[str, Any]] = []
+    timing_fields = (
+        "decode_s",
+        "qwen_s",
+        "qwen_model_load_s",
+        "retrieval_decode_s",
+        "rtdetr_load_s",
+        "rtdetr_inference_s",
+        "loc_s",
+        "cmp_s",
+        "ts_s",
+        "native_s",
+        "detection_serialize_s",
+        "assemble_serialize_s",
+        "retrieval_wall_sec",
+        "detection_wall_sec",
+        "assemble_wall_sec",
+    )
+    for video_id in sorted(status.records):
+        source = status.records[video_id]
+        row: dict[str, Any] = {"video_id": video_id}
+        for field_name in timing_fields:
+            if isinstance(source.get(field_name), (int, float)):
+                row[field_name] = float(source[field_name])
+        row["frame_count"] = int(source.get("detection_frames", 0))
+        row["batch_count"] = int(source.get("batch_count", 0))
+        row["model_load_count"] = int(source.get("model_load_count", 0))
+        row["qwen_model_load_count"] = int(source.get("qwen_model_load_count", 0))
+        attempts = sum(int(source.get(f"{stage}_attempts", 0)) for stage in STAGES)
+        completed_stages = sum(1 for stage in STAGES if source.get(stage) == "OK")
+        row["retry_count"] = max(0, attempts - completed_stages)
+        row["total_s"] = (
+            float(source.get("qwen_model_load_s", 0.0))
+            + float(source.get("rtdetr_load_s", 0.0))
+            + sum(
+                float(source.get(name, 0.0))
+                for name in ("retrieval_wall_sec", "detection_wall_sec", "assemble_wall_sec")
+            )
+        )
+        rows.append(row)
+
+    jsonl_path = work_root / "performance_per_video.jsonl"
+    jsonl_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = jsonl_path.with_suffix(jsonl_path.suffix + ".tmp")
+    temporary.write_text(
+        "".join(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n" for row in rows),
+        encoding="utf-8",
+        newline="\n",
+    )
+    os.replace(temporary, jsonl_path)
+
+    totals = {
+        field_name: round(sum(float(row.get(field_name, 0.0)) for row in rows), 6)
+        for field_name in (*timing_fields, "total_s")
+    }
+    coverage = {
+        field_name: sum(1 for row in rows if field_name in row)
+        for field_name in timing_fields
+    }
+    summary = {
+        "schema": PERFORMANCE_SCHEMA,
+        "video_count": len(rows),
+        "totals_s": totals,
+        "coverage": coverage,
+        "rtdetr_model_load_count": sum(row["model_load_count"] for row in rows),
+        "qwen_model_load_count": sum(row["qwen_model_load_count"] for row in rows),
+        "retry_count": sum(row["retry_count"] for row in rows),
+        "per_video_path": str(jsonl_path),
+    }
+    _atomic_json(work_root / "performance_summary.json", summary)
+    return summary
 
 
 def load_raw_entries(
@@ -655,15 +784,19 @@ def run_materialization(
             list(selected[index : index + settings.wave_size])
             for index in range(0, len(selected), settings.wave_size)
         ]
-    for wave in waves:
-        if STAGE_RETRIEVAL in stages:
-            run_retrieval_stage(settings, wave, progress=progress, journal=journal, status=status)
-        if STAGE_DETECTION in stages:
-            run_detection_stage(settings, wave, progress=progress, journal=journal, status=status)
-        if STAGE_ASSEMBLE in stages:
+    # Heavy model stages are task-scoped, so Qwen/vLLM and RT-DETR each have one
+    # lifecycle instead of one lifecycle per wave or per video.  Assemble stays
+    # wave-bounded for incremental artifact production and sync.
+    if STAGE_RETRIEVAL in stages:
+        run_retrieval_stage(settings, selected, progress=progress, journal=journal, status=status)
+    if STAGE_DETECTION in stages:
+        run_detection_stage(settings, selected, progress=progress, journal=journal, status=status)
+    if STAGE_ASSEMBLE in stages:
+        for wave in waves:
             run_assemble_stage(settings, wave, progress=progress, journal=journal, status=status)
 
     elapsed = time.monotonic() - started
+    performance = _write_performance_artifacts(settings.work_root, status)
     summary = {
         "schema": "aic.stage7.ftnet.materialization-summary/v1",
         "status": "PASS" if not journal.failed_ids() else "COMPLETED_WITH_FAILURES",
@@ -686,6 +819,8 @@ def run_materialization(
         "failed_video_ids": journal.failed_ids(),
         "idx0_fallback": settings.idx0_fallback,
         "elapsed_sec": round(elapsed, 3),
+        "performance_summary": str(settings.work_root / "performance_summary.json"),
+        "rtdetr_model_load_count": performance["rtdetr_model_load_count"],
     }
     _atomic_json(settings.work_root / "summary.json", summary)
     return summary

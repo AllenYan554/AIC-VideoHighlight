@@ -330,7 +330,10 @@ def _run_retrieval_with_recovery(
             "chunk_end_sec": chunk.end_sec,
             "raw_response": response.content,
             "finish_reason": response.finish_reason,
-            "request_latency_sec": latency,
+            "request_latency_sec": sum(
+                float(attempt["latency_sec"]) for attempt in chunk_attempts
+            ),
+            "final_request_latency_sec": latency,
             "parse_success": True,
             "parse_error": None,
             "parsed_segments": [
@@ -513,6 +516,29 @@ def _decode_window(
     return decode_needed_frames(video_path, list(frame_ids))
 
 
+def create_rtdetr_localizer(
+    *,
+    rtdetr_snapshot: str | Path,
+    rtdetr_model_id: str = RTDETR_MODEL,
+    device: str = "cuda",
+):
+    """Load the frozen RT-DETR runtime once for a detection stage.
+
+    Keeping construction at this explicit seam prevents the per-video
+    ``from_pretrained`` reload that dominated the original Full154 run while
+    leaving the processor, weights, dtype and inference path unchanged.
+    """
+
+    from aic_video_highlight.localization.rt_detr_localizer import RTDetrLocalizer
+
+    return RTDetrLocalizer(
+        model_id=rtdetr_model_id,
+        local_path=rtdetr_snapshot,
+        device=device,
+        torch_dtype="float32",
+    )
+
+
 def save_detection(
     path: str | Path,
     *,
@@ -556,12 +582,13 @@ def run_detection_for_entry(
     batch_size: int = 8,
     top_k: int = 100,
     decode_window: int = 64,
+    localizer: Any | None = None,
+    model_load_s: float = 0.0,
+    model_load_count: int = 0,
 ) -> dict[str, Any]:
     """Decode the 2.0 fps grid and run frozen RT-DETR detection + level-0 GAP."""
 
     import torch
-
-    from aic_video_highlight.localization.rt_detr_localizer import RTDetrLocalizer
 
     video_path = resolve_video_path(dataset_root, entry)
     if not video_path.is_file():
@@ -576,12 +603,16 @@ def run_detection_for_entry(
     candidate_labels: list[np.ndarray] = []
     offsets = np.zeros(frame_count + 1, dtype=np.int32)
 
-    localizer = RTDetrLocalizer(
-        model_id=rtdetr_model_id,
-        local_path=rtdetr_snapshot,
-        device=device,
-        torch_dtype="float32",
-    )
+    total_started = time.perf_counter()
+    if localizer is None:
+        load_started = time.perf_counter()
+        localizer = create_rtdetr_localizer(
+            rtdetr_snapshot=rtdetr_snapshot,
+            rtdetr_model_id=rtdetr_model_id,
+            device=device,
+        )
+        model_load_s = time.perf_counter() - load_started
+        model_load_count = 1
     label_count = max(int(key) for key in localizer.id2label) + 1
     class_names = tuple(
         str(localizer.id2label.get(index, index)) for index in range(label_count)
@@ -590,17 +621,22 @@ def run_detection_for_entry(
     height = int(entry.height or 0)
     if width <= 0 or height <= 0:
         raise RealProviderError(f"index entry lacks frame dimensions: {entry.video_id}")
-    started = time.perf_counter()
+    decode_s = 0.0
+    inference_s = 0.0
+    batch_count = 0
     processed = 0
     total_candidates = 0
     position = 0
     while position < frame_count:
         window = frame_ids[position : position + decode_window]
+        decode_started = time.perf_counter()
         decoded = _decode_window(video_path, window)
+        decode_s += time.perf_counter() - decode_started
         try:
             for batch_start in range(0, len(window), batch_size):
                 batch = window[batch_start : batch_start + batch_size]
                 images = [decoded[int(frame)] for frame in batch]
+                inference_started = time.perf_counter()
                 inputs = localizer.processor(images=images, return_tensors="pt")
                 pixel_values = inputs["pixel_values"].to(
                     localizer.device, dtype=localizer.torch_dtype
@@ -648,6 +684,8 @@ def run_detection_for_entry(
                         total_candidates += len(top_scores[batch_index])
                         processed += 1
                         offsets[position + batch_start + batch_index + 1] = total_candidates
+                inference_s += time.perf_counter() - inference_started
+                batch_count += 1
         finally:
             del decoded
         position += len(window)
@@ -674,6 +712,7 @@ def run_detection_for_entry(
     if int(offsets[-1]) != len(scores_array):
         raise RealProviderError("candidate offsets do not match candidate rows")
     path = detection_artifact_path(work_root, entry.video_id)
+    serialize_started = time.perf_counter()
     save_detection(
         path,
         visual=visual,
@@ -684,11 +723,18 @@ def run_detection_for_entry(
         class_names=class_names,
         sample=sample,
     )
+    serialize_s = time.perf_counter() - serialize_started
     return {
         "video_id": entry.video_id,
         "frames": frame_count,
         "candidates": int(len(scores_array)),
-        "wall_sec": time.perf_counter() - started,
+        "wall_sec": time.perf_counter() - total_started,
+        "decode_s": decode_s,
+        "rtdetr_load_s": float(model_load_s),
+        "rtdetr_inference_s": inference_s,
+        "serialize_s": serialize_s,
+        "model_load_count": int(model_load_count),
+        "batch_count": batch_count,
         "artifact": str(path),
     }
 
@@ -804,6 +850,7 @@ __all__ = [
     "RealUpstreamProvider",
     "RetrievalSettings",
     "build_grid_for_entry",
+    "create_rtdetr_localizer",
     "detection_artifact_path",
     "grid_artifact_path",
     "load_detection",

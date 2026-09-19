@@ -13,6 +13,7 @@ module turns them into the exact ``VideoUpstream`` contract owned by
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -247,6 +248,7 @@ def build_video_upstream(
     *,
     idx0_fallback: str = IDX0_FALLBACK_NONE,
 ) -> VideoUpstream:
+    total_started = time.perf_counter()
     if idx0_fallback not in IDX0_FALLBACKS:
         raise ProviderCoreError(f"unknown idx0 fallback: {idx0_fallback}")
     timestamps = np.asarray(artifacts.timestamps, dtype=np.float64)
@@ -265,6 +267,7 @@ def build_video_upstream(
     height = float(artifacts.height)
 
     # --- retrieval context (fields 0-4) ---
+    retrieval_started = time.perf_counter()
     in_candidate = _candidate_flags(timestamps, artifacts.retrieval.merged_candidates)
     context_index = _context_indices(timestamps, artifacts.retrieval.merged_candidates)
     support_ratio = _support_ratio(timestamps, artifacts.retrieval)
@@ -285,8 +288,10 @@ def build_video_upstream(
         time_to_end[frame_index] = max(0.0, candidate.end_sec - timestamps[frame_index])
         duration[frame_index] = span
         position[frame_index] = min(1.0, max(0.0, (timestamps[frame_index] - candidate.start_sec) / span))
+    retrieval_context_s = time.perf_counter() - retrieval_started
 
     # --- frozen LOC primary selection per frame ---
+    loc_started = time.perf_counter()
     primary_present = np.zeros(frame_count, dtype=bool)
     primary_score = np.full(frame_count, np.nan, dtype=np.float64)
     margin_values = np.full(frame_count, np.nan, dtype=np.float64)
@@ -316,7 +321,9 @@ def build_video_upstream(
         selection = subject_selection_margin(candidates, detection_floor=DETECTION_FLOOR)
         if selection.available:
             margin_values[frame_index] = float(selection.margin)
+    loc_s = time.perf_counter() - loc_started
 
+    native_started = time.perf_counter()
     box_width = boxes[:, 2] - boxes[:, 0]
     box_height = boxes[:, 3] - boxes[:, 1]
     area = box_width * box_height
@@ -350,7 +357,10 @@ def build_video_upstream(
             if ratio > 0:
                 scale_dynamics[frame_index] = abs(np.log(ratio)) / dt
 
+    native_geometry_s = time.perf_counter() - native_started
+
     # --- composition: generic CMP + generic stabilization (fields 11, 14) ---
+    cmp_started = time.perf_counter()
     focus_center = np.zeros((frame_count, 2), dtype=np.float64)
     focus_scale = np.ones(frame_count, dtype=np.float64)
     focus_window = np.zeros((frame_count, 4), dtype=np.float64)
@@ -370,6 +380,8 @@ def build_video_upstream(
             focus_center[frame_index] = (0.5, 0.5)
             focus_scale[frame_index] = 1.0
             focus_window[frame_index] = (0.0, 0.0, 1.0, 1.0)
+    cmp_s = time.perf_counter() - cmp_started
+    ts_started = time.perf_counter()
     stabilized = stabilize_focus(
         focus_center,
         focus_scale,
@@ -385,8 +397,10 @@ def build_video_upstream(
     velocity = stabilized_focus_velocity(
         stabilized.stabilized_focus_center, timestamps, adjacency_mask=adjacency
     )
+    ts_s = time.perf_counter() - ts_started
 
     # --- persistence (field 15) ---
+    native_tail_started = time.perf_counter()
     persistence = _persistence(primary_present, timestamps, adjacency)
 
     # --- Y target ---
@@ -414,6 +428,7 @@ def build_video_upstream(
     }
     if tuple(native_signals) != NATIVE_FIELDS:
         raise ProviderCoreError("native signal assembly diverged from the frozen field order")
+    native_s = retrieval_context_s + native_geometry_s + (time.perf_counter() - native_tail_started)
 
     missing_by_field = {
         name: int((~np.isfinite(values)).sum()) for name, values in native_signals.items()
@@ -441,6 +456,13 @@ def build_video_upstream(
         "focus_margin_fraction": FOCUS_MARGIN_FRACTION,
         "stabilization_alpha": STABILIZATION_ALPHA,
         "adjacency_rule": ADJACENCY_RULE,
+        "performance_timing": {
+            "loc_s": loc_s,
+            "cmp_s": cmp_s,
+            "ts_s": ts_s,
+            "native_s": native_s,
+            "provider_total_s": time.perf_counter() - total_started,
+        },
         **artifacts.retrieval_metadata,
     }
     return VideoUpstream(

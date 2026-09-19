@@ -149,3 +149,21 @@ def test_idx0_fallback_is_pre_registered_and_deterministic() -> None:
     upstream = build_video_upstream(_artifacts(), idx0_fallback=IDX0_FALLBACK_NORM)
     assert upstream.metadata["idx0_fallback"] == IDX0_FALLBACK_NORM
     assert upstream.native_signals["retrieval_support_ratio"].max() == pytest.approx(1.0)
+
+
+def test_timing_instrumentation_does_not_change_scientific_arrays() -> None:
+    first = build_video_upstream(_artifacts())
+    second = build_video_upstream(_artifacts())
+
+    np.testing.assert_array_equal(first.visual, second.visual)
+    np.testing.assert_array_equal(first.target, second.target)
+    np.testing.assert_array_equal(first.loss_mask, second.loss_mask)
+    np.testing.assert_array_equal(first.source_frame_id, second.source_frame_id)
+    for name in NATIVE_FIELDS:
+        np.testing.assert_array_equal(
+            first.native_signals[name], second.native_signals[name]
+        )
+    assert set(first.metadata["performance_timing"]) == {
+        "loc_s", "cmp_s", "ts_s", "native_s", "provider_total_s"
+    }
+    assert all(value >= 0.0 for value in first.metadata["performance_timing"].values())

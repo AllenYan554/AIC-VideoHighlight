@@ -10,10 +10,15 @@ from aic_video_highlight.ftnet.index import IndexEntry, write_index
 from aic_video_highlight.ftnet.integrity import run_integrity_gate, run_train_normalization
 from aic_video_highlight.ftnet.pipeline import (
     STAGE_ASSEMBLE,
+    STAGE_DETECTION,
+    FailureJournal,
     MaterializationSettings,
+    StatusStore,
     STATUS_SCHEMA,
+    run_detection_stage,
     run_materialization,
 )
+from aic_video_highlight.ftnet import pipeline as pipeline_module
 from aic_video_highlight.ftnet.provider_core import IDX0_FALLBACK_NONE, IDX0_FALLBACK_NORM
 from aic_video_highlight.ftnet.real_provider import (
     RETRIEVAL_SCHEMA,
@@ -249,3 +254,91 @@ def test_normalization_and_integrity_gate(tmp_path: Path) -> None:
     failed = run_integrity_gate(settings.output_root, entries=entries, write=False)
     assert failed["status"] == "FAIL"
     assert any("train-a" in item for item in failed["nan_fields"])
+
+
+class _ProgressStub:
+    stage = ""
+    current_video = None
+    detection_done = 0
+    failed = 0
+
+    def emit(self, **_kwargs) -> None:
+        return None
+
+
+def test_detection_stage_loads_rtdetr_once_for_multiple_videos(
+    tmp_path: Path, monkeypatch
+) -> None:
+    settings = _settings(tmp_path)
+    entries = [
+        _prepare_video(settings.dataset_root, settings.work_root, video_id="load-a"),
+        _prepare_video(settings.dataset_root, settings.work_root, video_id="load-b"),
+    ]
+    for entry in entries:
+        detection_artifact_path(settings.work_root, entry.video_id).unlink()
+
+    constructed = []
+    shared = object()
+
+    def fake_create(**_kwargs):
+        constructed.append(shared)
+        return shared
+
+    observed = []
+
+    def fake_detection(entry, **kwargs):
+        observed.append(kwargs["localizer"])
+        return {
+            "frames": 10,
+            "candidates": 20,
+            "wall_sec": 0.5,
+            "decode_s": 0.1,
+            "rtdetr_load_s": kwargs["model_load_s"],
+            "rtdetr_inference_s": 0.3,
+            "serialize_s": 0.1,
+            "model_load_count": kwargs["model_load_count"],
+            "batch_count": 2,
+        }
+
+    monkeypatch.setattr(pipeline_module, "create_rtdetr_localizer", fake_create)
+    monkeypatch.setattr(pipeline_module, "run_detection_for_entry", fake_detection)
+    status = StatusStore(tmp_path / "status.json")
+    journal = FailureJournal(tmp_path / "failures.json")
+    progress = _ProgressStub()
+
+    failures = run_detection_stage(
+        settings, entries, progress=progress, journal=journal, status=status
+    )
+
+    assert failures == 0
+    assert constructed == [shared]
+    assert observed == [shared, shared]
+    assert status.get("load-a")["model_load_count"] == 1
+    assert status.get("load-b")["model_load_count"] == 0
+
+
+def test_wave_size_does_not_recreate_heavy_stage_lifecycles(
+    tmp_path: Path, monkeypatch
+) -> None:
+    settings = _settings(tmp_path)
+    settings.wave_size = 1
+    entries = [
+        _prepare_video(settings.dataset_root, settings.work_root, video_id="wave-life-a"),
+        _prepare_video(settings.dataset_root, settings.work_root, video_id="wave-life-b"),
+    ]
+    write_index(entries, metadata={"dataset_id": "youtube_highlights"}, output_path=settings.index_path)
+    calls = []
+
+    def fake_detection_stage(_settings, selected, **_kwargs):
+        calls.append([entry.video_id for entry in selected])
+        return 0
+
+    monkeypatch.setattr(pipeline_module, "run_detection_stage", fake_detection_stage)
+    summary = run_materialization(
+        settings,
+        stages=[STAGE_DETECTION],
+        verify_sha256=False,
+    )
+
+    assert calls == [["wave-life-a", "wave-life-b"]]
+    assert summary["rtdetr_model_load_count"] == 0
