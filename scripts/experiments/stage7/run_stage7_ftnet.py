@@ -43,6 +43,7 @@ from aic_video_highlight.ftnet.integrity import (  # noqa: E402
     run_train_normalization,
     write_idx0_decision,
 )
+from aic_video_highlight.ftnet.formal_reporting import generate_formal_deliverables  # noqa: E402
 from aic_video_highlight.ftnet.pipeline import (  # noqa: E402
     MaterializationSettings,
     ensure_probed_index,
@@ -478,7 +479,20 @@ def task_train(config, environment, args) -> int:
         return 0
     _print(summary)
     module = _load_train_module()
-    return int(module.main(argv))
+    exit_code = int(module.main(argv))
+    if exit_code != 0:
+        return exit_code
+    if not bool(config.get("formal_reporting", False)):
+        return 0
+    formal_status = generate_formal_deliverables(
+        output_root / run_id,
+        data_root=paths["output_root"],
+        repo_root=REPO_ROOT,
+        index_path=paths["index_path"],
+        training_config_path=train_config,
+    )
+    _print({"task": "formal_reporting", **formal_status})
+    return 0 if formal_status["status"] == "COMPLETE" else 4
 
 
 TASKS = {

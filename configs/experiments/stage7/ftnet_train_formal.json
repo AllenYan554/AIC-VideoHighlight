@@ -7,5 +7,6 @@
   "train_config": {"base": "repo", "path": "configs/models/ftnet_reference.yaml"},
   "device": "cuda",
   "num_workers": 0,
-  "preflight": true
+  "preflight": true,
+  "formal_reporting": true
 }
