@@ -26,6 +26,7 @@ import sys
 from pathlib import Path
 
 RUNNER = "scripts/experiments/stage7/run_stage7_ftnet.py"
+EVAL_RUNNER = "scripts/experiments/stage7/run_ftnet_evaluation.py"
 
 RUNNERS = {
     "ftnet_index_probe": RUNNER,
@@ -37,6 +38,7 @@ RUNNERS = {
     "ftnet_audit": RUNNER,
     "ftnet_train_smoke": RUNNER,
     "ftnet_train_formal": RUNNER,
+    "ftnet_eval_posttraining": EVAL_RUNNER,
 }
 
 CONFIGS = {
@@ -49,6 +51,7 @@ CONFIGS = {
     "ftnet_audit": "configs/experiments/stage7/ftnet_audit.json",
     "ftnet_train_smoke": "configs/experiments/stage7/ftnet_train_smoke.json",
     "ftnet_train_formal": "configs/experiments/stage7/ftnet_train_formal.json",
+    "ftnet_eval_posttraining": "configs/experiments/stage7/ftnet_eval_posttraining.json",
 }
 
 # Launch metadata consumed by scripts/experiments/registry.py (single source of
@@ -64,6 +67,7 @@ LAUNCH = {
     "ftnet_audit": {"target": "WINDOWS", "gpu": "NONE"},
     "ftnet_train_smoke": {"target": "AUTODL", "gpu": "REQUIRED"},
     "ftnet_train_formal": {"target": "AUTODL", "gpu": "REQUIRED"},
+    "ftnet_eval_posttraining": {"target": "WINDOWS", "gpu": "OPTIONAL"},
 }
 
 

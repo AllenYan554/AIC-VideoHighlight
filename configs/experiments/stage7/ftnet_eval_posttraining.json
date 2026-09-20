@@ -1,0 +1,14 @@
+{
+  "task": "posttraining_eval",
+  "seed": 20260917,
+  "device": "auto",
+  "checkpoint": {"base": "archive", "path": "Stage7_VHiCraFTNet研发/06_Stage7.1_RealData_FTNet_Baseline_20260918/results/checkpoints/best.pt"},
+  "control_checkpoint": {"base": "archive", "path": "Stage7_VHiCraFTNet研发/06_Stage7.1_RealData_FTNet_Baseline_20260918/results/checkpoints/last.pt"},
+  "checkpoint_identity_audit": {"base": "archive", "path": "Stage7_VHiCraFTNet研发/06_Stage7.1_RealData_FTNet_Baseline_20260918/supplementary/checkpoint_identity_audit.json"},
+  "data_root": {"base": "derived", "path": "VHiCraFTNet/youtube_highlights_ftnet"},
+  "normalization": {"base": "derived", "path": "VHiCraFTNet/youtube_highlights_ftnet/normalization/normalization_stats.json"},
+  "index": {"base": "outputs", "path": "stage7_ftnet/index/frozen_index.json"},
+  "split_manifest": {"base": "datasets", "path": "youtube_highlights/manifests/stage7_ftnet_split_manifest.json"},
+  "annotations_root": {"base": "datasets", "path": "youtube_highlights/annotations/upstream_repo"},
+  "output_dir": {"base": "archive", "path": "Stage7_VHiCraFTNet研发/07_Stage7.1_FTNet_PostTraining_Evaluation_20260920"}
+}
