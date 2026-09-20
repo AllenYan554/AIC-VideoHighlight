@@ -5,6 +5,11 @@
   "output_root": {"base": "derived", "path": "VHiCraFTNet/youtube_highlights_ftnet"},
   "train_output_root": {"base": "outputs", "path": "stage7_ftnet/training"},
   "train_config": {"base": "repo", "path": "configs/models/ftnet_reference.yaml"},
+  "formal_evidence": {
+    "materialization_run_dir": {"base": "outputs", "path": "stage7_ftnet/runs/full154"},
+    "idx0_gate_path": {"base": "outputs", "path": "stage7_ftnet/idx0_gate_decision.json"},
+    "performance_summary": {"base": "outputs", "path": "stage7_ftnet/runs/full154/performance_summary.json"}
+  },
   "device": "cuda",
   "num_workers": 0,
   "preflight": true,

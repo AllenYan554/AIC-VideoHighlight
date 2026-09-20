@@ -484,12 +484,26 @@ def task_train(config, environment, args) -> int:
         return exit_code
     if not bool(config.get("formal_reporting", False)):
         return 0
+    training_run_dir = output_root / run_id
+    formal_evidence = config.get("formal_evidence", {})
+    materialization_run_dir = _resolve_optional(
+        formal_evidence.get("materialization_run_dir"), environment
+    )
+    idx0_gate_path = _resolve_optional(formal_evidence.get("idx0_gate_path"), environment)
+    performance_summary_path = _resolve_optional(
+        formal_evidence.get("performance_summary"), environment
+    )
     formal_status = generate_formal_deliverables(
-        output_root / run_id,
+        training_run_dir / "formal_archive",
         data_root=paths["output_root"],
         repo_root=REPO_ROOT,
         index_path=paths["index_path"],
         training_config_path=train_config,
+        training_run_dir=training_run_dir,
+        materialization_run_dir=materialization_run_dir,
+        idx0_gate_path=idx0_gate_path,
+        performance_summary_path=performance_summary_path,
+        config_snapshot_paths=(args.config, args.environment),
     )
     _print({"task": "formal_reporting", **formal_status})
     return 0 if formal_status["status"] == "COMPLETE" else 4
