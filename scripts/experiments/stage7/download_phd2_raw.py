@@ -23,6 +23,7 @@ import argparse
 import csv
 import hashlib
 import json
+import os
 import random
 import statistics
 import subprocess
@@ -613,6 +614,19 @@ def command_plan(args: argparse.Namespace) -> int:
     return 0
 
 
+def child_env() -> dict[str, str]:
+    """Force UTF-8 stdio for child Python tools (yt-dlp) regardless of console.
+
+    Without this, yt-dlp reports GBK-encoded paths on a console-less process and
+    a UTF-8 reader corrupts any non-ASCII output path.
+    """
+
+    env = dict(os.environ)
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUTF8"] = "1"
+    return env
+
+
 def ffprobe_media(path: Path) -> dict[str, Any]:
     command = [
         "ffprobe",
@@ -627,7 +641,13 @@ def ffprobe_media(path: Path) -> dict[str, Any]:
         str(path),
     ]
     completed = subprocess.run(
-        command, capture_output=True, text=True, timeout=120, encoding="utf-8", errors="replace"
+        command,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        encoding="utf-8",
+        errors="replace",
+        env=child_env(),
     )
     if completed.returncode != 0:
         raise RuntimeError((completed.stderr or "ffprobe failed").strip()[:200])
@@ -852,6 +872,7 @@ def command_download(args: argparse.Namespace) -> int:
                 timeout=args.timeout,
                 encoding="utf-8",
                 errors="replace",
+                env=child_env(),
             )
         except subprocess.TimeoutExpired:
             completed = None
