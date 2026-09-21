@@ -36,6 +36,11 @@ def _write_csv(path: Path, rows: list[dict[str, str]]) -> None:
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def test_detect_system_proxy_shape() -> None:
+    value = downloader.detect_system_proxy()
+    assert value is None or value.startswith(("http://", "https://", "socks4://", "socks5://"))
+
+
 def test_format_selectors_respect_height_caps() -> None:
     assert "height<=360" in downloader.FORMAT_SELECTORS["v360"]
     assert "height<=720" in downloader.FORMAT_SELECTORS["v720"]

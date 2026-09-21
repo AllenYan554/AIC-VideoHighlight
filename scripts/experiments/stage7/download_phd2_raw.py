@@ -70,6 +70,40 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def detect_system_proxy() -> str | None:
+    """Read the Windows system proxy (same source browsers use).
+
+    yt-dlp does not pick this up by itself, so without an explicit ``--proxy``
+    it attempts a direct connection and fails behind a system-proxy setup.
+    """
+
+    try:
+        import winreg
+
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Internet Settings",
+        ) as key:
+            enabled = bool(winreg.QueryValueEx(key, "ProxyEnable")[0])
+            server = str(winreg.QueryValueEx(key, "ProxyServer")[0] or "")
+        if not enabled or not server:
+            return None
+        if "=" in server:  # e.g. "http=host:port;https=host:port"
+            parts = {}
+            for token in server.split(";"):
+                if "=" in token:
+                    scheme, value = token.split("=", 1)
+                    parts[scheme.strip().lower()] = value.strip()
+            server = parts.get("https") or parts.get("http") or next(iter(parts.values()), "")
+        if not server:
+            return None
+        if not server.startswith(("http://", "https://", "socks4://", "socks5://")):
+            server = "http://" + server
+        return server
+    except Exception:
+        return None
+
+
 def sha256_file(path: Path, chunk_size: int = 1 << 20) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -589,11 +623,54 @@ def command_download(args: argparse.Namespace) -> int:
                 total += int(row.get("actual_bytes") or 0)
         return total
 
+    if args.proxy is None:
+        proxy = detect_system_proxy()
+    elif args.proxy.lower() in ("", "none", "direct"):
+        proxy = None
+    else:
+        proxy = args.proxy
     processed = 0
     successes = 0
     failures = 0
+    successes_360 = 0
+    successes_720 = 0
     consecutive_blocks = 0
+    last_rest_at = 0
     started = time.perf_counter()
+
+    def eta_hours() -> float | None:
+        if successes == 0 or processed == 0:
+            return None
+        raw_now = current_raw_bytes()
+        avg_bytes = raw_now / successes
+        if avg_bytes <= 0:
+            return None
+        remaining_bytes = max(0, HARD_CAP_BYTES - raw_now)
+        remaining_videos = remaining_bytes / avg_bytes
+        avg_sec = (time.perf_counter() - started) / processed
+        return remaining_videos * avg_sec / 3600.0
+
+    def progress_line() -> str:
+        raw_now = current_raw_bytes()
+        ratio = f"{successes_360}:{successes_720}"
+        eta = eta_hours()
+        eta_text = f"{eta:.1f}h" if eta is not None else "n/a"
+        return (
+            f"success={successes} fail={failures} "
+            f"raw={raw_now / GIB:.2f}/99.00 GiB "
+            f"({raw_now / HARD_CAP_BYTES * 100:.1f}%) "
+            f"360p:720p={ratio} eta={eta_text}"
+        )
+
+    success_before = sum(
+        1 for row in manifest_rows if row.get("download_status") == "SUCCESS"
+    )
+    print(
+        f"download start: plan={len(plan['videos'])} already_success={success_before} "
+        f"raw_before={current_raw_bytes() / GIB:.2f} GiB proxy={proxy or 'DIRECT'}",
+        flush=True,
+    )
+    log.write(f"[{utc_now()}] download start proxy={proxy or 'DIRECT'}\n")
     for entry in plan["videos"]:
         if args.limit and processed >= args.limit:
             break
@@ -694,6 +771,10 @@ def command_download(args: argparse.Namespace) -> int:
             "3",
             "--fragment-retries",
             "3",
+        ]
+        if proxy:
+            command += ["--proxy", proxy]
+        command += [
             "-f",
             FORMAT_SELECTORS[arm],
             "-o",
@@ -727,6 +808,7 @@ def command_download(args: argparse.Namespace) -> int:
             "quality_arm": arm,
             "selected_height_cap": 360 if arm == "v360" else 720,
             "estimated_bytes": estimated,
+            "proxy": proxy or "DIRECT",
             "attempted_at_utc": utc_now(),
             "elapsed_s": elapsed,
         }
@@ -831,24 +913,33 @@ def command_download(args: argparse.Namespace) -> int:
                             }
                         )
                         successes += 1
+                        if arm == "v360":
+                            successes_360 += 1
+                        else:
+                            successes_720 += 1
                         consecutive_blocks = 0
         with manifest_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(record, ensure_ascii=False) + "\n")
         existing[video_id] = record
         processed += 1
-        if processed % 10 == 0:
-            raw_now = current_raw_bytes()
-            elapsed_total = time.perf_counter() - started
-            rate = elapsed_total / processed
+        if processed % 5 == 0:
+            print(f"progress {progress_line()}", flush=True)
+            log.write(f"[{utc_now()}] progress {progress_line()}\n")
+        if (
+            successes > 0
+            and successes % args.rest_every == 0
+            and successes != last_rest_at
+            and not (args.limit and processed >= args.limit)
+        ):
+            last_rest_at = successes
+            rest_seconds = rng.uniform(args.rest_min, args.rest_max)
             print(
-                f"progress processed={processed} success={successes} fail={failures} "
-                f"raw={raw_now / GIB:.2f} GiB rate={rate:.1f}s/vid",
+                f"resting {rest_seconds / 60:.1f} min after {successes} successes "
+                f"(anti-throttle pause) ...",
                 flush=True,
             )
-            log.write(
-                f"[{utc_now()}] progress processed={processed} success={successes} "
-                f"fail={failures} raw_gib={raw_now / GIB:.2f}\n"
-            )
+            log.write(f"[{utc_now()}] rest {rest_seconds:.0f}s after {successes} successes\n")
+            time.sleep(rest_seconds)
     log.close()
     print(
         json.dumps(
@@ -856,8 +947,11 @@ def command_download(args: argparse.Namespace) -> int:
                 "processed": processed,
                 "successes": successes,
                 "failures": failures,
+                "successes_360p": successes_360,
+                "successes_720p": successes_720,
                 "raw_bytes": current_raw_bytes(),
                 "raw_gib": round(current_raw_bytes() / GIB, 2),
+                "final_line": progress_line(),
             },
             ensure_ascii=False,
             indent=2,
@@ -972,10 +1066,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_download.add_argument("--manifest", required=True, type=Path)
     p_download.add_argument("--log", required=True, type=Path)
     p_download.add_argument("--limit", type=int, default=None)
-    p_download.add_argument("--sleep", type=float, default=1.5)
-    p_download.add_argument("--jitter", type=float, default=0.8)
+    p_download.add_argument("--sleep", type=float, default=8.0)
+    p_download.add_argument("--jitter", type=float, default=4.0)
     p_download.add_argument("--timeout", type=float, default=900.0)
-    p_download.add_argument("--block-abort", type=int, default=6)
+    p_download.add_argument("--block-abort", type=int, default=5)
+    p_download.add_argument("--rest-every", type=int, default=50)
+    p_download.add_argument("--rest-min", type=float, default=180.0)
+    p_download.add_argument("--rest-max", type=float, default=300.0)
+    p_download.add_argument(
+        "--proxy",
+        default=None,
+        help="proxy URL; 'none' forces direct; default auto-detects the Windows system proxy",
+    )
     p_download.add_argument("--retry-failed", action="store_true")
     p_download.add_argument("--seed", type=int, default=SEED)
     p_download.set_defaults(func=command_download)
