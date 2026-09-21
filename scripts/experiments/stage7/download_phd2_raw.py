@@ -496,11 +496,49 @@ def command_plan(args: argparse.Namespace) -> int:
     )
     rng = random.Random(args.seed)
     per_bin: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    for row in pool["videos"]:
+    # priority: known-available TRAIN_ONLY videos from the feasibility probe go first
+    priority_entries: list[dict[str, Any]] = []
+    priority_ids: set[str] = set()
+    if args.priority_probe and args.priority_probe.is_file() and args.metadata_root:
+        table = build_train_only_table(args.metadata_root)
+        for row in read_jsonl(args.priority_probe):
+            if str(row.get("status")) != "AVAILABLE":
+                continue
+            video_id = str(row["youtubeId"])
+            meta = table.get(video_id)
+            if not meta:
+                continue  # not TRAIN_ONLY (or unknown)
+            if DEFAULT_BIN_RATIOS.get(meta["duration_bin"], 0.0) <= 0:
+                continue  # excluded bin (e.g. >30min)
+            priority_ids.add(video_id)
+            priority_entries.append(
+                {
+                    "youtubeId": video_id,
+                    "user_ids": meta["users"],
+                    "primary_user": meta["users"][0] if meta["users"] else "",
+                    "duration_bin": meta["duration_bin"],
+                    "video_duration": meta["video_duration"],
+                    "highlight_count": meta["highlight_count"],
+                    "highlight_total_s": round(meta["highlight_total_s"], 3),
+                    "source": "known_available",
+                }
+            )
+    for row in sorted(
+        priority_entries, key=lambda item: hash_key(str(args.seed), item["youtubeId"])
+    ):
         per_bin[row["duration_bin"]].append(row)
-    for rows in per_bin.values():
-        rows.sort(key=lambda item: hash_key(str(args.seed), item["youtubeId"]))
-        rng.shuffle(rows)
+    for row in pool["videos"]:
+        if str(row["youtubeId"]) in priority_ids:
+            continue
+        row = dict(row)
+        row["source"] = "pool"
+        per_bin[row["duration_bin"]].append(row)
+    for label, rows in per_bin.items():
+        priority = [r for r in rows if r.get("source") == "known_available"]
+        regular = [r for r in rows if r.get("source") != "known_available"]
+        regular.sort(key=lambda item: hash_key(str(args.seed), item["youtubeId"]))
+        rng.shuffle(regular)
+        per_bin[label] = priority + regular
     ordered: list[dict[str, Any]] = []
     ratio_order = [label for label, ratio in DEFAULT_BIN_RATIOS.items() if ratio > 0]
     pointers = {label: 0 for label in per_bin}
@@ -533,6 +571,7 @@ def command_plan(args: argparse.Namespace) -> int:
             "video_duration": row["video_duration"],
             "highlight_count": row["highlight_count"],
             "highlight_total_s": row["highlight_total_s"],
+            "data_source": row.get("source", "pool"),
             "quality_arm": arm,
             "probe": {
                 "duration_s": record.get("duration_s"),
@@ -552,6 +591,7 @@ def command_plan(args: argparse.Namespace) -> int:
         "arm_ratio_target": ARM_RATIO,
         "arm_counts": dict(Counter(row["quality_arm"] for row in plan_videos)),
         "bin_counts": dict(Counter(row["duration_bin"] for row in plan_videos)),
+        "source_counts": dict(Counter(row.get("data_source", "pool") for row in plan_videos)),
         "planned_videos": len(plan_videos),
         "estimated_total_bytes": est_total,
         "estimated_total_gib": est_total / GIB,
@@ -638,41 +678,60 @@ def command_download(args: argparse.Namespace) -> int:
     last_rest_at = 0
     started = time.perf_counter()
 
+    target_success = args.target_success or 0
+    max_bytes = args.max_bytes or 0
+
     def eta_hours() -> float | None:
-        if successes == 0 or processed == 0:
+        total_success = success_before + successes
+        if successes == 0 or processed == 0 or not target_success:
             return None
-        raw_now = current_raw_bytes()
-        avg_bytes = raw_now / successes
-        if avg_bytes <= 0:
-            return None
-        remaining_bytes = max(0, HARD_CAP_BYTES - raw_now)
-        remaining_videos = remaining_bytes / avg_bytes
+        remaining_videos = max(0, target_success - total_success)
         avg_sec = (time.perf_counter() - started) / processed
         return remaining_videos * avg_sec / 3600.0
 
     def progress_line() -> str:
         raw_now = current_raw_bytes()
-        ratio = f"{successes_360}:{successes_720}"
+        total_success = success_before + successes
+        pct_360 = successes_360 / successes * 100 if successes else 0.0
+        pct_720 = successes_720 / successes * 100 if successes else 0.0
         eta = eta_hours()
         eta_text = f"{eta:.1f}h" if eta is not None else "n/a"
         return (
-            f"success={successes} fail={failures} "
-            f"raw={raw_now / GIB:.2f}/99.00 GiB "
-            f"({raw_now / HARD_CAP_BYTES * 100:.1f}%) "
-            f"360p:720p={ratio} eta={eta_text}"
+            f"SUCCESS {total_success}/{target_success or '?'} (+{successes} this run) | "
+            f"raw={raw_now / GIB:.2f} GiB | 360p={successes_360} 720p={successes_720} "
+            f"({pct_360:.0f}%:{pct_720:.0f}%) | perm_fail={failures} "
+            f"reset={reset_count} | proxy={'ACTIVE' if proxy else 'MISSING'} | eta={eta_text}"
         )
 
     success_before = sum(
         1 for row in manifest_rows if row.get("download_status") == "SUCCESS"
     )
+    reset_count = 0
+    max_gib_text = f"{max_bytes / GIB:.1f}" if max_bytes else "none"
     print(
         f"download start: plan={len(plan['videos'])} already_success={success_before} "
-        f"raw_before={current_raw_bytes() / GIB:.2f} GiB proxy={proxy or 'DIRECT'}",
+        f"raw_before={current_raw_bytes() / GIB:.2f} GiB proxy={proxy or 'DIRECT'} "
+        f"target_success={target_success or 'none'} max_gib={max_gib_text}",
         flush=True,
     )
-    log.write(f"[{utc_now()}] download start proxy={proxy or 'DIRECT'}\n")
+    log.write(
+        f"[{utc_now()}] download start proxy={proxy or 'DIRECT'} "
+        f"target_success={target_success} max_bytes={max_bytes}\n"
+    )
     for entry in plan["videos"]:
         if args.limit and processed >= args.limit:
+            break
+        if target_success and (success_before + successes) >= target_success:
+            print(
+                f"TARGET REACHED: total success {success_before + successes} >= {target_success}",
+                flush=True,
+            )
+            break
+        if max_bytes and current_raw_bytes() >= max_bytes:
+            print(
+                f"MAX BYTES REACHED: {current_raw_bytes() / GIB:.2f} GiB >= {max_bytes / GIB:.2f} GiB",
+                flush=True,
+            )
             break
         video_id = str(entry["youtubeId"])
         previous = existing.get(video_id)
@@ -686,7 +745,7 @@ def command_download(args: argparse.Namespace) -> int:
         arm = entry["quality_arm"]
         estimated = int(entry.get("estimated_bytes") or 0)
         raw_now = current_raw_bytes()
-        if raw_now >= FILL_MODE_BYTES and not estimated:
+        if max_bytes and raw_now >= max_bytes * 0.9 and not estimated:
             # fill mode: metadata pre-check to keep the hard cap
             audit = load_audit_module()
             pre = audit.probe_one(video_id, entry.get("video_duration"), 60.0)
@@ -696,6 +755,7 @@ def command_download(args: argparse.Namespace) -> int:
                 estimated = (sizes.get(RESOLUTION_ARM_KEY[arm]) or {}).get("total_bytes") or 0
             elif pre_status in ("NETWORK_ERROR", "RATE_LIMITED") or pre.get("error") == "PROBE_TIMEOUT":
                 consecutive_blocks += 1
+                reset_count += 1
                 record = {
                     "youtubeId": video_id,
                     "download_status": "FAILED_TEMP",
@@ -734,7 +794,7 @@ def command_download(args: argparse.Namespace) -> int:
                 failures += 1
                 processed += 1
                 continue
-        if estimated and raw_now + estimated > HARD_CAP_BYTES:
+        if estimated and max_bytes and raw_now + estimated > max_bytes:
             record = {
                 "youtubeId": video_id,
                 "download_status": "SKIPPED_OVER_BUDGET",
@@ -845,6 +905,7 @@ def command_download(args: argparse.Namespace) -> int:
                     leftover.unlink(missing_ok=True)
                 if temporary:
                     consecutive_blocks += 1
+                    reset_count += 1
                     backoff = min(30.0 * (2 ** (consecutive_blocks - 1)), 300.0)
                     log.write(
                         f"[{utc_now()}] DOWNLOAD_BLOCK {category} {video_id} "
@@ -946,9 +1007,13 @@ def command_download(args: argparse.Namespace) -> int:
             {
                 "processed": processed,
                 "successes": successes,
+                "successes_total": success_before + successes,
+                "target_success": target_success,
                 "failures": failures,
                 "successes_360p": successes_360,
                 "successes_720p": successes_720,
+                "connection_reset_count": reset_count,
+                "proxy": proxy or "DIRECT",
                 "raw_bytes": current_raw_bytes(),
                 "raw_gib": round(current_raw_bytes() / GIB, 2),
                 "final_line": progress_line(),
@@ -1055,6 +1120,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_plan = sub.add_parser("plan")
     p_plan.add_argument("--pool", required=True, type=Path)
     p_plan.add_argument("--probe-jsonl", type=Path, default=None)
+    p_plan.add_argument(
+        "--priority-probe",
+        type=Path,
+        default=None,
+        help="availability probe JSONL; AVAILABLE TRAIN_ONLY videos are prioritized",
+    )
+    p_plan.add_argument("--metadata-root", type=Path, default=None)
     p_plan.add_argument("--output", required=True, type=Path)
     p_plan.add_argument("--seed", type=int, default=SEED)
     p_plan.set_defaults(func=command_plan)
@@ -1073,6 +1145,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_download.add_argument("--rest-every", type=int, default=50)
     p_download.add_argument("--rest-min", type=float, default=180.0)
     p_download.add_argument("--rest-max", type=float, default=300.0)
+    p_download.add_argument(
+        "--target-success",
+        type=int,
+        default=1500,
+        help="stop when total SUCCESS count reaches this value (0 disables)",
+    )
+    p_download.add_argument(
+        "--max-bytes",
+        type=int,
+        default=50 * GIB,
+        help="hard safety cap on total raw bytes (0 disables)",
+    )
     p_download.add_argument(
         "--proxy",
         default=None,
