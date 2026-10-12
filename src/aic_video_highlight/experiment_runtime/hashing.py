@@ -1,26 +1,16 @@
-"""Deterministic byte and canonical-JSON hashing helpers."""
+"""
+Compatibility alias for aic_video_highlight.runtime.hashing.
 
+The body of this module was a byte-identical duplicate of
+aic_video_highlight.runtime.hashing. The canonical implementation now lives
+there; only the import path is preserved so historical experiment
+runners and their tests keep working unchanged.
+
+Auto-generated during research-repo curation
+(chore/research-repo-curation-202610121334).
+"""
 from __future__ import annotations
 
-import hashlib
-import json
-from pathlib import Path
-from typing import Any
+from aic_video_highlight.runtime.hashing import (canonical_json_bytes, canonical_sha256, file_sha256)
 
-
-def file_sha256(path: Path, chunk_size: int = 1024 * 1024) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        while chunk := handle.read(chunk_size):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def canonical_json_bytes(value: Any) -> bytes:
-    return json.dumps(
-        value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
-    ).encode("utf-8")
-
-
-def canonical_sha256(value: Any) -> str:
-    return hashlib.sha256(canonical_json_bytes(value)).hexdigest()
+__all__ = ['canonical_json_bytes', 'canonical_sha256', 'file_sha256']

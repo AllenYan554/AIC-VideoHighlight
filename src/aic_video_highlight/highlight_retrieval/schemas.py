@@ -1,68 +1,16 @@
-"""Internal data structures for highlight candidate retrieval."""
+"""
+Compatibility alias for aic_video_highlight.retrieval.schemas.
 
+The body of this module was a byte-identical duplicate of
+aic_video_highlight.retrieval.schemas. The canonical implementation now lives
+there; only the import path is preserved so historical experiment
+runners and their tests keep working unchanged.
+
+Auto-generated during research-repo curation
+(chore/research-repo-curation-202610121334).
+"""
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
-from pathlib import Path
-from typing import Any
+from aic_video_highlight.retrieval.schemas import (HighlightRetrievalResult, HighlightSegment, VideoChunk, VideoMeta)
 
-
-@dataclass(frozen=True, slots=True)
-class VideoMeta:
-    video_id: str
-    path: Path
-    duration_sec: float
-    fps: float
-    width: int
-    height: int
-    frame_count: int
-
-
-@dataclass(frozen=True, slots=True)
-class VideoChunk:
-    index: int
-    start_sec: float
-    end_sec: float
-
-    @property
-    def duration_sec(self) -> float:
-        return self.end_sec - self.start_sec
-
-
-@dataclass(frozen=True, slots=True)
-class HighlightSegment:
-    start_sec: float
-    end_sec: float
-    score: float
-    reason: str = ""
-    source_chunk: int | None = None
-
-    @property
-    def duration_sec(self) -> float:
-        return self.end_sec - self.start_sec
-
-
-@dataclass(slots=True)
-class HighlightRetrievalResult:
-    """Internal intermediate result; not the competition prediction schema."""
-
-    video_id: str
-    duration_sec: float
-    segments: list[HighlightSegment] = field(default_factory=list)
-    raw_responses: list[str] = field(default_factory=list)
-    inference_time_sec: float = 0.0
-    candidate_segments: list[HighlightSegment] = field(default_factory=list)
-    raw_chunk_outputs: list[dict[str, Any]] = field(default_factory=list)
-    timing: dict[str, float] = field(default_factory=dict)
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "video_id": self.video_id,
-            "duration_sec": self.duration_sec,
-            "segments": [asdict(segment) for segment in self.segments],
-            "raw_responses": self.raw_responses,
-            "inference_time_sec": self.inference_time_sec,
-            "candidate_segments": [asdict(segment) for segment in self.candidate_segments],
-            "raw_chunk_outputs": self.raw_chunk_outputs,
-            "timing": self.timing,
-        }
+__all__ = ['HighlightRetrievalResult', 'HighlightSegment', 'VideoChunk', 'VideoMeta']
