@@ -195,3 +195,10 @@ def compute_subject_shifted_crop(
         clamped_x=clamped_x,
         clamped_y=clamped_y,
     )
+
+
+# ---------------------------------------------------------------------------
+# Deprecated Stage 5 public alias, retained because the frozen Stage 5.x
+# protocols and tests still import this name.  Canonical name: projection_crop_height.
+# ---------------------------------------------------------------------------
+stage5_1_crop_height = projection_crop_height

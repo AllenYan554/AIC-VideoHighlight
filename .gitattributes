@@ -1,6 +1,11 @@
-* text=auto
+﻿* text=auto
 *.sh text eol=lf
 
-# Stage 5.5 preregistration artifacts are pinned on LF bytes so the byte-level
+# Stage 5.x preregistration artifacts are pinned on LF bytes so the byte-level
 # hashes in the master preregistration survive checkout on any platform.
+# Verified: every recorded byte_sha256 equals the SHA-256 of the LF bytes;
+# a CRLF checkout (core.autocrlf=true) breaks the frozen-input gates.
 configs/experiments/stage5/stage5_5_*.json text eol=lf
+configs/experiments/stage5/stage5_4_amendment4_revised_*.json text eol=lf
+configs/experiments/stage5/stage5_6_*.json text eol=lf
+

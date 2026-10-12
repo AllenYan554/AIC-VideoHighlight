@@ -9,5 +9,6 @@
   "cache": "/root/autodl-tmp/cache",
   "tmp": "/root/autodl-tmp/tmp",
   "archive": "/root/autodl-tmp/archive",
+  "derived": "/root/autodl-tmp/derived",
   "retrieval_backend": "vllm"
 }

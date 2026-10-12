@@ -33,7 +33,9 @@ function Get-LauncherRepoRoot {
 
 function Resolve-PythonPath {
     if ($env:AIC_PYTHON) { return $env:AIC_PYTHON }
-    return "python"
+    $vhicraft = "C:\Users\lenovo\.conda\envs\vhicraft\python.exe"
+    if (Test-Path -LiteralPath $vhicraft) { return $vhicraft }
+    throw "vhicraft python not found at '$vhicraft'; set AIC_PYTHON to override."
 }
 
 function Test-ExperimentNameFormat {

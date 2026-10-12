@@ -44,6 +44,7 @@ class EnvironmentPaths:
     cache: Path
     tmp: Path
     archive: Path
+    derived: Path | None = None
     retrieval_backend: str | None = None
 
     @classmethod
@@ -58,6 +59,9 @@ class EnvironmentPaths:
         fields = {
             key: Path(payload[key]) if key != "name" else payload[key] for key in required
         }
+        derived = payload.get("derived")
+        if derived not in (None, ""):
+            fields["derived"] = Path(str(derived))
         backend = payload.get("retrieval_backend")
         if backend is not None:
             fields["retrieval_backend"] = str(backend)

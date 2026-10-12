@@ -35,14 +35,14 @@ from aic_video_highlight.highlight_retrieval.candidate_cache import (
     replay_cache,
     validate_cache,
 )
-from aic_video_highlight.spatial_composition.composition_pipeline import (
+from aic_video_highlight.composition.composition_pipeline import (
     FrozenInputs,
     compose_all_frames,
     engineering_gate,
     load_policy_shard_dir,
     policy_shard_semantic_sha,
 )
-from aic_video_highlight.spatial_composition.fresh_pipeline import (
+from aic_video_highlight.composition.fresh_pipeline import (
     FRESH_SHARD_SCHEMA_VERSION,
     FreshPipelineError,
     audit_fresh_shard,
@@ -52,7 +52,7 @@ from aic_video_highlight.spatial_composition.fresh_pipeline import (
     shared_upstream_identity,
     validate_fresh_candidate_cache_binding,
 )
-from aic_video_highlight.spatial_composition.vhicraft_pipeline import (
+from aic_video_highlight.composition.vhicraft_pipeline import (
     TARGET_RATIO,
     VC1,
     VCA0,
@@ -321,7 +321,7 @@ def _build_fresh_inputs(
             f"Stage 5.3 fresh binding mismatch: expected={len(expected)} actual={len(actual)}"
         )
     inputs = FrozenInputs(
-        stage5_1_predictions=predictions,
+        frame_projection_predictions=predictions,
         metadata=metadata,
         index=index,
         policy_records=policy,
@@ -513,8 +513,9 @@ def run_fresh_pipeline(
     cache_summary = validate_cache(cache)
     cache_binding = validate_fresh_candidate_cache_binding(
         _read_json(cache / "cache_manifest.json"),
-        stage1_predictions_path=stage1 / "predictions.jsonl",
+        retrieval_predictions_path=stage1 / "predictions.jsonl",
         expected_video_ids=video_ids,
+        expected_split="dev",
         forbidden_global_sha256=FROZEN_CACHE_SHA256,
     )
     if cache_summary["record_count"] != len(video_ids):

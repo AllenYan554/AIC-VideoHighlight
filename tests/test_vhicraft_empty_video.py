@@ -9,13 +9,13 @@ artifact.
 
 from __future__ import annotations
 
-from aic_video_highlight.spatial_composition.vhicraft_pipeline import (
+from aic_video_highlight.composition.vhicraft_pipeline import (
     FrameCrop,
     assemble_prediction_lines,
     compare_replays,
     validate_prediction_lines,
 )
-from aic_video_highlight.spatial_composition.submission import write_predictions_jsonl
+from aic_video_highlight.composition.submission import write_predictions_jsonl
 from aic_video_highlight.spatial_localization.full_dev import (
     shard_is_complete,
     write_shard,

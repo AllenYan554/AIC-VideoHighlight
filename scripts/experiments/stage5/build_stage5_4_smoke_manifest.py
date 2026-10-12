@@ -40,18 +40,18 @@ from pathlib import Path
 from aic_video_highlight.experiment_runtime.hashing import canonical_sha256, file_sha256
 from aic_video_highlight.experiment_runtime.io import atomic_write_json
 from aic_video_highlight.experiment_runtime.paths import EnvironmentPaths
-from aic_video_highlight.spatial_composition.center_crop import compute_center_crop
-from aic_video_highlight.spatial_composition.composition_metrics import (
+from aic_video_highlight.composition.center_crop import compute_center_crop
+from aic_video_highlight.composition.composition_metrics import (
     STRATUM_NO_SUBJECT,
     classify_center_stratum,
     horizontal_center_offset,
 )
-from aic_video_highlight.spatial_composition.composition_pipeline import (
+from aic_video_highlight.composition.composition_pipeline import (
     FrozenInputError,
     InputBinding,
     load_frozen_inputs,
 )
-from aic_video_highlight.spatial_composition.subject_shifted_crop import (
+from aic_video_highlight.composition.subject_shifted_crop import (
     compute_subject_shifted_crop,
     sanitize_primary_bbox,
 )

@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from aic_video_highlight.experiment_runtime.hashing import file_sha256
-from aic_video_highlight.spatial_composition.fresh_pipeline import (
+from aic_video_highlight.composition.fresh_pipeline import (
     FreshPipelineError,
     validate_fresh_candidate_cache_binding,
 )
@@ -46,23 +46,25 @@ def test_stage1_output_is_the_bound_cache_consumer_and_frozen_fallback_fails(tmp
     _jsonl(stage1, [{"video_id": "a", "success": True}])
     manifest = {
         "global_semantic_sha256": "1" * 64,
-        "source_sets": [{"source_artifact_hashes": {"predictions_jsonl_sha256": file_sha256(stage1)}}],
+        "source_sets": [{"split": "dev", "source_artifact_hashes": {"predictions_jsonl_sha256": file_sha256(stage1)}}],
         "records": [{"video_id": "a"}],
     }
     proof = validate_fresh_candidate_cache_binding(
         manifest,
-        stage1_predictions_path=stage1,
+        retrieval_predictions_path=stage1,
         expected_video_ids=["a"],
+        expected_split="dev",
         forbidden_global_sha256=fresh.FROZEN_CACHE_SHA256,
     )
-    assert proof["downstream_consumer"] == "stage4_candidate_cache"
+    assert proof["downstream_consumer"] == "temporal_candidate_cache"
     assert proof["frozen_fallback"] is False
     manifest["global_semantic_sha256"] = fresh.FROZEN_CACHE_SHA256
     with pytest.raises(FreshPipelineError, match="frozen cache"):
         validate_fresh_candidate_cache_binding(
             manifest,
-            stage1_predictions_path=stage1,
+            retrieval_predictions_path=stage1,
             expected_video_ids=["a"],
+            expected_split="dev",
             forbidden_global_sha256=fresh.FROZEN_CACHE_SHA256,
         )
 

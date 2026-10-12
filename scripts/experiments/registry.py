@@ -27,6 +27,7 @@ REPO_ROOT = SCRIPTS_EXPERIMENTS_DIR.parent.parent
 
 STAGE_LAUNCHERS = {
     "stage5": SCRIPTS_EXPERIMENTS_DIR / "stage5" / "run.py",
+    "stage7": SCRIPTS_EXPERIMENTS_DIR / "stage7" / "run.py",
 }
 
 VALID_TARGETS = {"WINDOWS", "AUTODL"}

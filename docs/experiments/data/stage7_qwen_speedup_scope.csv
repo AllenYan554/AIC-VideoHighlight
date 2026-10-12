@@ -1,0 +1,6 @@
+stage,baseline,optimized,speedup
+rt_detr_detection_wall_s,2932.4302,491.151,5.9705
+rt_detr_decode_wall_s,2614.5375,227.4559,11.4947
+qwen_retrieval_summed_wall_s,3418.9609,2268.303,1.5073
+qwen_seconds_per_chunk,8.0257,5.3247,1.5073
+whole_upstream_component_wise_s,6351.3911,2759.454,2.3017

@@ -37,13 +37,13 @@ from aic_video_highlight.experiment_runtime.promotion import (
 from aic_video_highlight.experiment_runtime.raw_report import render_raw_report, write_ai_report_inputs
 from aic_video_highlight.experiment_runtime.run_context import RunContext, RunIdentityMismatch
 from aic_video_highlight.experiment_runtime.shards import ShardStore
-from aic_video_highlight.spatial_composition.center_crop import derived_height
-from aic_video_highlight.spatial_composition.composition_metrics import (
+from aic_video_highlight.composition.center_crop import derived_height
+from aic_video_highlight.composition.composition_metrics import (
     crop_rect_from_xywh,
     subject_center_inside_crop,
     subject_visible_fraction,
 )
-from aic_video_highlight.spatial_composition.composition_pipeline import (
+from aic_video_highlight.composition.composition_pipeline import (
     FrozenInputError,
     InputBinding,
     compose_frame,
@@ -51,12 +51,12 @@ from aic_video_highlight.spatial_composition.composition_pipeline import (
     load_raw_shard_dir_subset,
     verify_input_bindings,
 )
-from aic_video_highlight.spatial_composition.subject_shifted_crop import (
+from aic_video_highlight.composition.subject_shifted_crop import (
     PLACEMENT_FALLBACK_CENTER_CROP,
     SANITIZE_OK,
     SanitizedSubject,
 )
-from aic_video_highlight.spatial_composition.temporal_diagnostics import (
+from aic_video_highlight.composition.temporal_diagnostics import (
     crop_geometry_valid,
     observations_from_records,
     spatial_guardrail_metrics,
@@ -64,7 +64,7 @@ from aic_video_highlight.spatial_composition.temporal_diagnostics import (
     temporal_multi_subject_diagnostic,
     temporal_stability_metrics,
 )
-from aic_video_highlight.spatial_composition.temporal_smoothing import (
+from aic_video_highlight.composition.temporal_smoothing import (
     DEFAULT_EMA_ALPHA,
     large_jump_ratios,
     smooth_video_sequence,
@@ -250,7 +250,7 @@ def crosscheck_manifest_entry(manifest_entry: dict, composed: dict) -> list[str]
     key = f"{composed['video_id']}:{composed['frame']}"
     if manifest_entry["stratum"] != composed["stratum"]:
         mismatches.append(f"{key} stratum")
-    if "stage5_2_status" in manifest_entry and manifest_entry["stage5_2_status"] != composed["stage5_2_status"]:
+    if "stage5_2_status" in manifest_entry and manifest_entry["stage5_2_status"] != composed["localization_status"]:
         mismatches.append(f"{key} stage5_2_status")
     if "cmp1_fallback" in manifest_entry and bool(manifest_entry["cmp1_fallback"]) != bool(composed["cmp1"]["fallback"]):
         mismatches.append(f"{key} fallback")
@@ -654,7 +654,7 @@ def build_video_records(
                 "frame": frame,
                 "image_width": width,
                 "image_height": height,
-                "stage5_2_status": composed["stage5_2_status"],
+                "stage5_2_status": composed["localization_status"],
                 "fallback_reasons": composed["fallback_reasons"],
                 "ambiguous": composed["ambiguous"],
                 "ambiguous_candidate_count": composed["ambiguous_candidate_count"],
@@ -780,7 +780,7 @@ def evaluate_gates(
 
 def pooled_distributions(records: list[dict]) -> dict[str, list[float]]:
     """Concatenated per-transition displacement / acceleration values across videos."""
-    from aic_video_highlight.spatial_composition.temporal_diagnostics import (
+    from aic_video_highlight.composition.temporal_diagnostics import (
         acceleration_norm,
         crop_center_x,
         displacement_norm,
@@ -1080,7 +1080,7 @@ def bbox_guard_diagnostics(records: list[dict], side: str = "ts4") -> dict | Non
 
 def projected_state_attribution_diagnostics(records: list[dict]) -> dict | None:
     """TS-5 guard/acceleration attribution, strictly DIAGNOSTIC_ONLY."""
-    from aic_video_highlight.spatial_composition.temporal_diagnostics import (
+    from aic_video_highlight.composition.temporal_diagnostics import (
         acceleration_norm,
         crop_center_x,
     )

@@ -11,10 +11,10 @@ import pytest
 
 from aic_video_highlight.experiment_runtime.hashing import canonical_sha256, file_sha256
 from aic_video_highlight.experiment_runtime.paths import EnvironmentPaths
-from aic_video_highlight.spatial_composition.center_crop import derived_height
-from aic_video_highlight.spatial_composition.composition_pipeline import FrozenInputError
-from aic_video_highlight.spatial_composition.subject_shifted_crop import stage5_1_crop_height
-from aic_video_highlight.spatial_composition.temporal_smoothing import (
+from aic_video_highlight.composition.center_crop import derived_height
+from aic_video_highlight.composition.composition_pipeline import FrozenInputError
+from aic_video_highlight.composition.subject_shifted_crop import stage5_1_crop_height
+from aic_video_highlight.composition.temporal_smoothing import (
     PLACEMENT_TS5_CANONICAL_STATE_SMOOTHED,
     RESET_FALLBACK,
     RESET_FRAME_GAP,
@@ -370,7 +370,7 @@ def test_revised_runner_plumbing_and_mechanism_evaluator(monkeypatch):
         return {
             "video_id": video_id,
             "frame": frame,
-            "stage5_2_status": "RELIABLE",
+            "localization_status": "RELIABLE",
             "fallback_reasons": [],
             "ambiguous": False,
             "ambiguous_candidate_count": 0,

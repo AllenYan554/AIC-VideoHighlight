@@ -369,3 +369,23 @@ def adjudicate_prediction_selection(
         "amendment_allowed": False,
         "override_allowed": False,
     }
+
+
+# ---------------------------------------------------------------------------
+# Deprecated Stage 5 alias, retained for the frozen Stage 5.5 freeze artifacts
+# and tests.  Canonical name: adjudicate_prediction_selection.
+# The historical field ``stage5_5_terminal`` is preserved in the returned mapping.
+# ---------------------------------------------------------------------------
+_STAGE5_5_TERMINAL = {
+    "PREDICTION_SELECTION_CLOSED": "STAGE5_5_CLOSED",
+}
+
+
+def adjudicate_stage5_5(
+    dev_winner: str | None, hard_result: Mapping[str, object] | None
+) -> dict[str, object]:
+    """Deprecated Stage 5.5 wrapper over :func:`adjudicate_prediction_selection`."""
+    result = dict(adjudicate_prediction_selection(dev_winner, hard_result))
+    status = result.get("prediction_selection_status")
+    result["stage5_5_terminal"] = _STAGE5_5_TERMINAL.get(status, status)
+    return result

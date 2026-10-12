@@ -35,7 +35,7 @@ if __package__ in (None, ""):  # direct script execution
 
 from aic_video_highlight.experiment_runtime.hashing import file_sha256
 from aic_video_highlight.experiment_runtime.paths import EnvironmentPaths
-from aic_video_highlight.spatial_composition.vhicraft_pipeline import (
+from aic_video_highlight.composition.vhicraft_pipeline import (
     ARM_NAMES,
     ARM_STAGE5_4_KEY,
     ARMS,
@@ -55,11 +55,11 @@ from aic_video_highlight.spatial_composition.vhicraft_pipeline import (
     load_stage5_4_shard,
     validate_prediction_lines,
 )
-from aic_video_highlight.spatial_composition.frame_selection import (
+from aic_video_highlight.composition.frame_selection import (
     FS0,
     select_emit_frames,
 )
-from aic_video_highlight.spatial_composition.composition_pipeline import FrozenInputError
+from aic_video_highlight.composition.composition_pipeline import FrozenInputError
 
 # Reuse the canonical Stage 5.5 frozen-input adapters (no logic duplication).
 from scripts.experiments.stage5.run_stage5_5_frame_calibration import (
@@ -436,7 +436,7 @@ def run_arm(
         model_name=MODEL_NAME,
         model_revision=MODEL_REVISION,
         prompt_identity=PROMPT_IDENTITY,
-        stage_identities=config.get("stage_identities", {}),
+        component_identities=config.get("stage_identities", {}),
         protocol_sha256=file_sha256(_protocol_path_for(config)),
         config_sha256=file_sha256(Path(REPO_ROOT / str(config["config_repo_path"]))),
         runner_identity=RUNNER_IDENTITY,

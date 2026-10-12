@@ -11,8 +11,8 @@ import pytest
 
 from aic_video_highlight.experiment_runtime.hashing import canonical_sha256, file_sha256
 from aic_video_highlight.experiment_runtime.paths import EnvironmentPaths
-from aic_video_highlight.spatial_composition.composition_pipeline import FrozenInputError
-from aic_video_highlight.spatial_composition.frame_calibration_metrics import (
+from aic_video_highlight.composition.composition_pipeline import FrozenInputError
+from aic_video_highlight.composition.frame_calibration_metrics import (
     adjudicate_stage5_5,
     dev_promotion_objective,
     evaluate_video_set,
@@ -22,11 +22,11 @@ from aic_video_highlight.spatial_composition.frame_calibration_metrics import (
     select_dev_winner,
     weak_frame_video_metrics,
 )
-from aic_video_highlight.spatial_composition.frame_projection import (
+from aic_video_highlight.composition.frame_projection import (
     VideoTiming,
     frames_in_segment,
 )
-from aic_video_highlight.spatial_composition.frame_selection import (
+from aic_video_highlight.composition.frame_selection import (
     ARM_NAMES,
     FS0,
     FS1,
@@ -431,7 +431,7 @@ def test_ts5_revised_frozen_baseline_is_bound():
     assert runner.FROZEN_TEMPORAL_BASELINE == "projected_state_canonical_center_ema_v1"
     # Importing the frozen Stage 5.4 TS-5 Revised operator must stay available and
     # unchanged in behaviour (regression sentinel for the Stage 5.5 front input).
-    from aic_video_highlight.spatial_composition.temporal_smoothing import (
+    from aic_video_highlight.composition.temporal_smoothing import (
         canonical_center_from_placement,
         place_crop_from_center,
     )

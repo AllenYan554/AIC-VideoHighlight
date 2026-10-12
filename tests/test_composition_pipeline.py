@@ -10,7 +10,7 @@ import pytest
 
 from scripts.experiments.stage5.run_stage5_3_composition import load_deferred_raw_inputs
 from aic_video_highlight.experiment_runtime.hashing import canonical_sha256, file_sha256
-from aic_video_highlight.spatial_composition.composition_pipeline import (
+from aic_video_highlight.composition.composition_pipeline import (
     FrozenInputError,
     InputBinding,
     aggregate_metrics,
@@ -25,7 +25,7 @@ from aic_video_highlight.spatial_composition.composition_pipeline import (
     mirror_reliable_candidate,
     multi_subject_diagnostic,
 )
-from aic_video_highlight.spatial_composition.official_emission import write_and_validate_official
+from aic_video_highlight.composition.official_emission import write_and_validate_official
 from aic_video_highlight.spatial_localization.subject_localization import SubjectPolicyConfig
 
 TARGET_RATIO = [9, 16]

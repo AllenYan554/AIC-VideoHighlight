@@ -3,13 +3,13 @@ import math
 
 import pytest
 
-from aic_video_highlight.spatial_composition.submission import (
+from aic_video_highlight.composition.submission import (
     SubmissionValidationError,
     build_submission_record,
     render_submission_line,
     write_predictions_jsonl,
 )
-from aic_video_highlight.spatial_composition.validation import (
+from aic_video_highlight.composition.validation import (
     validate_submission_file,
 )
 

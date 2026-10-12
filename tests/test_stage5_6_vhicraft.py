@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from aic_video_highlight.experiment_runtime.hashing import canonical_sha256, file_sha256
-from aic_video_highlight.spatial_composition.vhicraft_pipeline import (
+from aic_video_highlight.composition.vhicraft_pipeline import (
     ARM_NAMES,
     ARMS,
     VC0,
@@ -27,7 +27,7 @@ from aic_video_highlight.spatial_composition.vhicraft_pipeline import (
     load_stage5_4_shard,
     validate_prediction_lines,
 )
-from aic_video_highlight.spatial_composition.submission import (
+from aic_video_highlight.composition.submission import (
     SubmissionValidationError,
     build_submission_record,
     write_predictions_jsonl,
@@ -217,7 +217,7 @@ def test_final_pipeline_manifest_binds_identities():
         model_name="Qwen/Qwen3.5-4B",
         model_revision=runner.MODEL_REVISION,
         prompt_identity="high_recall_retrieval_v0",
-        stage_identities={"stage5_4_method": "projected_state_canonical_center_ema_v1"},
+        component_identities={"stage5_4_method": "projected_state_canonical_center_ema_v1"},
         protocol_sha256="a" * 64,
         config_sha256="b" * 64,
         runner_identity=runner.RUNNER_IDENTITY,
@@ -226,7 +226,7 @@ def test_final_pipeline_manifest_binds_identities():
         environment={"name": "autodl"},
         local_model_snapshot={"revision": runner.MODEL_REVISION},
     )
-    assert manifest["schema_version"] == "aic.stage5.6-final-pipeline-manifest/v1"
+    assert manifest["schema_version"] == "aic.vhicraft.pipeline-manifest/v1"
     assert manifest["heldout_access"] == 0
     assert manifest["official_test_access"] == 0
 
@@ -277,7 +277,7 @@ def test_deterministic_serialization(tmp_path):
 
 
 def test_vhicraft_manifest_and_framework_metadata():
-    from aic_video_highlight.spatial_composition.vhicraft_pipeline import (
+    from aic_video_highlight.composition.vhicraft_pipeline import (
         FRAMEWORK_FULL_NAME,
         FRAMEWORK_NAME,
         FRAMEWORK_VERSION,

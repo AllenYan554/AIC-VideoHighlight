@@ -1,0 +1,247 @@
+{
+  "schema": "aic.stage7_8.local-spatiotemporal.v1-preregistration/v1",
+  "protocol_id": "STAGE7_8_LOCAL_SPATIOTEMPORAL_VIDEOMAE_PROTOCOL",
+  "experiment_id": "04_FTNet_LocalSpatiotemporal_VideoMAE_202610010018",
+  "record_dir": "D:\\CDUT\\硕士\\2026-09 AIC\\实验记录\\Stage7_VHiCraFTNet研发_2\\04_FTNet_LocalSpatiotemporal_VideoMAE_202610010018",
+  "cache_root": "E:\\ResearchData\\cache\\VHiCraFTNet\\FTNet_LocalSpatiotemporal_VideoMAE_202610010018",
+  "status": "PREREGISTERED_FROZEN_BEFORE_FORMAL_EXTRACTION_AND_TRAINING",
+  "scientific_question": "把 FTNet 当前的单帧 RT-DETR Visual256 替换成由局部连续视频（4s，16 帧，以每个 timestep 为中心）生成的 VideoMAE 时空表示（frozen，tokens 均值 384d）后，是否能够稳定提高 frame-level highlight ranking（pooled VALIDATION AP）？",
+  "single_variable": "VISUAL_REPRESENTATION_SOURCE",
+  "not_reopened": [
+    "Delta",
+    "Native",
+    "Ranking Loss",
+    "Balanced/Soft-F2",
+    "Binary Supervision",
+    "Global Context",
+    "PHD2 transfer",
+    "Qwen score/reason",
+    "CLIP",
+    "DINOv2",
+    "MIL",
+    "TCN block/dilation search",
+    "new loss/target search"
+  ],
+  "git_identity": {
+    "head": "de7c78449cad282c6c264fb7536d9d7997620c18",
+    "policy": "no reset/clean/stash/rebase/checkout overwrite/force push; commit=NO; push=NO"
+  },
+  "environment": {
+    "mode": "LOCAL_ONLY",
+    "autodl": "OFF",
+    "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU 8GB",
+    "torch": "2.11.0+cu130",
+    "python": "3.10",
+    "transformers": "5.17.0",
+    "online_api": false
+  },
+  "videomae_model": {
+    "repo_id": "MCG-NJU/videomae-small-finetuned-ssv2",
+    "canonical_path": "D:\\CDUT\\硕士\\2026-09 AIC\\models\\videomae-small-finetuned-ssv2",
+    "hf_cache_home": "D:\\CDUT\\硕士\\2026-09 AIC\\models\\.hf-cache",
+    "resolved_revision": "55947f6dd36aaeff50bcc796a2d93d8e3c0246ad",
+    "weight_file": "pytorch_model.bin",
+    "weight_sha256": "e3a1aa3caef3828c9c3bc3240f7d2023d037962c0952db6d702779d05bbe5e09",
+    "parameter_count": 21883776,
+    "compatibility_remap": {
+      "query.bias": "checkpoint q_bias",
+      "value.bias": "checkpoint v_bias",
+      "key.bias": "zeros (original architecture has no key bias)",
+      "note": "naive transformers 5.x from_pretrained would randomly initialize 36 QKV bias tensors"
+    },
+    "load_verification": "local_files_only=True, strict=True, 0 missing / 0 unexpected, deterministic"
+  },
+  "raw_video_identity": {
+    "videos": 154,
+    "sha_match": "154/154 vs v2 safetensors metadata source_sha256",
+    "timeline_mapping": "CFR nearest-frame (floor(t*fps+0.5)) reproduces v2 source_frame_id for 153/154",
+    "pts_exception": {
+      "video_id": "lBVAo0MpsY0",
+      "rule": "nearest PTS index from ffprobe frame PTS table",
+      "verification": "0 mismatches vs v2 source_frame_id (CFR: 1)"
+    }
+  },
+  "local_clip_contract": {
+    "window_sec": 4.0,
+    "centered": "[t - 2.0s, t + 2.0s] clamped to [0, last_frame_pts]",
+    "num_frames": 16,
+    "grid": "linspace(window_start, window_end, 16), inclusive endpoints",
+    "frame_mapping": "nearest source frame: CFR floor(t*fps+0.5) clamped to [0, n-1]; PTS-exception video uses nearest-PTS; no interpolation",
+    "edge_behavior": "clamping may repeat edge frames; duplicate fraction recorded",
+    "pooling": "VideoMAEModel last_hidden_state mean over token dimension -> 384-d",
+    "processor": "official local VideoMAEImageProcessor (PIL fallback, torchvision not installed)",
+    "encoder": "frozen, requires_grad=False, torch.inference_mode",
+    "decoder": "cv2.VideoCapture CAP_FFMPEG, single sequential pass per video, frames deduplicated"
+  },
+  "extraction_backend": {
+    "amp": "fp16",
+    "batch_clips": 8,
+    "workers": 6,
+    "storage": "visual_raw float32 [T,384] + timestamp + source_frame_id (identity with v2)",
+    "fp32_vs_fp16_evidence": {
+      "max_abs_diff_max": 0.016,
+      "mean_abs_diff_mean": 0.00064,
+      "min_cosine_min": 0.9999997,
+      "finite": true,
+      "decision": "fp16 frozen (no meaningful numerical problem)"
+    },
+    "smoke_throughput": "aggregate ~72-80 fps at 6 workers; 1080p single video ~51 fps",
+    "mixing_rule": "all 154 videos produced by this single frozen contract; mixed backend forbidden"
+  },
+  "normalization": {
+    "policy": "TRAIN-only per-dim mean/std over raw VideoMAE features",
+    "train_videos": 111,
+    "applied_at": "training load time (frozen stats file)",
+    "no_val_cal_leakage": true
+  },
+  "data_identity": {
+    "dataset": "E:\\ResearchData\\derived\\VHiCraFTNet\\YouTubeHighlights_FTNet_v2",
+    "splits": {
+      "TRAIN": 111,
+      "VALIDATION": 23,
+      "CALIBRATION": 20
+    },
+    "manifest_sha256": "ce893176b3d253b66c14c6eabf79e41a0140724f5edda8dd65a007564b97688b",
+    "normalization_stats_sha256": "cd752aa3044ed44d2bdfaa71138d7319b4de449935da56a1453f41ab3b58cb2c"
+  },
+  "arms": {
+    "V0": {
+      "definition": "frozen B0 (Round-02): RT-DETR Visual256 -> Linear(256->96)+LN+GELU -> fusion(224->128) -> 5-block TCN -> Y head",
+      "params": 154369,
+      "reuse": "reuse Round-02 local runs if identity PASS (no retraining)"
+    },
+    "V1": {
+      "definition": "frozen VideoMAE LocalVideo384 -> Linear(384->96)+LN+GELU -> same fusion(224->128) -> same 5-block TCN -> same Y head",
+      "params": 153761,
+      "new_modules": "first projection 384->96 only"
+    }
+  },
+  "training_contract": {
+    "loss": "masked soft-vote BCE (unchanged)",
+    "optimizer": "AdamW lr 3e-4 wd 1e-2 betas (0.9,0.999) eps 1e-8",
+    "scheduler": "CosineAnnealingLR T_max=40 eta_min=1e-6",
+    "epochs": 40,
+    "batch_size_videos": 4,
+    "grad_clip": 1.0,
+    "precision": "float32",
+    "deterministic": true,
+    "checkpoint": "min VALIDATION masked BCE, tie earliest"
+  },
+  "seeds": {
+    "set": [
+      20260917,
+      20260918,
+      20260919,
+      20260920,
+      20260921,
+      20260922,
+      20260923,
+      20260924
+    ],
+    "screening": [
+      20260917,
+      20260918,
+      20260919
+    ],
+    "formal_expansion": [
+      20260920,
+      20260921,
+      20260922,
+      20260923,
+      20260924
+    ]
+  },
+  "primary_metric": "pooled VALIDATION average precision (loss_mask universe, target>=0.5) via aic_video_highlight.ftnet.evaluation.average_precision",
+  "secondary_metrics": [
+    "PR-AUC",
+    "ROC-AUC",
+    "per-video AP",
+    "Precision@0.5",
+    "Recall@0.5",
+    "F1@0.5",
+    "Brier",
+    "ECE(10 bins)",
+    "masked BCE"
+  ],
+  "excluded_metrics": [
+    "event recall",
+    "short-event recall (no frozen legitimate definition)"
+  ],
+  "screening_gates": {
+    "A": "mean dAP(V1 - V0) > +0.005 over seeds 20260917-19",
+    "B": "V1 wins >= 2/3 paired seeds",
+    "C": "mean per-video AP(V1) >= mean per-video AP(V0) - 0.01",
+    "D": "no NaN/Inf/corrupted checkpoints",
+    "all_pass": "expand V1 to 8 seeds (formal); any fail -> V1 = SCREENING_NEGATIVE, stop (no other models)"
+  },
+  "formal_criteria": {
+    "mean_delta_ap": ">= +0.010",
+    "paired_wins": ">= 6/8",
+    "bootstrap": "paired bootstrap 95% CI of mean dAP lower bound > 0 (B=10000, percentile, seed 20261001)",
+    "per_video_ap": "mean per-video AP(V1) >= mean per-video AP(V0) - 0.01",
+    "anomalies": "none",
+    "else": "LOCAL_SPATIOTEMPORAL_REPRESENTATION = NOT_PROMOTED"
+  },
+  "diagnostics": [
+    "consecutive cosine distance of VideoMAE vs RT-DETR Visual256 features (descriptive only)",
+    "TRAIN/VAL feature variance and dimension collapse",
+    "per-video AP",
+    "edge duplicate frame fraction",
+    "prediction score distribution",
+    "representative cases selected by fixed rule (top3/bottom3/median3 by per-video dAP)"
+  ],
+  "figures_plan": [
+    "fig01_extraction_coverage.png",
+    "fig02_localvideo_feature_dynamics.png",
+    "fig03_screening_ap.png",
+    "fig04_paired_delta_ap.png",
+    "fig05_formal_8seed_ap.png (only if formal)",
+    "fig06_per_video_ap.png (only if formal)",
+    "fig07_training_curves.png (only if formal)",
+    "fig08_secondary_metrics.png (only if formal)",
+    "fig09_prediction_distribution.png (only if formal)",
+    "fig10_representative_timelines.png (only if formal)",
+    "fig11_final_decision.png (always)"
+  ],
+  "code_identity": {
+    "supplementary/extract_localvideo.py": "5be7c27f8b671f94206c0f980788d297698060fc7192898be3a94628f8a73f69",
+    "supplementary/videomae_encoder.py": "3c4665a618318db68718513d7e8be1aecc3b1d1ac36ccd0c2b8fb0f08f1d5215",
+    "supplementary/train_probe.py": "458ced5682fdae47fd81bbee287b97925de749de768006c7c9de6bfdb32c526d",
+    "supplementary/audit_raw_and_timeline.py": "bdf3e425b10f5b250e802ab200c816460d49aa47ddc5c7c7236c9208adc53c0b",
+    "supplementary/verify_videomae_local.py": "e626733fecf22f4079b245a24917285f4c90517cb69e2609670e1edf632ee890",
+    "supplementary/verify_preprocess_parity.py": "105635848ee7963ae2c9ea78430fc286fd2bcbbcfe4755179ce02ed34490e610",
+    "src/ftnet/local_video_representation.py": "e37e230d4193b1416805902b7f1bfcf9d3691b8e6dfd24fed4ffa1911235eff5",
+    "tests/test_ftnet_local_video_representation.py": "977e3a2e9b6e94ed873136a1162c8fd3a41dca4c0d5342e06ab8159eb81e08de"
+  },
+  "b0_reuse_identity": {
+    "required_checks": [
+      "dataset identity",
+      "split identity",
+      "target adapter",
+      "loss_mask",
+      "trainer implementation",
+      "TCN config",
+      "optimizer",
+      "scheduler",
+      "epoch",
+      "evaluator",
+      "checkpoint policy"
+    ],
+    "evidence_file": "results/b0_reuse_identity.json",
+    "rule": "all PASS -> reuse Round-02 local B0 without retraining"
+  },
+  "stopping_rules": [
+    "VideoMAE cannot be fully saved to canonical path",
+    "canonical model cannot load with local_files_only",
+    "raw 154 videos incomplete",
+    "source identity mismatch",
+    "VideoMAE output shape/architecture mismatch",
+    "timestep alignment cannot be guaranteed",
+    "TRAIN-only normalization cannot be guaranteed",
+    "B0 identity cannot be reused AND B0 reproduction fails",
+    "data leakage",
+    "requires changing scientific question"
+  ],
+  "report_path": "D:\\CDUT\\硕士\\2026-09 AIC\\实验记录\\Stage7_VHiCraFTNet研发_2\\04_FTNet_LocalSpatiotemporal_VideoMAE_202610010018\\experiment_report.md",
+  "frozen_at": "2026-10-01T12:18:59.404009"
+}

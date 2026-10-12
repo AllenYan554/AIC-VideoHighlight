@@ -10,7 +10,7 @@ from fractions import Fraction
 from pathlib import Path
 from typing import Any
 
-from aic_video_highlight.spatial_composition import (
+from aic_video_highlight.composition import (
     PTS_TABLE,
     VideoSpatialMeta,
     build_submission_record,
