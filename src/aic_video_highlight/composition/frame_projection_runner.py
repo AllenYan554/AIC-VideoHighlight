@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import sys
+from dataclasses import replace
 from fractions import Fraction
 from pathlib import Path
 from typing import Any
@@ -155,6 +156,10 @@ def run(args: argparse.Namespace) -> int:
                 pts = extract_pts_timestamps(
                     meta.video_path, ffprobe_bin=args.ffprobe_bin
                 )
+                # AIC semifinal repair: a built PTS table is authoritative for the
+                # frame count, so a stale nb_frames estimate cannot reject it.
+                if len(pts) != meta.frame_count:
+                    meta = replace(meta, frame_count=len(pts))
         timing = timing_from_metadata(meta, pts_timestamps=pts)
         projection = project_segments(
             frozen, timing, strict_beyond_end=args.strict_beyond_end

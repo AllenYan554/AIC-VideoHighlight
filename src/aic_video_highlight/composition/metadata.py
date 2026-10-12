@@ -117,21 +117,41 @@ def extract_pts_timestamps(
         "json",
         str(path),
     ]
-    payload = _run_ffprobe(command, path, timeout_sec)
-    frames = payload.get("frames") or []
-    timestamps: list[Fraction] = []
-    for frame in frames:
-        if not isinstance(frame, dict):
-            continue
-        raw = frame.get("pts_time")
-        if raw in (None, "N/A"):
-            raise VideoMetadataProbeError(
-                f"frame without pts_time in {path}; PTS_TABLE mode unavailable"
-            )
-        timestamps.append(Fraction(str(raw)))
-    if not timestamps:
-        raise VideoMetadataProbeError(f"ffprobe returned no frame timestamps for {path}")
-    return tuple(timestamps)
+    def _read_field(field: str) -> tuple[Fraction, ...]:
+        field_command = [
+            ffprobe_bin,
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            f"frame={field}",
+            "-of",
+            "json",
+            str(path),
+        ]
+        field_payload = _run_ffprobe(field_command, path, timeout_sec)
+        field_frames = field_payload.get("frames") or []
+        values: list[Fraction] = []
+        for frame in field_frames:
+            if not isinstance(frame, dict):
+                continue
+            raw = frame.get(field)
+            if raw in (None, "N/A"):
+                raise VideoMetadataProbeError(f"frame without {field} in {path}")
+            values.append(Fraction(str(raw)))
+        if not values:
+            raise VideoMetadataProbeError(f"ffprobe returned no frame timestamps for {path}")
+        return tuple(values)
+
+    # AIC semifinal repair: per-frame ``pts_time`` is authoritative; containers
+    # that expose no per-frame ``pts_time`` use the documented
+    # ``best_effort_timestamp_time`` fallback (same rule as
+    # ``aic_video_highlight.ftnet.index.extract_pts_with_fallback``).
+    try:
+        return _read_field("pts_time")
+    except VideoMetadataProbeError:
+        return _read_field("best_effort_timestamp_time")
 
 
 def probe_spatial_meta(
