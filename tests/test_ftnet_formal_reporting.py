@@ -304,7 +304,10 @@ def test_windows_environment_separates_data_runtime_and_archive_paths() -> None:
             encoding="utf-8"
         )
     )
+    # YouTubeHighlights_FTNet_v1 is the frozen dataset directory name.
+    # MANIFEST.json records previous_name youtube_highlights_ftnet,
+    # renamed 2026-09-25 to the DATASET_TASK_VERSION convention.
     assert formal_config["output_root"] == {
         "base": "derived",
-        "path": "VHiCraFTNet/youtube_highlights_ftnet",
+        "path": "VHiCraFTNet/YouTubeHighlights_FTNet_v1",
     }
