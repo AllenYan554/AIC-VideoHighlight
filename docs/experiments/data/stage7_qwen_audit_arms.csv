@@ -1,0 +1,6 @@
+arm_id,execution,video_count,chunk_count,summed_video_wall_s,seconds_per_chunk,chunks_per_second,chunk_render_s,client_request_s,prompt_tokens,completion_tokens,non_primary_attempts,qwen_service_load_s
+bench32_p,render_lookahead,32,426,2268.303,5.3247,0.187806,1375.014,2159.277,3112410,115901,1,116.1
+c1_a,serial_c1,8,114,1083.791,9.5069,0.105186,473.008,609.436,909514,30341,0,104.1
+c1_b,serial_c1,8,114,999.711,8.7694,0.114033,373.228,625.071,909514,30341,0,120.2
+c1_c,serial_c1,8,114,996.306,8.7395,0.114423,387.825,607.269,909514,30341,0,126.1
+c1_p,render_lookahead,8,114,655.6,5.7509,0.173886,501.892,607.557,909514,30341,0,118.1

@@ -1,0 +1,268 @@
+{
+  "schema": "aic.stage7_5.bottleneck-attribution.v1-preregistration/v1",
+  "protocol_id": "FTNET_BOTTLENECK_ATTRIBUTION_V1_PROTOCOL",
+  "experiment_id": "02_FTNet_Bottleneck_Attribution_202609300106",
+  "record_root": "D:\\CDUT\\硕士\\2026-09 AIC\\实验记录\\Stage7_VHiCraFTNet研发_2",
+  "record_dir": "D:\\CDUT\\硕士\\2026-09 AIC\\实验记录\\Stage7_VHiCraFTNet研发_2\\02_FTNet_Bottleneck_Attribution_202609300106",
+  "cache_root": "E:\\ResearchData\\cache\\VHiCraFTNet\\FTNet_Bottleneck_Attribution_202609300106",
+  "status": "PREREGISTERED_FROZEN_BEFORE_ANY_TRAINING",
+  "scientific_question": "在当前 Visual-only FTNet (B0-v2) 上，系统区分三类候选瓶颈：Temporal Backbone (TCN) / Supervision Granularity (clip->frame broadcast) / Visual Representation (RT-DETR GAP Visual256)；不新增 branch/loss/semantic feature。",
+  "prior_negative_directions_not_reopened": [
+    "Delta (NEGATIVE)",
+    "Native (NOT_ESTABLISHED)",
+    "Ranking Loss (NEGATIVE)",
+    "Global Context (NEGATIVE)",
+    "Binary Supervision (NEGATIVE)",
+    "PHD2 direct transfer (NEGATIVE)",
+    "Semantic score/reason concat (NEGATIVE)",
+    "dilation / long receptive field (STRONGLY SUPPORTED)",
+    "5 vs 6 blocks (STATISTICALLY UNRESOLVED)"
+  ],
+  "git_identity": {
+    "branch": "feat/stage7-ftnet",
+    "head": "de7c78449cad282c6c264fb7536d9d7997620c18",
+    "policy": "no reset/clean/stash/rebase/checkout overwrite/force push; commit=NO; push=NO; pre-existing dirty worktree must not be cleaned"
+  },
+  "environment": {
+    "mode": "LOCAL_ONLY",
+    "autodl": "OFF (forbidden this round)",
+    "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU 8GB",
+    "python": "3.10",
+    "torch": "2.11.0+cu130",
+    "amp": false,
+    "batch_size_videos": 4,
+    "num_workers": 0,
+    "online_api": false,
+    "external_downloads": {
+      "allowed": "small public reproducible frozen encoders",
+      "recorded": true,
+      "endpoint": "https://hf-mirror.com"
+    }
+  },
+  "data_identity": {
+    "primary_dataset": "E:\\ResearchData\\derived\\VHiCraFTNet\\YouTubeHighlights_FTNet_v2",
+    "splits": {"TRAIN": 111, "VALIDATION": 23, "CALIBRATION": 20},
+    "sha256": {
+      "manifests/materialized_videos.json": "ce893176b3d253b66c14c6eabf79e41a0140724f5edda8dd65a007564b97688b",
+      "normalization/normalization_stats.json": "cd752aa3044ed44d2bdfaa71138d7319b4de449935da56a1453f41ab3b58cb2c",
+      "audits/integrity_report.json": "ef47086308b34022849988a9e8a7922365053e32a03298f47fedd38a4b7ede06",
+      "audits/native_feature_audit.json": "8099c84c0724a26eb6a42f4eb5995d10c5b958168cf51b303bf518f7b975aff4"
+    },
+    "v1_legacy": "E:\\ResearchData\\derived\\VHiCraFTNet\\YouTubeHighlights_FTNet_v1 (historical reference only; NOT primary; never modified)",
+    "raw_videos": "E:\\ResearchData\\datasets\\youtube_highlights\\raw (read-only; per-video source_sha256 verified against v2 safetensors metadata before any frame decode)",
+    "mturk_annotations": "E:\\ResearchData\\datasets\\youtube_highlights\\annotations\\upstream_repo (read-only)",
+    "official_test": "NOT accessed",
+    "no_modification": "v2/v1 original files are read-only this round; new features go to the new independent cache root"
+  },
+  "b0_reference_v2": {
+    "source_experiment": "01_FTNet_SemanticConditioning_FullRerun_202609291411 (arm B0, semantic_mode=off)",
+    "source_files_sha256": {
+      "results/v2_arm_summary.csv": "60588fa66e9d0967b183f40169b9c0db0d49393a4079f41c7455a0d106087f84",
+      "results/v2_formal_analysis.json": "3224e4dc7d96c1a19be287e3b26eec9273af91566d4d01ece0348cda441b797f",
+      "results/v2_SHA256SUMS_data.txt": "f2135e9c7391391dcb3bc806c2b87a0f714d172ef7136d6a54ca0942c276e5ae"
+    },
+    "per_seed_ap": {
+      "20260917": 0.411402,
+      "20260918": 0.438852,
+      "20260919": 0.427120,
+      "20260920": 0.430060,
+      "20260921": 0.455714,
+      "20260922": 0.417348,
+      "20260923": 0.429235,
+      "20260924": 0.469036
+    },
+    "mean_ap_8_seed": 0.434846,
+    "std_ap_8_seed": 0.019237,
+    "pr_auc_mean": 0.430019,
+    "roc_auc_mean": 0.979400,
+    "f1_mean": 0.379562,
+    "per_video_ap_mean": 0.525766,
+    "brier_mean": 0.008968,
+    "ece_mean": 0.022901
+  },
+  "primary_metric": {
+    "name": "pooled VALIDATION average precision (AP)",
+    "definition": "concat over 23 VALIDATION videos: y_t = (target_t >= 0.5) on loss_mask universe; p_t = model probability; AP via aic_video_highlight.ftnet.evaluation.average_precision (step-wise, tie-safe)",
+    "checkpoint_policy": "min VALIDATION masked soft BCE (frame-level, identical to B0-v2); tie -> earliest epoch"
+  },
+  "secondary_metrics": [
+    "PR-AUC",
+    "ROC-AUC",
+    "per-video AP (mean/median)",
+    "Precision@0.5",
+    "Recall@0.5",
+    "F1@0.5",
+    "Brier",
+    "ECE (10 bins)",
+    "positive/negative/ambiguous score means",
+    "score separation"
+  ],
+  "excluded_metrics": {
+    "event_recall": "NOT reported this round: available definition is a derived MTurk-clip proxy, not legitimate human event GT (see exp-01 report caveat); pseudo event recall will not be produced",
+    "short_event_recall": "NOT reported (same reason)"
+  },
+  "seeds": {
+    "set": [20260917, 20260918, 20260919, 20260920, 20260921, 20260922, 20260923, 20260924],
+    "screening_subset": [20260917, 20260918, 20260919],
+    "expansion_order": [20260920, 20260921, 20260922, 20260923, 20260924],
+    "staging_rule": "Screening (3 seeds) results are labelled SCREENING and are never formal conclusions. Promotion decisions use the pre-frozen gates below. B0 and A1 are pre-registered for all 8 seeds unconditionally (B0 = reproduction baseline; A1 = single primary arm of Probe A; neither is a result-dependent selection)."
+  },
+  "model_contract": {
+    "b0_architecture": {
+      "class": "aic_video_highlight.ftnet.semantic_conditioning.SemanticConditionedFTNet (semantic_mode='off', reason_vector_dim=384)",
+      "config": {
+        "visual_dim": 256,
+        "branch_dim": 96,
+        "native_dim": 16,
+        "native_branch_dim": 32,
+        "temporal_channels": 128,
+        "temporal_kernel_size": 5,
+        "temporal_dilations": [1, 2, 4, 8, 16],
+        "dropout": 0.1,
+        "use_delta": true
+      },
+      "forward": "[visual_projected(96) | zero(96) | zero(32)] -> fusion(224->128) -> 5-block dilated TCN -> Y head",
+      "parameter_count_verified": 154369,
+      "identity": "bitwise-identical to the AutoDL B0-v2 forward (semantic slots are literal zeros)"
+    },
+    "a1_architecture": {
+      "class": "same as B0 with temporal_kernel_size=1",
+      "forward": "identical module structure; every block is frame-independent (receptive field = 1 timestep); no TCN/GRU/attention/cross-timestep pooling exists",
+      "parameter_count_verified": 151809,
+      "invariance_evidence": "changing one timestep's input changes only that timestep's output (verified numerically in tests/test_ftnet_bottleneck_probes.py)"
+    },
+    "c_architecture": {
+      "class": "aic_video_highlight.ftnet.visual_representation.VisualRepresentationFTNet",
+      "forward": "[T, D] -> Linear(D->96)+LayerNorm(96)+GELU -> Linear(96->128)+GELU -> same 5-block dilated TCN (k=5, dilations 1..16, dropout 0.1) -> Y head",
+      "note": "structurally mirrors B0's visual pathway (256->96->128 via the 224-wide fusion with dead slots); the only change is the input representation and its first projection",
+      "input_dims": {"C1": 512, "C2": 384},
+      "parameter_count": {"C1_d512": "to be recorded in freeze_evidence", "C2_d384": "to be recorded in freeze_evidence"}
+    },
+    "frozen_modules": "no Q head; no new losses beyond prereg; no semantic inputs; no native inputs"
+  },
+  "training_contract": {
+    "loss_b0_a1_c": "masked_binary_cross_entropy (soft_vote target, frame-level) - unchanged from B0-v2",
+    "optimizer": "AdamW lr 3e-4 wd 1e-2 betas (0.9,0.999) eps 1e-8",
+    "scheduler": "CosineAnnealingLR T_max=40 eta_min=1e-6 warmup 0",
+    "epochs": 40,
+    "batch_size_videos": 4,
+    "grad_clip": 1.0,
+    "precision": "float32 (AMP OFF)",
+    "deterministic": "torch.use_deterministic_algorithms(True, warn_only=True); cudnn deterministic; fixed seeds",
+    "checkpoint": "best = min VALIDATION masked soft BCE (tie earliest); last.pt always saved; canonical resume supported",
+    "train_only_normalization": "visual256 unchanged from v2; C1/C2 caches store TRAIN-only per-dim standardized features (stats frozen in cache manifests)",
+    "uniformity": "all arms share optimizer/scheduler/epoch budget/batch/checkpoint policy/evaluator; only the preregistered variable differs"
+  },
+  "probe_a_temporal": {
+    "arms": {"A0": "B0 (current 5-block dilated TCN)", "A1": "frame-independent (temporal_kernel_size=1)"},
+    "design": "paired same-seed comparison; identical data/Y/BCE/optimizer/epochs/evaluator",
+    "primary": "paired delta AP(A1 - A0) over 8 seeds",
+    "disposition_rules_8_seed": {
+      "STRONG": "mean dAP <= -0.010 AND A0 wins >= 6/8",
+      "MODERATE": "mean dAP <= -0.005 AND A0 wins >= 5/8 (and not STRONG)",
+      "WEAK": "|mean dAP| < 0.005 AND max(wins_A0, wins_A1) <= 5/8",
+      "INCONCLUSIVE": "otherwise"
+    }
+  },
+  "probe_b_supervision": {
+    "audit_required_before_mil": "audit_annotation_granularity.py must verify (a) exact clip -> sampled-frame mapping, (b) >50% of supervised frames are covered by >=2 overlapping windows (broadcast/aggregation evidence), (c) target recomputation matches the frozen adapter, (d) zero failures; otherwise MIL is NOT RUN (STOP condition)",
+    "bag_definition": "one MTurk annotation unit (mturk_label.json window) = one bag; members = sampled frames with source_frame_id in [start_frame, end_frame) AND loss_mask=1; bag target = vote / 5.0; bags with zero members are excluded (no fabricated supervision)",
+    "isolation": "aggregation only within one bag; never across video/candidate/split",
+    "aggregators": {
+      "B1a": "mean of p_t over members",
+      "B1b": "top-k mean, k = max(1, ceil(0.25 * |members|))",
+      "B1c": "log-sum-exp on probabilities, tau = 0.25"
+    },
+    "loss": "equal-weight mean over bags of BCE(clamp(agg, 1e-6, 1-1e-6), bag_target); no frame-level broadcast loss inside MIL arms",
+    "eval": "same frame-level p_t output and same VALIDATION AP evaluator",
+    "screening": "B1a/B1b/B1c x 3 seeds (17-19)",
+    "promotion_gate_3seed": "best MIL arm by 3-seed mean AP; promote at most 1 if mean dAP vs local B0(3seed) > +0.005 AND wins >= 2/3 AND per-video AP mean >= B0 - 0.005 AND no NaN/Inf/anomaly",
+    "formal_gate_8seed": {
+      "POSITIVE": "mean dAP >= +0.005 AND wins >= 5/8 AND per-video AP >= B0 - 0.005 AND no anomalies",
+      "NEGATIVE": "mean dAP <= 0 OR wins <= 4/8",
+      "INCONCLUSIVE": "0 < mean dAP < +0.005, or not promoted (screening only), or anomalies"
+    }
+  },
+  "probe_c_representation": {
+    "c0": "B0-v2 RT-DETR r50vd hybrid-encoder level-0 GAP Visual256 (frozen v2 features; unchanged)",
+    "c1": {
+      "model_id": "openai/clip-vit-base-patch32",
+      "revision": "3d74acf9a28c67741b2f4f2ea7635f0aaf6f0268",
+      "weights_file": "pytorch_model.bin",
+      "weights_sha256": "a63082132ba4f97a80bea76823f544493bffa8082296d62d71581a4feff1576f",
+      "feature": "CLIP vision pooled+projected image embedding, 512d, frozen, fp32 forward"
+    },
+    "c2": {
+      "model_id": "facebook/dinov2-small",
+      "revision": "ed25f3a31f01632728cabb09d1542f84ab7b0056",
+      "weights_file": "model.safetensors",
+      "weights_sha256_prefix": "ae1e99fcefd534ed (recorded in full in cache provenance)",
+      "feature": "DINOv2 CLS embedding, 384d, frozen, fp32 forward"
+    },
+    "extraction": {
+      "frames": "exact v2 source_frame_id of each video decoded from the local raw mp4 whose sha256 equals the v2 metadata source_sha256",
+      "preprocess": "each model's official HF image processor",
+      "standardization": "TRAIN-only per-dim mean/std computed on TRAIN sampled frames, frozen, applied before fp16 storage",
+      "cache_layout": "cache_root/representations/<name>/{train,validation,calibration}/<video_id>.safetensors (new independent files; v2 never modified)",
+      "identity": "per-video T/source_frame_id/timestamp must match v2 exactly; mismatch = STOP"
+    },
+    "screening_promotion_gate_3seed": "same structure as Probe B: best of C1/C2, mean dAP > +0.005 AND wins >= 2/3 AND per-video AP >= C0 - 0.005 AND no anomalies; at most 1 promoted",
+    "formal_gate_8seed": "same POSITIVE/NEGATIVE/INCONCLUSIVE structure as Probe B",
+    "c3_exploratory": "NOT RUN (no locally feasible lightweight video encoder justified; priority is a clean C0/C1/C2 comparison)"
+  },
+  "cross_probe_attribution": {
+    "precedence": [
+      "DUAL_BOTTLENECK: supervision POSITIVE AND representation POSITIVE",
+      "REPRESENTATION_BOTTLENECK: representation POSITIVE (supervision not POSITIVE)",
+      "SUPERVISION_GRANULARITY_BOTTLENECK: supervision POSITIVE (representation not POSITIVE)",
+      "TEMPORAL_BACKBONE_CONTRIBUTION_WEAK (CASE 4): temporal result = WEAK and no positive above",
+      "CURRENT_DATA_TASK_DEFINITION_BOTTLENECK_POSSIBLE (CASE 5): none of the above"
+    ],
+    "combination_arm": "runs ONLY if both a supervision and a representation candidate pass the formal 8-seed gate; then one confirmatory combination arm BestRepresentation+BestMIL+CurrentTCN (8 seeds, same contract); not iterated after seeing its result"
+  },
+  "gates": {
+    "b0_reproduction": {
+      "PASS": "|mean local 8-seed AP - 0.434846| <= 0.020 AND every seed |AP_seed - reference_seed| <= 0.060 AND no NaN/Inf AND local param count = 154369 AND data identity SHAs unchanged",
+      "FAIL": "otherwise -> STOP all probes"
+    },
+    "no_silent_drift": "data files, split composition (111/23/20), loss_mask semantics and evaluator function are byte/semantics frozen before training and never changed after seeing results"
+  },
+  "statistics": {
+    "primary": "per-seed AP; mean; median; std; paired dAP vs B0; paired wins",
+    "secondary": "PR-AUC/ROC-AUC/per-video AP/Precision/Recall/F1/Brier/ECE means",
+    "rules": "no best-seed-only claims; screening always labelled; 8-seed required for promotion/rejection conclusions"
+  },
+  "figures_plan": [
+    "fig01_bottleneck_overview.png (A/B/C mean AP)",
+    "fig02_temporal_probe.png",
+    "fig03_supervision_probe.png",
+    "fig04_representation_probe.png",
+    "fig05_per_seed_ap.png (formal arms)",
+    "fig06_paired_delta.png",
+    "fig07_training_curves.png",
+    "fig08_per_video_ap.png",
+    "fig09_calibration.png",
+    "fig10_final_attribution.png"
+  ],
+  "report_path": "D:\\CDUT\\硕士\\2026-09 AIC\\实验记录\\Stage7_VHiCraFTNet研发_2\\02_FTNet_Bottleneck_Attribution_202609300106\\experiment_report.md",
+  "boundaries": {
+    "qvhighlights": "NOT used",
+    "phd2": "NOT used as variable",
+    "audio_face_qwen_official_test": "NOT used",
+    "new_branch_loss_sweep": "NOT allowed beyond prereg",
+    "old_records": "read-only; never overwritten",
+    "commit_push": "NO"
+  },
+  "stopping_rules": [
+    "B0 cannot be reproduced within tolerance",
+    "v2 data corrupted or split changed",
+    "annotation provenance cannot be proven -> MIL NOT RUN",
+    "local GPU cannot run the minimal representation candidate",
+    "features cannot be aligned to v2 timestamps/source_frame_id",
+    "label leakage detected",
+    "would require changing the research question or gates post-hoc",
+    "would require official test access or dangerous git operations",
+    "would require overwriting old experiment data (STOP)"
+  ],
+  "frozen_at": "2026-09-30T01:35:00+08:00"
+}

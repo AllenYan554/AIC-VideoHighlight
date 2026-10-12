@@ -1,0 +1,301 @@
+{
+  "schema": "aic.stage7_9.temporal-preserving.v1-preregistration/v1",
+  "protocol_id": "STAGE7_9_TEMPORAL_PRESERVING_VIDEOMAE_PROTOCOL",
+  "experiment_id": "05_FTNet_TemporalPreserving_VideoMAE_202610011437",
+  "record_dir": "D:\\CDUT\\硕士\\2026-09 AIC\\实验记录\\Stage7_VHiCraFTNet研发_2\\05_FTNet_TemporalPreserving_VideoMAE_202610011437",
+  "cache_root": "E:\\ResearchData\\cache\\VHiCraFTNet\\FTNet_TemporalPreserving_VideoMAE_202610011437",
+  "status": "PREREGISTERED_FROZEN_BEFORE_ANY_V2_TRAINING",
+  "part_a_correction": {
+    "file": "D:\\CDUT\\硕士\\2026-09 AIC\\实验记录\\Stage7_VHiCraFTNet研发_2\\04_FTNet_LocalSpatiotemporal_VideoMAE_202610010018\\experiment_report.md",
+    "correction_log": "D:\\CDUT\\硕士\\2026-09 AIC\\实验记录\\Stage7_VHiCraFTNet研发_2\\04_FTNet_LocalSpatiotemporal_VideoMAE_202610010018\\report_correction_log.md",
+    "report_sha256_before": "5eb2d0774dd2e8905a0ece72a2fa87748a1d9246205955983d47e029e6ab272d",
+    "report_sha256_after": "fcf513a63a4cfd91e5d6982ae75b494bd5c72fd4dcc7b0346308f5c4ec9cfa93",
+    "result_changed": false
+  },
+  "scientific_question": "Stage 7.8 的 VideoMAE 失败，是否主要因为把完整时空 token 全部 global mean，从而把局部 temporal localization 信息平均掉了？",
+  "single_variable": "VIDEOMAE TOKEN POOLING / TEMPORAL LOCALIZATION",
+  "not_this_round": [
+    "model search",
+    "VideoMAE tuning",
+    "pooling sweep",
+    "checkpoint-policy search",
+    "window length search",
+    "frame count search",
+    "new backbone",
+    "new loss",
+    "new target"
+  ],
+  "git_identity": {
+    "head": "de7c78449cad282c6c264fb7536d9d7997620c18",
+    "policy": "no reset/clean/stash/rebase/checkout overwrite/force push; commit=NO; push=NO"
+  },
+  "environment": {
+    "mode": "LOCAL_ONLY",
+    "autodl": "OFF",
+    "gpu": "RTX 4060 Laptop 8GB",
+    "torch": "2.11.0+cu130",
+    "python": "3.10",
+    "transformers": "5.17.0"
+  },
+  "videomae_model": {
+    "repo_id": "MCG-NJU/videomae-small-finetuned-ssv2",
+    "canonical_path": "D:\\CDUT\\硕士\\2026-09 AIC\\models\\videomae-small-finetuned-ssv2",
+    "resolved_revision": "55947f6dd36aaeff50bcc796a2d93d8e3c0246ad",
+    "weight_file": "pytorch_model.bin",
+    "weight_sha256": "e3a1aa3caef3828c9c3bc3240f7d2023d037962c0952db6d702779d05bbe5e09",
+    "loader": "Stage 7.8 deterministic q_bias/v_bias remap (local_files_only=True), unchanged",
+    "config": {
+      "num_frames": 16,
+      "tubelet_size": 2,
+      "image_size": 224,
+      "patch_size": 16,
+      "hidden_size": 384
+    }
+  },
+  "token_ordering_verification": {
+    "gate": "PASS",
+    "source_file": "C:\\Users\\lenovo\\AppData\\Local\\Programs\\Python\\Python310\\Lib\\site-packages\\transformers\\models\\videomae\\modeling_videomae.py",
+    "num_patches_formula_lines": [
+      152,
+      154
+    ],
+    "permute_line": 175,
+    "flatten_transpose_line": 176,
+    "interpretation": "Conv3d output [B, C, T', H', W']; flatten(2) flattens (T', H', W') in C-order, then transpose(1,2) -> [B, T'*H'*W', C] with sequence index = t'*(H'*W') + h'*W' + w'. Position embeddings use the same ordering, so last_hidden_state keeps t-major order.",
+    "temporal_tokens": 8,
+    "spatial_tokens": 196,
+    "sequence_length": 1568,
+    "roundtrip_exact": true,
+    "index_map_identity": true,
+    "perturbation_tests": {
+      "early_frames_0_3": {
+        "top2_slices": [
+          0,
+          1
+        ],
+        "expected_slices": [
+          0,
+          1
+        ],
+        "top2_matches_expected": true,
+        "expected_over_others_ratio": 2.511717805976831
+      },
+      "late_frames_12_15": {
+        "top2_slices": [
+          6,
+          7
+        ],
+        "expected_slices": [
+          6,
+          7
+        ],
+        "top2_matches_expected": true,
+        "expected_over_others_ratio": 1.7140854413413957
+      },
+      "center_frames_6_9": {
+        "top2_slices": [
+          3,
+          4
+        ],
+        "expected_slices": [
+          3,
+          4
+        ],
+        "top2_matches_expected": true,
+        "expected_over_others_ratio": 1.877314205364748
+      }
+    }
+  },
+  "center_pooling_cross_check": {
+    "schema": "aic.stage7_9.center-pooling-cross-check/v1",
+    "video_id": "vVmGisWK0QI",
+    "max_abs_diff_fast_vs_reference": 0.0,
+    "allclose_1e-6": true,
+    "center_vs_global_mean_l2": 15.265164375305176,
+    "center_differs_from_global": true
+  },
+  "local_clip_contract": {
+    "window_sec": 4.0,
+    "centered": "[t - 2.0s, t + 2.0s] clamped to [0, last_frame_pts]",
+    "num_frames": 16,
+    "grid": "linspace(window_start, window_end, 16), inclusive endpoints",
+    "frame_mapping": "CFR nearest frame floor(t*fps+0.5); nearest-PTS for lBVAo0MpsY0; no interpolation",
+    "processor": "official local VideoMAEImageProcessor (PIL backend), identical to Stage 7.8",
+    "encoder": "frozen, inference_mode, requires_grad=False",
+    "decoder": "cv2 CAP_FFMPEG sequential, deduplicated frames, identical to Stage 7.8",
+    "source": "Stage 7.8 contract reused unchanged; only the pooling differs"
+  },
+  "v2_representation": {
+    "name": "CENTER_TEMPORAL",
+    "definition": "last_hidden_state [B,1568,384] -> verified t-major reshape [B,8,196,384] -> mean over 196 spatial tokens -> [B,8,384] -> center_feature = 0.5 * temporal[:,3,:] + 0.5 * temporal[:,4,:] -> [B,384]",
+    "center_indices": [
+      3,
+      4
+    ],
+    "why": "4s/16f with tubelet=2 gives 8 temporal units; the clip center timestep is at the geometric center, which for even count lies between temporal index 3 and 4. mean(index3, index4) is symmetric, deterministic, label-free, result-free, parameter-free, and preserves center-local information better than global temporal mean.",
+    "no_alternatives": "index 4 only / 2-3-4-5 / max / attention / weighted pooling are all forbidden"
+  },
+  "extraction_backend": {
+    "amp": "fp16",
+    "batch_clips": 8,
+    "workers": 6,
+    "storage": "visual_raw float32 [T,384] + timestamp + source_frame_id",
+    "identity": "T / timestamp / source_frame_id must equal v2 exactly",
+    "mixing_rule": "all 154 videos by this single frozen contract"
+  },
+  "normalization": {
+    "policy": "TRAIN-only per-dim mean/std over CENTER_TEMPORAL features",
+    "train_videos": 111,
+    "no_reuse": "Stage 7.8 global-mean stats are NOT reused",
+    "no_val_cal_leakage": true
+  },
+  "data_identity": {
+    "dataset": "E:\\ResearchData\\derived\\VHiCraFTNet\\YouTubeHighlights_FTNet_v2",
+    "splits": {
+      "TRAIN": 111,
+      "VALIDATION": 23,
+      "CALIBRATION": 20
+    },
+    "manifest_sha256": "ce893176b3d253b66c14c6eabf79e41a0140724f5edda8dd65a007564b97688b",
+    "normalization_stats_sha256": "cd752aa3044ed44d2bdfaa71138d7319b4de449935da56a1453f41ab3b58cb2c"
+  },
+  "arms": {
+    "V0": {
+      "definition": "frozen RT-DETR Visual256 baseline (Round-02 B0, reused; no retraining)",
+      "params": 154369
+    },
+    "V1": {
+      "definition": "Stage 7.8 VideoMAE global spatiotemporal mean 384d (reused; frozen negative control)",
+      "params": 153761,
+      "stage78_screening_ap": [
+        0.372337,
+        0.261892,
+        0.301841
+      ]
+    },
+    "V2": {
+      "definition": "VideoMAE CENTER_TEMPORAL 384d -> Linear(384,96)+LN+GELU -> same fusion(224->128) -> same 5-block dilated TCN -> same Y head",
+      "params": 153761,
+      "new_training": true
+    }
+  },
+  "training_contract": {
+    "loss": "masked soft-vote BCE",
+    "optimizer": "AdamW lr 3e-4 wd 1e-2 betas (0.9,0.999) eps 1e-8",
+    "scheduler": "CosineAnnealingLR T_max=40 eta_min=1e-6",
+    "epochs": 40,
+    "batch_size_videos": 4,
+    "grad_clip": 1.0,
+    "precision": "float32",
+    "checkpoint": "min VALIDATION masked BCE, tie earliest (FROZEN; no policy research)",
+    "oracle_ap": "max-in-training val AP may be recorded as a diagnostic only; never used for promotion"
+  },
+  "seeds": {
+    "set": [
+      20260917,
+      20260918,
+      20260919,
+      20260920,
+      20260921,
+      20260922,
+      20260923,
+      20260924
+    ],
+    "screening": [
+      20260917,
+      20260918,
+      20260919
+    ],
+    "formal_expansion": [
+      20260920,
+      20260921,
+      20260922,
+      20260923,
+      20260924
+    ]
+  },
+  "primary_metric": "pooled VALIDATION AP (loss_mask, target>=0.5) via aic_video_highlight.ftnet.evaluation.average_precision",
+  "secondary_metrics": [
+    "PR-AUC",
+    "ROC-AUC",
+    "per-video AP",
+    "Precision@0.5",
+    "Recall@0.5",
+    "F1@0.5",
+    "Brier",
+    "ECE(10)",
+    "masked BCE"
+  ],
+  "screening_gates": {
+    "A": "mean dAP(V2 - V0) > +0.005 over seeds 20260917-19",
+    "B": "V2 wins >= 2/3 paired seeds vs V0",
+    "C": "mean per-video AP(V2) >= mean per-video AP(V0) - 0.01",
+    "D": "no NaN/Inf/corrupted checkpoints",
+    "all_pass": "expand V2 to 8 seeds; any fail -> SCREENING_NEGATIVE (no other pooling added)"
+  },
+  "mechanism_rescue": {
+    "definition": "mean AP(V2) - mean AP(V1) over the same seeds (screening)",
+    "decision_rules": {
+      "M1": "V2 ~= V1 (|dAP| small, wins ~= 1/3) -> POOLING_MECHANISM_RESULT = NOT_SUPPORTED",
+      "M2": "V2 clearly > V1 but still < V0 -> PARTIAL",
+      "M3": "V2 > V0 and passes formal gate -> SUPPORTED",
+      "noise": "cannot adjudicate -> INCONCLUSIVE"
+    },
+    "not_a_promotion_gate": true
+  },
+  "formal_criteria": {
+    "mean_delta_ap": ">= +0.010",
+    "paired_wins": ">= 6/8",
+    "bootstrap": "paired bootstrap 95% CI of mean dAP lower bound > 0 (B=10000, seed 20261001)",
+    "per_video_ap": "mean per-video AP(V2) >= mean per-video AP(V0) - 0.01",
+    "anomalies": "none",
+    "else": "NOT_PROMOTED"
+  },
+  "diagnostics": [
+    "V0/V1/V2 consecutive timestep cosine distance",
+    "feature std/variance",
+    "effective rank / PCA explained variance",
+    "positive vs negative feature-distance profile (descriptive only)",
+    "prediction separation mean(pred pos) - mean(pred neg)",
+    "training dynamics: best-BCE epoch, max-AP epoch, overfitting onset",
+    "representative cases by frozen rule (top3/bottom3/nearest-median3 by dAP(V2-V0); plus top-3 rescue by dAP(V2-V1); dedup)"
+  ],
+  "figures_plan": [
+    "fig01_token_ordering_verification.png",
+    "fig02_feature_dynamics.png",
+    "fig03_screening_ap.png",
+    "fig04_paired_v2_vs_v0.png",
+    "fig05_v2_rescue_vs_v1.png",
+    "fig06_training_curves.png",
+    "fig07_prediction_separation.png",
+    "fig08_per_video_delta.png",
+    "fig09_representative_timelines.png",
+    "fig10_final_decision.png"
+  ],
+  "code_identity": {
+    "supplementary/common.py": "dcaa116ee9b8ea38d63204f9687134d8b0d8fa230be48d95f198476a59dd63e7",
+    "supplementary/videomae_encoder.py": "3c4665a618318db68718513d7e8be1aecc3b1d1ac36ccd0c2b8fb0f08f1d5215",
+    "supplementary/extract_localvideo.py": "ba81a5bcf1e6b5813530ed172623c0efebdfe91568ecfa9019c5e76060f224c0",
+    "supplementary/verify_token_ordering.py": "1db1845db9b7e200f587cd6c181824ea936bab11ed58de6f3d724b2c85e3378f",
+    "supplementary/verify_center_pooling.py": "f1980b8b55e6c18e0dc109d3903cd55418d4ecfd0c05bb511c8cb7eb8d75e5c4",
+    "supplementary/train_probe.py": "458ced5682fdae47fd81bbee287b97925de749de768006c7c9de6bfdb32c526d",
+    "supplementary/reuse_identity.py": "1ea1af57ee259b1cfc5bac8b7542dde7201086e7e143c41b31c69a168d759470",
+    "src/ftnet/local_video_representation.py": "e37e230d4193b1416805902b7f1bfcf9d3691b8e6dfd24fed4ffa1911235eff5"
+  },
+  "b0_v1_reuse_identity": true,
+  "stopping_rules": [
+    "token ordering cannot be proven from implementation",
+    "reshape roundtrip not exact",
+    "temporal perturbation does not support expected ordering",
+    "Stage 7.8 V1 artifacts corrupted/inconsistent",
+    "V0 identity mismatch",
+    "model SHA/revision changed",
+    "raw/v2 identity changed",
+    "timestep alignment fails",
+    "TRAIN-only normalization cannot be guaranteed",
+    "split leakage",
+    "requires changing the scientific question"
+  ],
+  "report_path": "D:\\CDUT\\硕士\\2026-09 AIC\\实验记录\\Stage7_VHiCraFTNet研发_2\\05_FTNet_TemporalPreserving_VideoMAE_202610011437\\experiment_report.md",
+  "frozen_at": "2026-10-01T14:55:13.768353"
+}
