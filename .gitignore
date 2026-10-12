@@ -1,8 +1,11 @@
+﻿# ---- Python / tooling caches ----
 __pycache__/
 *.py[cod]
 *.egg-info/
 .pytest_cache/
 .ipynb_checkpoints/
+.mypy_cache/
+.ruff_cache/
 .venv/
 venv/
 .env
@@ -10,27 +13,42 @@ venv/
 .idea/
 .vscode/
 
+# ---- local tooling scaffolding (empty, non-source) ----
+.codex-build/
+.codex-finalizer/
+.codex-validated/
+
+# ---- presentation / delivery artifacts (large binaries, not research source) ----
+artifacts/
+*.pptx
+
+# ---- media ----
 *.mp4
 *.avi
 *.mov
 *.mkv
 *.webm
 
+# ---- archives ----
 *.zip
 *.7z
 *.tar
 *.gz
 
+# ---- model weights / feature caches ----
 *.pt
 *.pth
 *.bin
 *.safetensors
 
-models/
-datasets/
-hf-cache/
-cache/
+# NOTE: anchored to repository root on purpose. The previous unanchored
+# `models/` and `datasets/` rules also matched `configs/models/` and
+# `configs/datasets/`, silently hiding tracked research configuration.
+/models/
+/datasets/
+/hf-cache/
+/cache/
 
-outputs/*
-
-logs/*
+# ---- runtime outputs ----
+/outputs/*
+/logs/*
