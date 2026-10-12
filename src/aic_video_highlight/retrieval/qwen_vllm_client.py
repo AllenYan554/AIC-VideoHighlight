@@ -13,6 +13,31 @@ class ModelResponse:
 
     content: str
     finish_reason: str | None = None
+    usage: dict[str, Any] | None = None
+
+
+def _usage_payload(response: Any) -> dict[str, Any] | None:
+    """Return the server-reported token accounting without altering the request.
+
+    Execution instrumentation only: the request payload is unchanged, so this
+    cannot affect model input identity or sampling.
+    """
+
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return None
+    if isinstance(usage, dict):
+        return dict(usage) or None
+    payload: dict[str, Any] = {}
+    for name in ("prompt_tokens", "completion_tokens", "total_tokens"):
+        value = getattr(usage, name, None)
+        if isinstance(value, int):
+            payload[name] = value
+    details = getattr(usage, "prompt_tokens_details", None)
+    cached = getattr(details, "cached_tokens", None)
+    if isinstance(cached, int):
+        payload["cached_tokens"] = cached
+    return payload or None
 
 
 class QwenVLLMClient:
@@ -61,6 +86,7 @@ class QwenVLLMClient:
         return ModelResponse(
             content=choice.message.content or "",
             finish_reason=choice.finish_reason,
+            usage=_usage_payload(response),
         )
 
     def analyze_video(
@@ -116,4 +142,5 @@ class QwenVLLMClient:
         return ModelResponse(
             content=choice.message.content or "",
             finish_reason=choice.finish_reason,
+            usage=_usage_payload(response),
         )

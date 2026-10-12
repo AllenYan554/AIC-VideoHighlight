@@ -116,7 +116,7 @@ def _state_paths(config: Mapping[str, Any], environment: EnvironmentPaths) -> di
         "output_root": _resolve_spec(
             config.get(
                 "output_root",
-                {"base": "derived", "path": "VHiCraFTNet/youtube_highlights_ftnet"},
+                {"base": "derived", "path": "VHiCraFTNet/YouTubeHighlights_FTNet_v1"},
             ),
             environment,
         ),

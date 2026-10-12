@@ -9,8 +9,8 @@ production; it is idempotent and only transfers missing/changed files.
 Usage:
   python scripts/experiments/stage7/sync_materialized.py \
       --remote-host autodl-stage1 \
-      --remote-root /root/autodl-tmp/derived/VHiCraFTNet/youtube_highlights_ftnet \
-      --local-root  E:/ResearchData/derived/VHiCraFTNet/youtube_highlights_ftnet \
+      --remote-root /root/autodl-tmp/derived/VHiCraFTNet/YouTubeHighlights_FTNet_v1 \
+      --local-root  E:/ResearchData/derived/VHiCraFTNet/YouTubeHighlights_FTNet_v1 \
       --batch-size 20
 """
 

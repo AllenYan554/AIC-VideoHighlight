@@ -13,7 +13,7 @@ OFFICIAL_TEST / TVSUM: NOT ACCESSED
 
 ## Machine-verified current state
 
-- Processed data is read directly from `E:\ResearchData\derived\VHiCraFTNet\youtube_highlights_ftnet\`.
+- Processed data is read directly from `E:\ResearchData\derived\VHiCraFTNet\YouTubeHighlights_FTNet_v1\`.
 - 154 safetensors are present: TRAIN 111 / VALIDATION 23 / CALIBRATION 20.
 - The 154-record materialization manifest resolves to 154 existing files with zero missing paths.
 - Integrity is PASS with missing/extra/duplicate/corrupt/NaN/Inf = 0 and Official Test / TVSum rows = 0.

@@ -9,7 +9,7 @@
     "rtdetr_model_id": "PekingU/rtdetr_r50vd"
   },
   "index_path": {"base": "outputs", "path": "stage7_ftnet/index/frozen_index.json"},
-  "output_root": {"base": "derived", "path": "VHiCraFTNet/youtube_highlights_ftnet"},
+  "output_root": {"base": "derived", "path": "VHiCraFTNet/YouTubeHighlights_FTNet_v1"},
   "selection": {"splits": ["TRAIN", "VALIDATION", "CALIBRATION"]},
   "wave_size": 20,
   "device": "cuda",
